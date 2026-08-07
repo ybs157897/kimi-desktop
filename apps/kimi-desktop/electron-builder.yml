@@ -1,0 +1,56 @@
+# electron-builder configuration for Kimi Code Desktop.
+#
+# NOTE on signing: `identity: null` means the macOS build is NOT code-signed —
+# the resulting DMG/zip runs only on the developer's machine (Gatekeeper
+# blocks it elsewhere). Real signing + notarization happen in CI with Apple
+# Developer ID secrets that override `identity` via `CSC_*` env vars; this file
+# deliberately stays unsigned so local `pnpm dist` works without credentials.
+# See apps/kimi-desktop/AGENTS.md.
+
+appId: ai.moonshot.kimi-code.desktop
+productName: Kimi Code Desktop
+copyright: Copyright © Moonshot AI
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/main/**
+  - out/preload/**
+  - out/renderer/**
+  - package.json
+  - '!**/*.map'
+
+# Ship the workspace contract packages + kap-server build output so the bundled
+# engine resolves its own imports without a workspace symlink.
+extraMetadata:
+  main: out/main/index.js
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - { target: dmg, arch: [arm64, x64] }
+    - { target: zip, arch: [arm64, x64] }
+  # Unsigned local builds (see header note). CI overrides via CSC_*.
+  identity: null
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  darkModeSupport: true
+
+dmg:
+  contents:
+    - { x: 130, y: 220 }
+    - { x: 410, y: 220, type: link, path: /Applications }
+
+win:
+  target:
+    - { target: nsis, arch: [x64] }
+
+linux:
+  target:
+    - { target: AppImage, arch: [x64] }
+  category: Development
+
+# electron-builder copies node_modules by default; production deps only.
+nodeGypRebuild: false

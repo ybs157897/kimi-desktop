@@ -16,6 +16,7 @@ import { type IConnectionRegistry } from '../connectionRegistry';
 import type { SessionEventBroadcaster } from './sessionEventBroadcaster';
 import type { FsWatchBridge } from './fsWatchBridge';
 import type { JournalLogger } from './sessionEventJournal';
+import type { TerminalBridge } from './terminalBridge';
 import { WsConnectionV1 } from './wsConnectionV1';
 import { selectWsBearerProtocol } from '../bearerProtocol';
 
@@ -27,6 +28,7 @@ export interface RegisterWsV1Options {
   readonly registry: IConnectionRegistry;
   readonly broadcaster: SessionEventBroadcaster;
   readonly fsWatchBridge: FsWatchBridge;
+  readonly terminalBridge: TerminalBridge;
   readonly logger?: JournalLogger;
   readonly maxBufferSize?: number;
   readonly flushIntervalMs?: number;
@@ -44,6 +46,7 @@ export function registerWsV1(core: Scope, opts: RegisterWsV1Options): WebSocketS
       socket,
       broadcaster,
       fsWatchBridge: opts.fsWatchBridge,
+      terminalBridge: opts.terminalBridge,
       connectionRegistry: registry,
       validateCredential: opts.validateCredential,
       remoteAddress: req.socket.remoteAddress ?? null,

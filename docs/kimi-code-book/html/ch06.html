@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第 6 章 TUI 与 VSCode 集成：两个平行前端 · Kimi Code 实现详解</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" href="index.html">
+      <span class="brand-name">Kimi Code 实现详解</span>
+      <span class="brand-sub">从终端到 DI 引擎 · 源码解读</span>
+    </a>
+    <nav class="side-nav"><div class="group">本书</div><a href="index.html">Kimi Code 源码解读：从终端到 DI 引擎</a>
+      <div class="group">正文</div><a href="ch01.html">第 1 章 总览与架构</a>
+      <a href="ch02.html">第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</a>
+      <a href="ch03.html">第 3 章 v2 引擎：DI × Scope 新架构</a>
+      <a href="ch04.html">第 4 章 v1 引擎：上一代内核</a>
+      <a href="ch05.html">第 5 章 KAP 服务器与 kosong：服务端外壳与 LLM 抽象</a>
+      <a href="ch06.html" class="active">第 6 章 TUI 与 VSCode 集成：两个平行前端</a>
+      <a href="ch07.html">第 7 章 协议层：线协议、客户端 SDK 与 ACP 桥</a>
+      <a href="ch08.html">第 8 章 minidb：自研嵌入式数据库</a>
+      <a href="ch09.html">第 9 章 基础设施：认证、遥测、执行环境与调试</a>
+      <div class="group">研究附录</div><a href="research/research-01.html">01 · apps/kimi-code —— CLI 主应用研究报告</a>
+      <a href="research/research-02.html">02 · agent-core-v2：DI × Scope 新架构 agent 引擎</a>
+      <a href="research/research-03.html">03 · agent-core（旧架构 agent 核心）研究报告</a>
+      <a href="research/research-04.html">04. kap-server + kosong：Kimi Code 的服务端外壳与 LLM 抽象层</a>
+      <a href="research/research-05.html">05 · pi-tui 与 VSCode 扩展（apps/vscode）</a>
+      <a href="research/research-06.html">06 · 协议层（protocol / klient / node-sdk / transcript / acp）研究报告</a>
+      <a href="research/research-07.html">任务 7/8：minidb —— 嵌入式 KV/文档数据库研究报告</a>
+      <a href="research/research-08.html">任务 8/8：基础设施层研究报告</a></nav>
+  </aside>
+  <main class="content">
+    <header class="page-header">
+      <div class="crumbs"><a href="index.html">Kimi Code 实现详解</a> / <span>正文</span></div>
+      <h1 class="page-title">第 6 章 TUI 与 VSCode 集成：两个平行前端</h1>
+    </header>
+    <nav class="page-toc"><div class="toc-title">本章目录</div><ol><li class="toc-2"><a href="#61-两条路线">6.1 两条路线</a></li><li class="toc-2"><a href="#62-pi-tui免依赖的终端图形栈">6.2 pi-tui：免依赖的终端图形栈</a></li><li class="toc-3"><a href="#621-核心类型">6.2.1 核心类型</a></li><li class="toc-3"><a href="#622-差分渲染三策略">6.2.2 差分渲染三策略</a></li><li class="toc-3"><a href="#623-帧级-processed-line-复用性能核心">6.2.3 帧级 processed-line 复用（性能核心）</a></li><li class="toc-3"><a href="#624-Kitty-键盘协议协商">6.2.4 Kitty 键盘协议协商</a></li><li class="toc-3"><a href="#625-StdinBuffer-的边界处理">6.2.5 StdinBuffer 的边界处理</a></li><li class="toc-3"><a href="#626-粘贴双保险">6.2.6 粘贴双保险</a></li><li class="toc-3"><a href="#627-宽字符与超宽防御本地分歧">6.2.7 宽字符与超宽防御（本地分歧）</a></li><li class="toc-3"><a href="#628-光标与-IME">6.2.8 光标与 IME</a></li><li class="toc-3"><a href="#629-退出卫生">6.2.9 退出卫生</a></li><li class="toc-2"><a href="#63-appsvscode引擎内嵌-postMessage-桥">6.3 apps/vscode：引擎内嵌 + postMessage 桥</a></li><li class="toc-3"><a href="#631-一次聊天请求的完整链路">6.3.1 一次聊天请求的完整链路</a></li><li class="toc-3"><a href="#632-安全边界webview-是不可信输入">6.3.2 安全边界：webview 是不可信输入</a></li><li class="toc-3"><a href="#633-会话生命周期KimiRuntime-SessionRuntime">6.3.3 会话生命周期（KimiRuntime / SessionRuntime）</a></li><li class="toc-3"><a href="#634-事件适配与去重">6.3.4 事件适配与去重</a></li><li class="toc-3"><a href="#635-Baseline文件回滚">6.3.5 Baseline（文件回滚）</a></li><li class="toc-2"><a href="#64-关键代码位置索引">6.4 关键代码位置索引</a></li><li class="toc-3"><a href="#pi-tuipackagespi-tuisrc">pi-tui（packages/pi-tui/src/）</a></li><li class="toc-3"><a href="#vscodeappsvscode">vscode（apps/vscode/）</a></li><li class="toc-2"><a href="#65-本章小结">6.5 本章小结</a></li></ol></nav>
+    <article class="markdown-body">
+<h1 id="第-6-章-TUI-与-VSCode-集成两个平行前端">第 6 章 TUI 与 VSCode 集成：两个平行前端</h1><blockquote>
+<p>研究对象：<code>packages/pi-tui</code>（终端 UI 渲染库，约 1.2 万行）与 <code>apps/vscode</code>（VS Code 扩展，约 7k 行）。
+学习目标：理解同一产品的两个架构决策完全相反的前端——CLI 的&quot;免依赖终端图形栈&quot;与扩展的&quot;引擎内嵌 + postMessage 桥&quot;。</p>
+</blockquote>
+<h2 id="61-两条路线"><a class="anchor" href="#61-两条路线" aria-hidden="true">#</a>6.1 两条路线</h2><table>
+<thead>
+<tr>
+<th></th>
+<th>pi-tui 路线（CLI）</th>
+<th>vscode 路线</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>形态</td>
+<td>长驻进程，自己管理 raw-mode 终端</td>
+<td>扩展进程内<strong>直接内嵌 Node SDK</strong>（agent-core 全家桶）</td>
+</tr>
+<tr>
+<td>UI</td>
+<td>自研差分渲染引擎</td>
+<td>React webview，postMessage 桥</td>
+</tr>
+<tr>
+<td>引擎</td>
+<td>进程内 RPC（SDK）</td>
+<td>进程内（extension host 里跑引擎）</td>
+</tr>
+<tr>
+<td>共享</td>
+<td>—</td>
+<td>与 CLI 共享 <code>KIMI_CODE_HOME</code> 下的 config/MCP/登录态/会话（但不保证跨进程会话锁，官方禁止同时运行同一会话）</td>
+</tr>
+</tbody></table>
+<pre class="hljs"><code>┌────────────────────────────────────────────────────────────┐
+│                       Kimi <span class="hljs-meta">Code</span> 产品矩阵                      │
+├──────────────┬──────────────┬───────────────────────────────┤
+│  CLI/TUI     │  VS <span class="hljs-meta">Code</span> 扩展 │  Web / 服务器形态              │
+│ apps/kimi-   │ apps/vscode  │ apps/kimi-<span class="hljs-meta">code</span> (web 模式)      │
+│ <span class="hljs-meta">code</span>         │ (webview+    │   → kap-server (agent-core-<span class="hljs-built_in">v2</span>)│
+│   ↓ 渲染      │  extension)  │   → Web UI (<span class="hljs-meta">code</span>-app 仓库)     │
+│ pi-tui       │   ↓ 内嵌      │                               │
+│   ↓ 引擎      │ kimi-<span class="hljs-meta">code</span>-   │                               │
+│ kimi-<span class="hljs-meta">code</span>-sdk│ sdk (agent-   │                               │
+│ (agent-core) │ core 全家桶)  │                               │
+└──────────────┴──────────────┴───────────────────────────────┘</code></pre><p><strong>VSCode 扩展与&quot;通信&quot;无关</strong>：tsdown 把 <code>agent-core</code>/<code>kaos</code>/<code>kosong</code>/<code>oauth</code>/<code>node-sdk</code> 全部 alias 到源码并打进单个 <code>dist/extension.js</code>——扩展是一个<strong>自包含的完整 Kimi Code</strong>，不依赖外部 kap-server 进程。</p>
+<h2 id="62-pi-tui免依赖的终端图形栈"><a class="anchor" href="#62-pi-tui免依赖的终端图形栈" aria-hidden="true">#</a>6.2 pi-tui：免依赖的终端图形栈</h2><p>运行时仅依赖两个 npm 包（<code>get-east-asian-width</code>、<code>marked</code>），自研了差分渲染、输入管线、终端协议对话、组件库（Editor 2415 行是最大组件）。它的唯一消费者是 <code>apps/kimi-code</code>（84 个文件 import）。</p>
+<h3 id="621-核心类型"><a class="anchor" href="#621-核心类型" aria-hidden="true">#</a>6.2.1 核心类型</h3><table>
+<thead>
+<tr>
+<th>符号</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Component</code></td>
+<td>渲染契约：<code>render(width): string[]</code> + <code>handleInput?(data)</code> + <code>invalidate()</code></td>
+</tr>
+<tr>
+<td><code>Focusable</code></td>
+<td>IME 支持：聚焦时在光标处输出 <code>CURSOR_MARKER</code>（<code>\x1b_pi:c\x07</code> 零宽 APC 序列），TUI 扫描定位后移动硬件光标</td>
+</tr>
+<tr>
+<td><code>TUI extends Container</code></td>
+<td>主引擎：帧缓存（previousLines/previousRawLines/previousLineImageIds）、overlay 栈、视口跟踪、硬件光标行</td>
+</tr>
+<tr>
+<td><code>ProcessTerminal</code></td>
+<td>raw mode、bracketed paste、Kitty 协议协商、OSC 9;4 进度</td>
+</tr>
+<tr>
+<td><code>StdinBuffer</code></td>
+<td>字节流 → 完整序列（防拆包），按 CSI/OSC/DCS/APC/SS3 分类判定完整性</td>
+</tr>
+<tr>
+<td><code>matchesKey(data, keyId)</code></td>
+<td>统一按键匹配：Kitty CSI-u → modifyOtherKeys → 传统转义 → 裸字节四级回退</td>
+</tr>
+<tr>
+<td><code>Editor</code></td>
+<td>多行编辑器：undo 栈、kill-ring、历史、paste 标记、自动补全、跳转模式</td>
+</tr>
+</tbody></table>
+<h3 id="622-差分渲染三策略"><a class="anchor" href="#622-差分渲染三策略" aria-hidden="true">#</a>6.2.2 差分渲染三策略</h3><pre class="hljs"><code>1. 首帧或尺寸变化 ──▶ fullRender(<span class="hljs-attribute">clear</span>=<span class="hljs-literal">true</span>)：CSI 2026h + 清屏 [2J[H[3J] + 全量写
+2. clearOnShrink 且内容缩短 ──▶ fullRender(<span class="hljs-attribute">clear</span>=<span class="hljs-literal">true</span>)（默认开）
+3. 正常差分 ──▶ 移到 firstChanged 行，每行 [2K 清行后重写 [firstChanged, lastChanged]
+                  多余旧行 \r\n\x1b[2K 清掉
+   例外：firstChanged &lt; 上一视口顶部 或 kitty 图片越界 ──▶ 退化为 fullRender</code></pre><p>所有写路径都包在 <strong>synchronized output</strong>（<code>\x1b[?2026h</code>…<code>l</code>）里——终端延迟合成输出，避免闪烁。Append-only 场景有专门的 <code>appendStart</code> 快路径：直接光标下移 + <code>\r\n</code> 续写，不做整屏重绘。</p>
+<h3 id="623-帧级-processed-line-复用性能核心"><a class="anchor" href="#623-帧级-processed-line-复用性能核心" aria-hidden="true">#</a>6.2.3 帧级 processed-line 复用（性能核心）</h3><p><code>doRender</code> 保留上一帧的 <code>previousRawLines</code>（组件 render 缓存的<strong>原始字符串引用</strong>）与 <code>previousLines</code>（处理后的输出）。逐行比较 <code>rawLine === previousRawLines[i]</code>（<strong>引用相等即未变</strong>），未变行零成本复用处理结果（截断 + normalize + SEGMENT_RESET）与 kitty 图片 id。steady-state 帧（转圈动画）的代价从 O(所有行重处理) 降到 O(行数) 指针比较 + O(变化行) 真活。配套 <code>asciiVisibleWidth(line, limit)</code> 快速路径（纯 ASCII 扫描 + 超限早退），只有非 ASCII 行才落到 <code>visibleWidth</code>（<code>Intl.Segmenter</code> 字素级宽度 + 4096 项 FIFO 缓存）。</p>
+<h3 id="624-Kitty-键盘协议协商"><a class="anchor" href="#624-Kitty-键盘协议协商" aria-hidden="true">#</a>6.2.4 Kitty 键盘协议协商</h3><pre class="hljs"><code>queryAndEnableKittyProtocol 写入 \<span class="hljs-keyword">x</span><span class="hljs-number">1</span>b[&gt;<span class="hljs-number">7</span>u\<span class="hljs-keyword">x</span><span class="hljs-number">1</span>b[?u\<span class="hljs-keyword">x</span><span class="hljs-number">1</span>b[<span class="hljs-keyword">c</span>：
+  先声明期望 flags（<span class="hljs-number">1</span><span class="hljs-operator">=</span>disambiguate，<span class="hljs-number">2</span><span class="hljs-operator">=</span>事件类型，<span class="hljs-number">4</span><span class="hljs-operator">=</span>alternate keys）
+  → 查询 → DA 查询做哨兵
+  不支持 Kitty 的终端会回 DA → 收到 DA 前没等来 Kitty 响应 → 启用 modifyOtherKeys（\<span class="hljs-keyword">x</span><span class="hljs-number">1</span>b[&gt;<span class="hljs-number">4</span><span class="hljs-comment">;2m）</span>
+  两者都收不到 → 退化为传统转义序列</code></pre><p>协商响应可能跨多个 stdin 事件拆包，用 <code>keyboardProtocolNegotiationBuffer</code> + 150ms 冲刷定时器处理。这保证了 Shift+Enter 在 Kitty/Ghostty/WezTerm/iTerm2/xterm/Apple Terminal 上的统一语义（<strong>4 种编码路径</strong>：Kitty CSI-u、modifyOtherKeys、<code>\x1b\r</code>、<code>\n</code>）。</p>
+<h3 id="625-StdinBuffer-的边界处理"><a class="anchor" href="#625-StdinBuffer-的边界处理" aria-hidden="true">#</a>6.2.5 StdinBuffer 的边界处理</h3><ul>
+<li>高字节单字节输入（&gt;127）转换为 <code>ESC + (byte-128)</code>（兼容老式 meta 键）；</li>
+<li>WezTerm 的 Escape 键按下以裸 <code>\x1b</code> 发出、松开是完整 CSI-u 序列，会粘成 <code>\x1b\x1b[27;…u</code>——遇到 <code>\x1b\x1b</code> 且后随 <code>[</code>/<code>]</code>/<code>O</code>/<code>P</code>/<code>_</code> 时只发第一个 ESC 并从第二个重启解析；</li>
+<li>Kitty 打印字符去重：CSI-u 无修饰码点后若跟来相同的裸码点，丢弃裸码点；</li>
+<li>鼠标 SGR 序列必须完整匹配三段数字才判 complete。</li>
+</ul>
+<h3 id="626-粘贴双保险"><a class="anchor" href="#626-粘贴双保险" aria-hidden="true">#</a>6.2.6 粘贴双保险</h3><ul>
+<li>bracketed paste（首选）：聚合 <code>200~…201~</code>；Editor 对 &gt;10 行的粘贴生成 <code>[paste #N +M lines]</code> 原子标记（<code>segmentWithMarkers</code> 把标记并入单个字素段——光标移动/删除/换行都视其为整体），大粘贴展开为可折叠块；</li>
+<li>无 bracketed 支持终端：<code>PasteBurst</code> 启发式——8 个字符间隔 ≤8ms 视为粘贴突发，其后的 Enter 被抑制为换行而非提交（120ms 窗口）。</li>
+</ul>
+<h3 id="627-宽字符与超宽防御本地分歧"><a class="anchor" href="#627-宽字符与超宽防御本地分歧" aria-hidden="true">#</a>6.2.7 宽字符与超宽防御（本地分歧）</h3><ul>
+<li>超宽行一律 <code>sliceByColumn</code> 截断而非抛错（上游会写崩溃日志 + throw）；</li>
+<li><code>wordWrapLine</code> 对不可再分的单字素（如 CJK 在 maxWidth=1）不再递归（上游会无限递归爆栈）；</li>
+<li>负宽度 <code>repeat</code> 全部 clamp；</li>
+<li><code>normalizeTerminalOutput</code> 把泰语/老挝语 AM 元音换成兼容分解形式，规避某些终端差分重绘的残留。</li>
+</ul>
+<h3 id="628-光标与-IME"><a class="anchor" href="#628-光标与-IME" aria-hidden="true">#</a>6.2.8 光标与 IME</h3><p><code>CURSOR_MARKER</code> 由 Focusable 组件在假光标处输出；TUI 在<strong>可见视口底部 height 行内</strong>倒序扫描 marker，用 <code>visibleWidth</code> 算出列位置，把硬件光标移过去（行用相对移动、列用绝对 <code>CSI n G</code>），默认隐藏硬件光标（<code>PI_HARDWARE_CURSOR=1</code> 可显示，部分终端需要可见光标才能定位 IME 候选窗）。容器组件必须向子组件传播 <code>focused</code> 标志，否则 CJK 输入法候选窗位置错误。</p>
+<h3 id="629-退出卫生"><a class="anchor" href="#629-退出卫生" aria-hidden="true">#</a>6.2.9 退出卫生</h3><p><code>drainInput(maxMs, idleMs)</code>：退出前先 <code>\x1b[&lt;u</code> 关 Kitty 协议、再排空 stdin 最多 1s（或 50ms 空闲），防止 slow SSH 下 Kitty release 事件泄漏给父 shell；<code>stop()</code> 里 <code>process.stdin.pause()</code> 防止残留 Ctrl+D 关闭父 shell。</p>
+<h2 id="63-appsvscode引擎内嵌-postMessage-桥"><a class="anchor" href="#63-appsvscode引擎内嵌-postMessage-桥" aria-hidden="true">#</a>6.3 apps/vscode：引擎内嵌 + postMessage 桥</h2><h3 id="631-一次聊天请求的完整链路"><a class="anchor" href="#631-一次聊天请求的完整链路" aria-hidden="true">#</a>6.3.1 一次聊天请求的完整链路</h3><pre class="hljs"><code><span class="hljs-function"><span class="hljs-title">webview</span> <span class="hljs-params">(React)</span>                          E<span class="hljs-title">xtension</span> H<span class="hljs-title">ost</span>                     SDK/<span class="hljs-title">agent</span>-<span class="hljs-title">core</span>
+I<span class="hljs-title">nputArea</span> 发送
+  │ B<span class="hljs-title">ridge</span>.<span class="hljs-title">call</span><span class="hljs-params">(<span class="hljs-string">&quot;StreamChat&quot;</span>, {content,model,...})</span>
+  ▼ <span class="hljs-title">postMessage</span> ──────────────────────▶ <span class="hljs-title">webview</span>.<span class="hljs-title">onDidReceiveMessage</span>
+                                        B<span class="hljs-title">ridgeHandler</span>.<span class="hljs-title">handle</span><span class="hljs-params">()</span>
+                                          ├─ <span class="hljs-title">validateRpcMessage</span><span class="hljs-params">()</span>（白名单+逐方法参数校验）
+                                          ├─ <span class="hljs-title">handlers</span>.<span class="hljs-title">chat</span> → <span class="hljs-title">ctx</span>.<span class="hljs-title">getOrCreateSession</span><span class="hljs-params">()</span>
+                                          │     └─ K<span class="hljs-title">imiRuntime</span>.<span class="hljs-title">openSession</span><span class="hljs-params">()</span>
+                                          │           ├─ <span class="hljs-title">harness</span>.<span class="hljs-title">createSession</span><span class="hljs-params">({workDir, model,
+                                          │           │     permission: yolo→auto})</span>
+                                          │           └─ S<span class="hljs-title">essionRuntime</span>（订阅 <span class="hljs-title">onEvent</span>，
+                                          │              注册 <span class="hljs-title">setApprovalHandler</span>/Q<span class="hljs-title">uestionHandler</span>）
+                                          └─ <span class="hljs-title">runtime</span>.<span class="hljs-title">prompt</span><span class="hljs-params">(content)</span>
+  ◀──────────────────────────────────── 引擎事件流 <span class="hljs-title">onSdkEvent</span>（微任务异步）
+                                        S<span class="hljs-title">essionRuntime</span>.<span class="hljs-title">onSdkEvent</span>
+                                          ├─ <span class="hljs-title">adaptSdkEvent</span> → UIS<span class="hljs-title">treamEvent</span>
+                                          ├─ <span class="hljs-title">terminal</span> 事件 → <span class="hljs-title">emitTerminal</span><span class="hljs-params">()</span>：<span class="hljs-title">stream_complete</span> + <span class="hljs-title">settlePrompt</span>
+                                          └─ <span class="hljs-title">broadcast</span><span class="hljs-params">(Events.StreamEvent, evt)</span>
+  B<span class="hljs-title">ridge</span>.<span class="hljs-title">on</span><span class="hljs-params">(<span class="hljs-string">&quot;StreamEvent&quot;</span>)</span> ◀── <span class="hljs-title">postMessage</span> ◀── <span class="hljs-title">provider</span>.<span class="hljs-title">broadcastInternal</span>
+  <span class="hljs-title">chat</span>.<span class="hljs-title">store</span>.<span class="hljs-title">processEvent</span><span class="hljs-params">(evt)</span>（<span class="hljs-title">zustand</span>+<span class="hljs-title">immer</span> 增量更新 <span class="hljs-title">transcript</span>）
+  │
+  ├─ A<span class="hljs-title">pprovalRequest</span> 事件 → A<span class="hljs-title">pprovalDialog</span> → B<span class="hljs-title">ridge</span>.<span class="hljs-title">call</span><span class="hljs-params">(<span class="hljs-string">&quot;RespondApproval&quot;</span>)</span>
+  │     └─ <span class="hljs-title">reverseRpc</span>.<span class="hljs-title">respondApproval</span><span class="hljs-params">(id, resp)</span> → <span class="hljs-title">resolve</span> 引擎的 P<span class="hljs-title">romise</span>
+  └─ Q<span class="hljs-title">uestionRequest</span> 事件 → Q<span class="hljs-title">uestionDialog</span> → R<span class="hljs-title">espondQuestion</span>（同上）</span></code></pre><h3 id="632-安全边界webview-是不可信输入"><a class="anchor" href="#632-安全边界webview-是不可信输入" aria-hidden="true">#</a>6.3.2 安全边界：webview 是不可信输入</h3><p><code>validateRpcMessage</code>：必须是纯对象、id 非空字符串、method 在 Methods 白名单内（50 个请求-响应方法 + 9 个单向事件）、<strong>每个方法都有专属参数校验器</strong>（如 <code>StreamChat</code> 的 content 递归校验 text/think/image_url 结构）。校验失败在进入任何业务 handler 前返回错误。webview HTML 带 nonce CSP（<code>default-src &#39;none&#39;</code>）。trace 日志刻意排除 params/prompt/文件路径/凭据。</p>
+<h3 id="633-会话生命周期KimiRuntime-SessionRuntime"><a class="anchor" href="#633-会话生命周期KimiRuntime-SessionRuntime" aria-hidden="true">#</a>6.3.3 会话生命周期（KimiRuntime / SessionRuntime）</h3><ul>
+<li>整个扩展只有一个 <code>KimiHarness</code>（in-process）；<code>sessionByView</code> 做 webview↔session 映射；一个会话可被多个 webview 订阅，最后一个订阅者离开时会话自动 <code>close()</code>。</li>
+<li><code>customWorkDirs</code> 允许每个 webview 选自己的工作目录（必须落在 workspace 内）；会话 workdir 不匹配时 <code>assertSessionWorkDir</code> 拒绝挂载。</li>
+<li><strong>并发控制：一会话一 turn</strong>——<code>SessionRuntime.isBusy</code> 时新 prompt 直接失败（<code>ALREADY_GENERATING_MESSAGE</code>），绝不打断在途 turn；非终态 error 被强制标 <code>terminal: false</code>，避免 UI 提前解锁导致二次发送撞车；fork 走 <code>runExclusiveAfterCancelling</code>（cancel → 等终端事件 → 执行不可并发操作）。</li>
+<li><strong>审批&quot;双许可&quot;模型</strong>：会话元数据存 <code>{yolo, afk}</code> 标志（兼容 CLI 旧版），映射到 SDK 的 <code>Permission</code>（yolo→auto）；<code>setApprovalHandler</code> 是引擎的最后一道闸——<strong>引擎权限层已自动放行的不会到 UI</strong>，到达 handler 的都是敏感文件/plan review/ask 规则等必须人工决策的请求。</li>
+</ul>
+<h3 id="634-事件适配与去重"><a class="anchor" href="#634-事件适配与去重" aria-hidden="true">#</a>6.3.4 事件适配与去重</h3><p>SDK 的 <code>Event</code> 经 <code>EventAdapterState</code> 增量映射为 webview 协议事件（<code>TurnBegin/StepBegin/ContentPart/ToolCall…/stream_complete</code>）；<code>emitTerminal</code> 以 <code>terminal.key</code> 去重（引擎可能补发终止事件）；<code>suppressedError</code> 机制：终端错误已上报后，紧随其后的同 code+message 的 error 事件被吞掉。</p>
+<h3 id="635-Baseline文件回滚"><a class="anchor" href="#635-Baseline文件回滚" aria-hidden="true">#</a>6.3.5 Baseline（文件回滚）</h3><p><code>tool.call.started</code>（Write/Edit）→ <code>captureFileBaseline</code>（校验文件在会话 workDir 内）→ <code>BaselineManager</code> 把原文件内容快照存到 globalStorage → 广播 <code>FileChangesUpdated</code> → webview 显示改动列表 → <code>OpenFileDiff</code> 用注册的 <code>kimi-baseline</code> scheme 打开只读原版 → <code>RevertFiles</code>/<code>KeepChanges</code> 回滚或确认。</p>
+<h2 id="64-关键代码位置索引"><a class="anchor" href="#64-关键代码位置索引" aria-hidden="true">#</a>6.4 关键代码位置索引</h2><h3 id="pi-tuipackagespi-tuisrc"><a class="anchor" href="#pi-tuipackagespi-tuisrc" aria-hidden="true">#</a>pi-tui（packages/pi-tui/src/）</h3><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>tui.ts:74-98</code></td>
+<td><code>Component</code> 接口</td>
+</tr>
+<tr>
+<td><code>tui.ts:114-131</code></td>
+<td><code>Focusable</code> + <code>CURSOR_MARKER</code></td>
+</tr>
+<tr>
+<td><code>tui.ts:516-651</code></td>
+<td><code>showOverlay</code> + 焦点恢复状态机</td>
+</tr>
+<tr>
+<td><code>tui.ts:735-782</code></td>
+<td><code>requestRender/scheduleRender</code>：16ms 节流</td>
+</tr>
+<tr>
+<td><code>tui.ts:1267-1658</code></td>
+<td><code>doRender</code>：差分渲染三策略</td>
+</tr>
+<tr>
+<td><code>tui.ts:1665-1696</code></td>
+<td><code>positionHardwareCursor</code>：IME 光标定位</td>
+</tr>
+<tr>
+<td><code>terminal.ts:220-330</code></td>
+<td>Kitty 协议协商 + modifyOtherKeys 回退</td>
+</tr>
+<tr>
+<td><code>terminal.ts:368-404</code></td>
+<td><code>drainInput</code> 退出卫生</td>
+</tr>
+<tr>
+<td><code>stdin-buffer.ts:184-255</code></td>
+<td><code>\x1b\x1b</code> 粘包特判</td>
+</tr>
+<tr>
+<td><code>stdin-buffer.ts:287-398</code></td>
+<td><code>process()</code>：粘贴聚合/去重/超时</td>
+</tr>
+<tr>
+<td><code>keys.ts:820-1211</code></td>
+<td><code>matchesKey</code> 四级回退</td>
+</tr>
+<tr>
+<td><code>utils.ts:216-271</code></td>
+<td><code>visibleWidth</code> 字素宽度 + 缓存</td>
+</tr>
+<tr>
+<td><code>components/editor.ts:115-218</code></td>
+<td><code>wordWrapLine</code> 单字素防递归</td>
+</tr>
+<tr>
+<td><code>components/editor.ts:265-370</code></td>
+<td><code>Editor</code> 状态</td>
+</tr>
+<tr>
+<td><code>terminal-image.ts:65-125</code></td>
+<td>终端能力探测矩阵</td>
+</tr>
+<tr>
+<td><code>paste-burst.ts:1-61</code></td>
+<td>粘贴突发启发式</td>
+</tr>
+</tbody></table>
+<h3 id="vscodeappsvscode"><a class="anchor" href="#vscodeappsvscode" aria-hidden="true">#</a>vscode（apps/vscode/）</h3><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/extension.ts:19-142</code></td>
+<td><code>activate</code>：provider/命令/迁移编排</td>
+</tr>
+<tr>
+<td><code>src/KimiWebviewProvider.ts:152-181</code></td>
+<td>CSP HTML 注入</td>
+</tr>
+<tr>
+<td><code>src/bridge-handler.ts:52-74</code></td>
+<td>RPC 统一入口</td>
+</tr>
+<tr>
+<td><code>shared/bridge.ts:12-99</code></td>
+<td>Methods/Events 协议枚举</td>
+</tr>
+<tr>
+<td><code>shared/bridge.ts:104-221</code></td>
+<td><code>validateRpcMessage</code> 逐方法校验</td>
+</tr>
+<tr>
+<td><code>src/runtime/kimi-runtime.ts:44-69</code></td>
+<td><code>KimiRuntime</code> in-process harness</td>
+</tr>
+<tr>
+<td><code>src/runtime/session-runtime.ts:174-223</code></td>
+<td><code>prompt</code>：单 turn 并发闸门</td>
+</tr>
+<tr>
+<td><code>src/runtime/session-runtime.ts:359-375</code></td>
+<td><code>runExclusiveAfterCancelling</code></td>
+</tr>
+<tr>
+<td><code>src/runtime/reverse-rpc.ts</code></td>
+<td>审批/提问反向 RPC 桥</td>
+</tr>
+<tr>
+<td><code>src/handlers/chat.handler.ts</code></td>
+<td>StreamChat/Steer/Abort</td>
+</tr>
+<tr>
+<td><code>webview-ui/src/stores/chat.store.ts</code></td>
+<td>zustand+immer 发送队列状态机</td>
+</tr>
+<tr>
+<td><code>tsdown.config.ts</code></td>
+<td>全量内联 bundle 配置</td>
+</tr>
+</tbody></table>
+<h2 id="65-本章小结"><a class="anchor" href="#65-本章小结" aria-hidden="true">#</a>6.5 本章小结</h2><ul>
+<li>pi-tui 是&quot;免依赖的终端图形栈&quot;：差分渲染三策略（全量/清屏/增量）包在 CSI 2026 同步输出中，帧级引用相等复用让 steady-state 帧几乎零成本；Kitty 协议四级回退 + StdinBuffer 防拆包 + 5 处本地分歧全是围绕&quot;窄终端 + CJK + 性能&quot;的现实修补。</li>
+<li>VSCode 扩展与&quot;通信&quot;无关：引擎以 SDK 形态内嵌进 Extension Host，webview 通过带逐方法参数校验的 postMessage 桥访问——webview 被当作不可信输入。</li>
+<li>审批是&quot;双许可&quot;模型：引擎权限层自动放行的不会到 UI，到达 handler 的都是必须人工决策的请求。</li>
+<li>三条产品线（CLI/VSCode/Web）共用 <code>@moonshot-ai/kimi-code-sdk</code> 作为引擎门面：CLI 与 VSCode 走进程内 RPC，Web 走 kap-server 的 HTTP/WS。</li>
+</ul>
+
+    </article>
+    <footer class="page-footer">
+      <a class="nav-prev" href="ch05.html">← 第 5 章 KAP 服务器与 kosong：服务端外壳与 LLM 抽象</a>
+      <a class="nav-next" href="ch07.html">第 7 章 协议层：线协议、客户端 SDK 与 ACP 桥 →</a>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

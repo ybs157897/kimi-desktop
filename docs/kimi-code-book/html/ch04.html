@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第 4 章 v1 引擎：上一代内核 · Kimi Code 实现详解</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" href="index.html">
+      <span class="brand-name">Kimi Code 实现详解</span>
+      <span class="brand-sub">从终端到 DI 引擎 · 源码解读</span>
+    </a>
+    <nav class="side-nav"><div class="group">本书</div><a href="index.html">Kimi Code 源码解读：从终端到 DI 引擎</a>
+      <div class="group">正文</div><a href="ch01.html">第 1 章 总览与架构</a>
+      <a href="ch02.html">第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</a>
+      <a href="ch03.html">第 3 章 v2 引擎：DI × Scope 新架构</a>
+      <a href="ch04.html" class="active">第 4 章 v1 引擎：上一代内核</a>
+      <a href="ch05.html">第 5 章 KAP 服务器与 kosong：服务端外壳与 LLM 抽象</a>
+      <a href="ch06.html">第 6 章 TUI 与 VSCode 集成：两个平行前端</a>
+      <a href="ch07.html">第 7 章 协议层：线协议、客户端 SDK 与 ACP 桥</a>
+      <a href="ch08.html">第 8 章 minidb：自研嵌入式数据库</a>
+      <a href="ch09.html">第 9 章 基础设施：认证、遥测、执行环境与调试</a>
+      <div class="group">研究附录</div><a href="research/research-01.html">01 · apps/kimi-code —— CLI 主应用研究报告</a>
+      <a href="research/research-02.html">02 · agent-core-v2：DI × Scope 新架构 agent 引擎</a>
+      <a href="research/research-03.html">03 · agent-core（旧架构 agent 核心）研究报告</a>
+      <a href="research/research-04.html">04. kap-server + kosong：Kimi Code 的服务端外壳与 LLM 抽象层</a>
+      <a href="research/research-05.html">05 · pi-tui 与 VSCode 扩展（apps/vscode）</a>
+      <a href="research/research-06.html">06 · 协议层（protocol / klient / node-sdk / transcript / acp）研究报告</a>
+      <a href="research/research-07.html">任务 7/8：minidb —— 嵌入式 KV/文档数据库研究报告</a>
+      <a href="research/research-08.html">任务 8/8：基础设施层研究报告</a></nav>
+  </aside>
+  <main class="content">
+    <header class="page-header">
+      <div class="crumbs"><a href="index.html">Kimi Code 实现详解</a> / <span>正文</span></div>
+      <h1 class="page-title">第 4 章 v1 引擎：上一代内核</h1>
+    </header>
+    <nav class="page-toc"><div class="toc-title">本章目录</div><ol><li class="toc-2"><a href="#41-定位被-v2-取代但绝非死代码">4.1 定位：被 v2 取代，但绝非死代码</a></li><li class="toc-2"><a href="#42-手写-DI-容器di约-600-行零依赖">4.2 手写 DI 容器（di/，约 600 行零依赖）</a></li><li class="toc-2"><a href="#43-loop无状态主循环">4.3 loop：无状态主循环</a></li><li class="toc-2"><a href="#44-Agent-聚合根">4.4 Agent 聚合根</a></li><li class="toc-2"><a href="#45-ContextMemory历史状态机">4.5 ContextMemory：历史状态机</a></li><li class="toc-2"><a href="#46-容错与重试体系三层防御">4.6 容错与重试体系（三层防御）</a></li><li class="toc-2"><a href="#47-工具执行的安全与信任边界">4.7 工具执行的安全与信任边界</a></li><li class="toc-2"><a href="#48-RPC同进程模拟网络">4.8 RPC：同进程模拟网络</a></li><li class="toc-2"><a href="#49-持久化事件溯源式-wire-log">4.9 持久化：事件溯源式 wire log</a></li><li class="toc-2"><a href="#410-其它子系统速览">4.10 其它子系统速览</a></li><li class="toc-2"><a href="#411-关键代码位置索引">4.11 关键代码位置索引</a></li><li class="toc-2"><a href="#412-本章小结">4.12 本章小结</a></li></ol></nav>
+    <article class="markdown-body">
+<h1 id="第-4-章-v1-引擎上一代内核">第 4 章 v1 引擎：上一代内核</h1><blockquote>
+<p>研究对象：<code>packages/agent-core</code>（约 6.9 万行 TS，371 个文件）。
+学习目标：理解 v2 的&quot;前传&quot;——VSCode 风格手写 DI 容器、无状态纯循环、事件溯源式持久化。<strong>读 v1 是理解 v2 的捷径</strong>：v1 定义的概念（loop 契约、wire record、RPC 面、Hook 语义）是 v2 的直接前身。</p>
+</blockquote>
+<h2 id="41-定位被-v2-取代但绝非死代码"><a class="anchor" href="#41-定位被-v2-取代但绝非死代码" aria-hidden="true">#</a>4.1 定位：被 v2 取代，但绝非死代码</h2><p><code>agent-core</code> 是 Kimi Code 历史上第一个&quot;统一 agent 引擎&quot;（&quot;The unified agent engine for Kimi&quot;）。它把 agent 运行时的全部要素收拢在一个包里：Agent 聚合根（20 个子管理器）、无状态主循环、会话与持久化、宿主 RPC、DI 容器、MCP/插件/技能/内置工具。</p>
+<p><strong>与 agent-core-v2 的关系</strong>（证据链）：</p>
+<ol>
+<li>主应用用 v2：<code>apps/kimi-code</code> 依赖 <code>agent-core-v2</code>，<strong>不依赖</strong> <code>agent-core</code>。</li>
+<li>agent-core 的现存消费者：<code>node-sdk</code>（双引擎兼容层）、<code>acp-adapter</code>（仍跑 v1）、<code>apps/vis/server</code>、<code>migration-legacy</code>。</li>
+<li><strong>v1 仍承担&quot;用 v2 写出的会话文件恢复旧引擎&quot;的兼容职责</strong>：<code>restoreAgentRecord</code> 显式处理 v2 引擎写入的 <code>profile.bind</code>（映射为 v1 的 config.update + tools.set_active_tools）等 record 类型。</li>
+</ol>
+<p>一句话：agent-core 是 v2 的&quot;上一代内核&quot;，负责 SDK 嵌入、ACP 与迁移场景。</p>
+<h2 id="42-手写-DI-容器di约-600-行零依赖"><a class="anchor" href="#42-手写-DI-容器di约-600-行零依赖" aria-hidden="true">#</a>4.2 手写 DI 容器（di/，约 600 行零依赖）</h2><p>设计动机（di/README.md）：<strong>零运行时依赖</strong> + 与 VSCode <code>vs/platform/instantiation</code> 概念对齐。</p>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>语义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>createDecorator&lt;T&gt;(name)</code></td>
+<td>铸出&quot;品牌化可调用值&quot;作为服务标识；<strong>同名幂等</strong>（同一 name 返回同一引用）；同时是构造器参数装饰器</td>
+</tr>
+<tr>
+<td><code>SyncDescriptor&lt;T&gt;</code></td>
+<td>包装构造器 + 静态参数 + <code>supportsDelayedInstantiation</code> 标志</td>
+</tr>
+<tr>
+<td><code>ServiceCollection</code></td>
+<td>每容器一份 id → (descriptor|实例) 映射</td>
+</tr>
+<tr>
+<td><code>InstantiationService</code></td>
+<td>运行时容器：解析、缓存、子容器、追踪、销毁</td>
+</tr>
+<tr>
+<td><code>registerSingleton</code></td>
+<td>模块级全局注册表（import barrel 即触发副作用）</td>
+</tr>
+<tr>
+<td><code>Graph&lt;T&gt;</code></td>
+<td>依赖子树，用于环检测 + 叶子优先构建</td>
+</tr>
+</tbody></table>
+<p><strong>注入模型</strong>：构造器参数按序解析——非装饰静态参数在前、<code>@IFoo</code> 装饰的服务参数在后。</p>
+<p><strong>延迟实例化（Proxy 魔法）</strong>（instantiationService.ts:426-537）：首次 <code>accessor.get(IFoo)</code> 返回 <code>Proxy(Object.create(null))</code>，真实构造器<strong>不执行</strong>；Proxy 的 <code>get</code> trap 把 <code>onDid*</code>/<code>onWill*</code> 属性访问&quot;驻车&quot;进 LinkedList 早监听器；首个非事件属性访问触发真正构造，随后重放驻车监听器；<code>getPrototypeOf</code> trap 返回真实 ctor 的 prototype——<code>instanceof</code> 可用。</p>
+<p><strong>环检测双保险</strong>：</p>
+<ol>
+<li><strong>图遍历（主）</strong>：先用 <code>getServiceDependencies</code> 构建完整依赖子树（Graph），然后反复取 <code>roots()</code> <strong>叶子优先构造</strong>；图卡死（非空无根）抛 <code>CyclicDependencyError</code>，<code>findCycleSlow()</code> 格式化 <code>A -&gt; B -&gt; A</code> 路径——<strong>任何构造器体运行之前就能抓到环</strong>；</li>
+<li><strong>树级构造栈（防御）</strong>：根容器持有 <code>_inProgress</code> 栈，抓构造器体内 <code>accessor.get</code> 互相回调产生的运行时环。</li>
+</ol>
+<h2 id="43-loop无状态主循环"><a class="anchor" href="#43-loop无状态主循环" aria-hidden="true">#</a>4.3 loop：无状态主循环</h2><p>设计原则（loop/README.md）：<strong>loop 不持有会话、wire 传输、压缩执行、权限 UI、协议桥</strong>——这些全是宿主层职责；loop 与宿主之间只通过窄接口通信。</p>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>types.ts</code></td>
+<td><code>LoopHooks</code>（6 个阶段钩子）、<code>ExecutableTool</code>、<code>TurnResult</code>、<code>LoopStepStopReason</code></td>
+</tr>
+<tr>
+<td><code>llm.ts</code></td>
+<td><code>LLM</code> 接口：<code>systemPrompt/modelName/capability/chat()</code></td>
+</tr>
+<tr>
+<td><code>events.ts</code></td>
+<td><strong>事件双路</strong>：<code>LoopRecordedEvent</code>（step.begin/end、content.part、tool.call/result——入转录本）与 <code>LoopLiveOnlyEvent</code>（delta/progress/retrying——只直播）</td>
+</tr>
+<tr>
+<td><code>run-turn.ts</code></td>
+<td>回合收敛：abort 安全点、maxSteps、usage 聚合</td>
+</tr>
+<tr>
+<td><code>turn-step.ts</code></td>
+<td>单步：beforeStep 钩子、消息构造、LLM 调用、流式回调、工具批次交接</td>
+</tr>
+<tr>
+<td><code>tool-call.ts</code></td>
+<td>工具调用批次生命周期（preflight → prepare → 调度 → tool.result）</td>
+</tr>
+<tr>
+<td><code>tool-scheduler.ts</code></td>
+<td>有状态调度器：<strong>资源访问不冲突的任务可重叠执行，冲突任务按 provider 顺序串行</strong></td>
+</tr>
+<tr>
+<td><code>retry.ts</code></td>
+<td>指数退避重试（500ms×2^n 封顶 32s、±25% 抖动、<code>Retry-After</code> 覆盖）</td>
+</tr>
+<tr>
+<td><code>tool-access.ts</code></td>
+<td><code>ToolAccesses</code>：文件级读写/search 资源声明 + <code>conflict()</code> 判定</td>
+</tr>
+</tbody></table>
+<p><strong><code>LLM</code> 与 <code>ExecutableTool</code> 是宿主与 loop 的全部边界</strong>：宿主提供 <code>buildMessages</code>、<code>buildTools</code>、<code>dispatchEvent</code>、<code>hooks</code>，loop 不 import 任何宿主实现。</p>
+<p>一回合完整时序：</p>
+<pre class="hljs"><code>宿主(<span class="hljs-keyword">Session</span>/CLI)          Agent/TurnFlow                  <span class="hljs-keyword">loop</span> (无状态)                  kosong/Provider
+     │ prompt(<span class="hljs-keyword">input</span>, origin)  │                                │                              │
+     │───────────────────────&gt;│ records.logRecord(turn.prompt) │                              │
+     │                        │ launch(): turnId++, AbortController                           │
+     │                        │ turnWorker → runOneTurn        │                              │
+     │                        │ emit turn.started              │                              │
+     │                        │ context.appendUserMessage      │                              │
+     │                        │ UserPromptSubmit 钩子(可block)  │                              │
+     │                        │ runStepLoop:                   │                              │
+     │                        │  mcp.waitForInitialLoad        │                              │
+     │                        │  ┌─── runTurn 循环 ───────────┐│                              │
+     │                        │  │ beforeStep(compaction)     ││                              │
+     │                        │  │ buildMessages(context投影)  ││                              │
+     │                        │  │ dispatch step.<span class="hljs-keyword">begin</span> ──────&gt;││                              │
+     │                        │  │ llm.chat(messages,tools)   ││──── generate() ─────────────&gt;│
+     │                        │  │   流式: <span class="hljs-type">text</span>.delta/         ││  (流式回调 → 直播事件)        │
+     │                        │  │   tool.<span class="hljs-keyword">call</span>.delta (直播)    ││&lt;── <span class="hljs-keyword">usage</span> + toolCalls ────────│
+     │                        │  │ stop=tool_use?             ││                              │
+     │                        │  │  preflight校验(参数/工具存在) ││                              │
+     │                        │  │  <span class="hljs-keyword">prepare</span>钩子(去重)           ││                              │
+     │                        │  │  authorize钩子(权限/审批)    ││                              │
+     │                        │  │  dispatch tool.<span class="hljs-keyword">call</span> ──────&gt;││                              │
+     │                        │  │  ToolScheduler 执行         ││── <span class="hljs-keyword">execute</span>(ctx) ─────────────&gt;│
+     │                        │  │  dispatch tool.result ────&gt;││&lt;── ExecutableToolResult ─────│
+     │                        │  │  step.<span class="hljs-keyword">end</span> 封印(<span class="hljs-keyword">usage</span>)       ││                              │
+     │                        │  │  afterStep(记账/compaction) ││                              │
+     │                        │  │  继续 <span class="hljs-keyword">or</span> shouldContinueAfterStop 决策(<span class="hljs-number">4</span>级)                    │
+     │                        │  └─── (最多 maxStepsPerTurn) ──┘│                              │
+     │                        │ emit turn.ended(reason)        │                              │</code></pre><p>要点：</p>
+<ul>
+<li><strong><code>buildTools</code> 在 <code>beforeStep</code> 之后求值</strong>：beforeStep 可能跑压缩（丢弃动态工具 schema），提前快照会派发模型已没有的工具。</li>
+<li><strong>工具批次按 provider 顺序落事件</strong>：执行可乱序完成，但 <code>tool.result</code> 严格按 provider 顺序 await 分发，且每对 <code>tool.call</code> 必有配对 <code>tool.result</code>。</li>
+<li><strong>中断语义</strong>：<code>turn.interrupted</code> 事件在 <code>step.begin</code> 存在而无 <code>step.end</code> 时仍正确报告；usage 在 <code>llm.chat</code> 返回后立即记账（工具执行中途 abort 不丢已耗 token）。</li>
+</ul>
+<h2 id="44-Agent-聚合根"><a class="anchor" href="#44-Agent-聚合根" aria-hidden="true">#</a>4.4 Agent 聚合根</h2><p><code>Agent</code>（agent/index.ts:115）构造器把 20 个子系统一次性组装：</p>
+<pre class="hljs"><code>records / fullCompaction / microCompaction / context / config / turn /
+injection / permission / planMode / swarmMode / usage / skills / tools /
+background / <span class="hljs-title function_">cron</span>(仅 main) / goal / replayBuilder</code><span class="code-lang">ts</span></pre><p>关键设计：</p>
+<ul>
+<li><strong>AGENTS.md 硬性规则</strong>：<code>Agent</code> 构造器不得强制要求 <code>Session</code>/<code>agentId</code>——保证 Agent 可独立运行。</li>
+<li><strong><code>Agent.generate</code> 是闭包包装</strong>（:288）：在 kosong <code>generate()</code> 前挂上 LLM 请求日志、请求记录（wire record）、认证解析（<code>modelProvider.resolveAuth</code>）；abort 预检避免记录未发出的请求。</li>
+<li><strong><code>Agent.rpcMethods</code></strong>（:550）：把全部 RPC 方法映射到内部管理器——这是 <code>rpc/core-api.ts</code> 的 <code>AgentAPI</code> 实现。</li>
+<li><strong><code>toolSelectEnabled</code></strong>（:279）：渐进工具披露的三门闸（模型能力 <code>dynamically_loaded_tools</code> ∧ <code>tool_use</code> ∧ <code>tool-select</code> 实验开关）。</li>
+</ul>
+<p><strong>TurnFlow</strong>（agent/turn/index.ts:139）是回合的&quot;宿主侧&quot;编排：</p>
+<ul>
+<li><code>steer()</code>：活跃回合或手动压缩期间缓冲（<code>steerBuffer</code>），<code>onCompactionFinished</code> 重放；</li>
+<li><code>cancel()</code>：以 <code>userCancellationReason()</code> 作为 <code>signal.reason</code> abort——一路传给工具，让模型能区分&quot;用户主动打断&quot;与&quot;系统超时&quot;；</li>
+<li><code>turnWorker</code>：有活跃 goal 则走 <code>driveGoal</code>（每回合重新注入 GOAL_CONTINUATION_PROMPT），否则 <code>runOneTurn</code>；</li>
+<li><code>runOneTurn</code> <strong>永不 throw</strong>，异常映射为 <code>cancelled/failed</code>；</li>
+<li><code>runStepLoop</code> 实现宿主侧全部 6 个钩子：<code>beforeStep</code>（压缩）、<code>afterStep</code>（usage/compaction/goal 预算 stopTurn）、<code>shouldContinueAfterStop</code>（4 级继续决策：goal 预算硬顶 → steer 冲刷 → print 模式排空 → Stop 钩子一次续跑）、<code>prepareToolExecution</code>（同步去重）、<code>authorizeToolExecution</code>（权限）、<code>finalizeToolResult</code>（去重登记、PostToolUse 钩子、预算裁剪）。</li>
+</ul>
+<h2 id="45-ContextMemory历史状态机"><a class="anchor" href="#45-ContextMemory历史状态机" aria-hidden="true">#</a>4.5 ContextMemory：历史状态机</h2><p>不变量：<strong>历史尾部不得存在未闭合的工具调用交换</strong>——<code>pendingToolResultIds</code> 记录尾部缺失的 tool result，后续消息进 <code>deferredMessages</code> 直到补齐。</p>
+<pre class="hljs"><code>                    ┌─────────────────────────────────────────────────┐
+                    │ <span class="hljs-variable">_history</span>: <span class="hljs-variable">ContextMessage</span>[]                      │
+                    └─────────────────────────────────────────────────┘
+      不变量: 尾部不得有未闭合工具交换
+      新消息 → 若 <span class="hljs-variable">pending</span> 非空 → 进 <span class="hljs-variable">deferredMessages</span>，直到对应 <span class="hljs-variable">tool.<span class="hljs-class">result</span></span> 补齐
+                     │
+   <span class="hljs-variable">appendUserMessage</span> │ <span class="hljs-function"><span class="hljs-title">appendLoopEvent</span>(<span class="hljs-variable">tool.call</span>/<span class="hljs-variable"><span class="hljs-class">result</span></span>/<span class="hljs-variable">step.end</span>) │ <span class="hljs-variable">applyCompaction</span>
+   (<span class="hljs-variable">origin</span> 标记)      │ (折叠为 <span class="hljs-variable">ContextMessage</span>)                     │ (<span class="hljs-variable">head</span>+<span class="hljs-variable">tail</span> 保留+摘要)</span>
+                     ▼
+            投影层 <span class="hljs-variable">projector.ts</span>（每次请求构建，不落盘）:
+              <span class="hljs-function"><span class="hljs-title">project</span>() ── 媒体降级、孤儿 <span class="hljs-variable">tool</span> <span class="hljs-variable"><span class="hljs-class">result</span></span> 丢弃、尾部未闭合交换裁剪
+              <span class="hljs-variable">strictMessages</span> ── 严格线规重排（闭合工具调用、合并连续 <span class="hljs-variable">assistant</span>）
+              <span class="hljs-variable">mediaDegradedMessages</span> / <span class="hljs-variable">mediaStrippedMessages</span> ── 媒体投影</span></code></pre><ul>
+<li>消息带 <code>origin</code>（user/injection/retry/compaction_summary/shell_command/plugin_command/hook_result/system_trigger…），决定 replay 是否可见、undo 是否可删、投影是否进请求。</li>
+<li><code>undo(n)</code> 从尾部删到第 n 个真实用户输入，遇压缩摘要边界停；injection origin 的消息不可撤销。</li>
+</ul>
+<h2 id="46-容错与重试体系三层防御"><a class="anchor" href="#46-容错与重试体系三层防御" aria-hidden="true">#</a>4.6 容错与重试体系（三层防御）</h2><ol>
+<li><strong>step 层</strong>：<code>chatWithRetry</code> 默认 10 次尝试（9 次重试），退避 <code>min(500ms × 2^n, 32s)</code> + 25% 抖动，<code>Retry-After</code> 覆盖本地退避；每步发 <code>step.retrying</code> 直播事件。</li>
+<li><strong>消息投影重发</strong>（turn-step.ts:209-391，v1 最精细的恢复机制）：<ul>
+<li><strong>413 请求体过大</strong>：<code>normal → media-degraded → media-stripped</code> 逐级降级重发，且<strong>一旦某级成功，回合内后续 step 直接使用该投影</strong>（避免每步重复被拒）；</li>
+<li><strong>图片格式被拒</strong>（不知道哪张图有毒）：整体换文本标记重发一次——&quot;唯一保证无毒的投影&quot;；</li>
+<li><strong>结构非法</strong>（tool_use/tool_result 配对、空文本、角色不交替）：<code>buildMessagesStrict</code> 严格重建重发一次，仍被拒则大声报错（wire 合规性缺口信号）。</li>
+</ul>
+</li>
+<li><strong>上下文溢出</strong>（turn/index.ts:1027）：<code>APIContextOverflowError</code> 或 413+估计超窗 → 观测学习实际窗口（<code>observedMaxContextTokensByModel = 估计 × 0.85</code>）→ 强制压缩 → 重试；连续 3 次失败放弃抛 <code>CONTEXT_OVERFLOW</code>。</li>
+</ol>
+<p>三层防御保证&quot;<strong>同一段历史不会被 provider 反复拒绝而死循环</strong>&quot;。</p>
+<h2 id="47-工具执行的安全与信任边界"><a class="anchor" href="#47-工具执行的安全与信任边界" aria-hidden="true">#</a>4.7 工具执行的安全与信任边界</h2><ul>
+<li><strong><code>coerceToolResult</code></strong>（tool-call.ts:686）：工具是任意 JS，返回值经信任边界校验——<code>null/undefined</code>、非对象、缺 <code>output</code> 字段一律转 <code>isError</code> 结果，保证 <code>tool.result</code> 事件永远配对合法。</li>
+<li><strong><code>normalizeToolResult</code></strong>：空输出替换为 <code>&#39;Tool output is empty.&#39;</code>；<strong><code>stopTurn</code>/<code>message</code> 是循环内私货，持久化时剥掉</strong>，只保留 <code>note</code>（模型可见侧信道）。</li>
+<li><strong>2 秒宽限超时</strong>：abort 后工具若无视 <code>AbortSignal</code> 不收敛，<code>raceExecuteWithGraceTimeout</code> 用 2s 哨兵兜底返回合成错误。</li>
+<li><strong>abort 文案区分</strong>：<code>isUserCancellation(signal.reason)</code> 时明确告诉模型&quot;用户主动打断，不要自动重试&quot;。</li>
+<li><strong>未执行工具调用</strong>（<code>recordUnexecutedToolCalls</code>）：provider 流中断但响应仍带 toolCalls（参数可能截断）——<strong>不执行但也不丢弃</strong>：逐条记录并立即闭合合成错误结果，保持 wire 合法、不丢模型意图。</li>
+<li><strong><code>stopBatchAfterThis</code></strong>：工具成功返回 <code>stopTurn</code> 后，同批次的后续调用全部跳过，但仍记录 <code>tool.call</code>+<code>tool.result</code> 配对。</li>
+</ul>
+<p><strong>内置工具全清单</strong>（agent/tool/index.ts:775，约 25 个）：文件（Read 1000 行/100KB、Write、Edit replace_all+CRLF、Grep rg 子进程、Glob、ReadMediaFile）、Shell（Bash 前台/后台/超时自动转后台）、规划（EnterPlanMode/ExitPlanMode、select_tools）、协作（Agent/AgentSwarm/AskUserQuestion/Skill 递归深度 3）、目标（CreateGoal/GetGoal/UpdateGoal/SetGoalBudget）、后台（TodoList/TaskList/TaskOutput/TaskStop）、定时（CronCreate/CronList/CronDelete）、Web（WebSearch/FetchURL，宿主注入实现才注册）。</p>
+<p><strong>路径安全策略</strong>（tools/policies/path-access.ts）：纯词法规范化（不 follow symlink）、<code>isWithinDirectory</code> 强制分隔符边界防 <code>/workspace-evil</code> 共享前缀逃逸、默认模式<strong>越界绝对路径放行（仅标记 outsideWorkspace）、相对路径逃逸抛 <code>PathSecurityError</code></strong>。</p>
+<p><strong>SSRF 防护</strong>（tools/providers/local-fetch-url.ts:121）：只允许 http(s)、IP 字面量查私网/回环/ULA 黑名单、DNS <code>lookup all</code> 检查每个解析地址、<code>pinnedLookup</code> 把连接固定到已校验地址集<strong>防 DNS rebinding</strong>。</p>
+<h2 id="48-RPC同进程模拟网络"><a class="anchor" href="#48-RPC同进程模拟网络" aria-hidden="true">#</a>4.8 RPC：同进程模拟网络</h2><p><code>createRPC()</code>（rpc/client.ts:31）是<strong>同进程双端代理</strong>，<code>simulateNetwork</code> 用 <code>setTimeout(0)</code> + <code>JSON.stringify/parse</code> 往返：</p>
+<ul>
+<li>强制 payload/返回值 <strong>JSON 可序列化</strong>——跨进程序列化契约在进程内也被执行，杜绝引用泄漏；</li>
+<li>天然的异步边界（调用方拿到的永远是拷贝）；</li>
+<li>错误统一 <code>KimiErrorPayload</code> 线格式往返（<strong>有意剔除 cause/stack</strong>，<code>code</code> 判别）。</li>
+</ul>
+<p>类型面：<code>CoreAPI</code>（核心→SDK：事件、审批、问题、工具回调）与 <code>SDKAPI</code>（SDK→核心：prompt/steer/cancel/setModel…）两个方向。</p>
+<h2 id="49-持久化事件溯源式-wire-log"><a class="anchor" href="#49-持久化事件溯源式-wire-log" aria-hidden="true">#</a>4.9 持久化：事件溯源式 wire log</h2><pre class="hljs"><code>运行期:  任意状态变更 ──logRecord──► wire.jsonl (JSONL 追加, proper-lockfile 锁)
+            ├─ turn.prompt <span class="hljs-symbol">/</span> turn.steer <span class="hljs-symbol">/</span> turn.cancel
+            ├─ context.append_message <span class="hljs-symbol">/</span> append_loop_event <span class="hljs-symbol">/</span> apply_compaction
+            ├─ permission.set_mode <span class="hljs-symbol">/</span> tools.set_active_tools <span class="hljs-symbol">/</span> config.update
+            ├─ usage.record <span class="hljs-symbol">/</span> full_compaction.<span class="hljs-operator">*</span> <span class="hljs-symbol">/</span> plan_mode.<span class="hljs-operator">*</span> <span class="hljs-symbol">/</span> goal.<span class="hljs-operator">*</span>
+            └─ mcp.tools_discovered(带 hash 去重)
+恢复期:  resume() ──replay──► 逐条 restoreAgentRecord() 重放
+            契约: 只重建内存态, 不触发 UI 事件 <span class="hljs-symbol">/</span> LLM <span class="hljs-symbol">/</span> 工具 <span class="hljs-symbol">/</span> 网络
+            <span class="hljs-string">&quot;用写它的同一方法恢复它&quot;</span>
+兼容:    wire 版本号迁移 <span class="hljs-operator">+</span> v2 引擎 record 类型映射</code></pre><p>会话目录布局：</p>
+<pre class="hljs"><code><span class="hljs-symbol">&lt;kimiHomeDir&gt;</span><span class="hljs-symbol">/</span>
+├── sessions<span class="hljs-operator">/</span><span class="hljs-symbol">&lt;workDirKey&gt;</span><span class="hljs-operator">/</span><span class="hljs-symbol">&lt;sessionId&gt;</span><span class="hljs-symbol">/</span>     <span class="hljs-comment"># workDir 哈希分桶</span>
+│   ├── wire.jsonl          <span class="hljs-comment"># agent 事件溯源日志</span>
+│   ├── session.json        <span class="hljs-comment"># SessionMeta</span>
+│   ├── plans<span class="hljs-operator">/</span><span class="hljs-symbol">&lt;id&gt;</span>.md       <span class="hljs-comment"># 计划文件</span>
+│   ├── tasks<span class="hljs-operator">/</span><span class="hljs-symbol">&lt;id&gt;</span><span class="hljs-symbol">/output.log</span>
+│   ├── media-originals<span class="hljs-symbol">/</span>    <span class="hljs-comment"># 原图存档（sha256 寻址）</span>
+│   ├── blobs<span class="hljs-symbol">/</span>              <span class="hljs-comment"># BlobStore 大对象</span>
+│   └── logs<span class="hljs-symbol">/kimi-code.log</span>  <span class="hljs-comment"># 会话日志</span>
+├── plugins<span class="hljs-operator">/</span><span class="hljs-symbol">&lt;pluginId&gt;</span><span class="hljs-symbol">/</span>     <span class="hljs-comment"># 插件受管目录</span>
+└── session-index.json      <span class="hljs-comment"># 全局会话索引（追加式 + 墓碑）</span></code></pre><p>写路径全部走 <code>writeFileAtomicDurable</code>（tmp+fsync→rename→目录 fsync）或 proper-lockfile 互斥；fork 会话按 turnIndex 截断 wire log。</p>
+<h2 id="410-其它子系统速览"><a class="anchor" href="#410-其它子系统速览" aria-hidden="true">#</a>4.10 其它子系统速览</h2><ul>
+<li><strong>MCP</strong>（mcp/connection-manager.ts:129）：状态机 <code>pending → connected | failed | needs-auth | disabled</code>；<code>attemptId</code> 防止过期连接尝试覆盖新状态；<code>Promise.allSettled</code> <strong>失败隔离</strong>（一个 server 崩溃不影响会话启动）；OAuth 401 判定 needs-auth + 合成 <code>authenticate</code> 工具。</li>
+<li><strong>插件</strong>（plugin/manager.ts:39）：本地路径/GitHub/zip 三源安装 → manifest 校验 → 受管目录；能力聚合（enabledMcpServers 改名 <code>plugin__&lt;id&gt;__&lt;server&gt;</code>、enabledHooks 注入 env、enabledCommands 模板展开 <code>$ARGUMENTS</code>）。</li>
+<li><strong>Hook 引擎</strong>（session/hooks/）：Claude Code 风格——spawn shell 命令、stdin 喂 JSON、<strong>exit code 2 = block</strong>、stdout JSON 结构化输出（<code>permissionDecision:&#39;deny&#39;</code> → block）、30s 默认超时。</li>
+<li><strong>后台任务</strong>（agent/background/）：三类任务（bash/子代理/question）；内存环形缓冲 1MiB + 磁盘 <code>output.log</code>（权威、永不截断）；<strong>16MiB 硬顶</strong>超限 SIGTERM→宽限→SIGKILL；重启后 <code>reconcile()</code> 把&quot;磁盘标记 running 但无存活进程&quot;的任务标为 <code>lost</code>。</li>
+<li><strong>GoalMode</strong>：状态机 <code>active/paused/blocked/complete</code>（complete 瞬时态不落盘）；预算（token/turn/wall-clock）；resume 时 active 降级为 paused（磁盘上不可能在跑）。</li>
+<li><strong>flags</strong>：仅 2 个实验开关（tool-select、secondary-model）；<code>FlagResolver</code> 优先级：总开关 env → 单 flag env → config → registry 默认；纯同步实时读 env。</li>
+<li><strong>错误体系</strong>：<code>KimiError</code> 唯一错误类（判别按 <code>code</code> 字符串）；<code>ErrorCodes</code> 约 70 个 <code>domain.reason</code> 常量；<code>toKimiErrorPayload</code> 归一化任意错误（429→rate_limit、<strong>quota 耗尽 429 特判 api_error 防 swarm 重排队死循环</strong>、HTML 错误体抽 <code>&lt;title&gt;</code>）。</li>
+</ul>
+<h2 id="411-关键代码位置索引"><a class="anchor" href="#411-关键代码位置索引" aria-hidden="true">#</a>4.11 关键代码位置索引</h2><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>di/instantiationService.ts:283-394</code></td>
+<td>环检测双保险（图遍历 + 防御栈）</td>
+</tr>
+<tr>
+<td><code>di/instantiationService.ts:426-537</code></td>
+<td>延迟实例化 Proxy + 早监听器驻车</td>
+</tr>
+<tr>
+<td><code>di/instantiation.ts</code></td>
+<td><code>createDecorator</code>（同名幂等）</td>
+</tr>
+<tr>
+<td><code>loop/run-turn.ts:89</code></td>
+<td><code>runTurn</code>：回合收敛</td>
+</tr>
+<tr>
+<td><code>loop/turn-step.ts:209-391</code></td>
+<td>媒体投影降级重发（413 三级降级）</td>
+</tr>
+<tr>
+<td><code>loop/tool-call.ts:138</code></td>
+<td><code>runToolCallBatch</code>（provider 顺序交付）</td>
+</tr>
+<tr>
+<td><code>loop/tool-call.ts:686</code></td>
+<td><code>coerceToolResult</code> 信任边界</td>
+</tr>
+<tr>
+<td><code>loop/tool-scheduler.ts:28</code></td>
+<td><code>ToolScheduler</code> 冲突感知调度</td>
+</tr>
+<tr>
+<td><code>loop/retry.ts:38</code></td>
+<td><code>chatWithRetry</code> 指数退避</td>
+</tr>
+<tr>
+<td><code>agent/index.ts:115</code></td>
+<td><code>Agent</code> 聚合根（20 个子管理器）</td>
+</tr>
+<tr>
+<td><code>agent/index.ts:288</code></td>
+<td><code>Agent.generate</code> 闭包</td>
+</tr>
+<tr>
+<td><code>agent/turn/index.ts:400</code></td>
+<td><code>turnWorker</code>：goal 驱动 vs 单回合</td>
+</tr>
+<tr>
+<td><code>agent/turn/index.ts:808</code></td>
+<td><code>runStepLoop</code>：宿主侧 6 钩子</td>
+</tr>
+<tr>
+<td><code>agent/turn/index.ts:1027</code></td>
+<td>上下文溢出恢复（×0.85 观测学习）</td>
+</tr>
+<tr>
+<td><code>agent/context/index.ts:52</code></td>
+<td><code>ContextMemory</code> 历史状态机</td>
+</tr>
+<tr>
+<td><code>agent/tool/index.ts:775</code></td>
+<td><code>initializeBuiltinTools</code> 注册表</td>
+</tr>
+<tr>
+<td><code>agent/records/index.ts:32</code></td>
+<td><code>restoreAgentRecord</code> 重放分发</td>
+</tr>
+<tr>
+<td><code>session/subagent-host.ts:151</code></td>
+<td>子代理生成/恢复/超时</td>
+</tr>
+<tr>
+<td><code>session/store/session-store.ts:67</code></td>
+<td>磁盘布局/fork/索引</td>
+</tr>
+<tr>
+<td><code>session/hooks/runner.ts:60</code></td>
+<td><code>runHook</code> 外部命令钩子协议</td>
+</tr>
+<tr>
+<td><code>mcp/connection-manager.ts:129</code></td>
+<td>MCP 连接状态机</td>
+</tr>
+<tr>
+<td><code>rpc/client.ts:31</code></td>
+<td><code>createRPC</code> 模拟网络</td>
+</tr>
+<tr>
+<td><code>plugin/manager.ts:39</code></td>
+<td><code>PluginManager</code></td>
+</tr>
+<tr>
+<td><code>tools/args-validator.ts:30</code></td>
+<td>AJV 方言分派校验</td>
+</tr>
+<tr>
+<td><code>tools/providers/local-fetch-url.ts:121</code></td>
+<td>SSRF 防护（DNS pinning）</td>
+</tr>
+<tr>
+<td><code>config/schema.ts:339</code></td>
+<td><code>KimiConfigSchema</code> 唯一真源</td>
+</tr>
+</tbody></table>
+<h2 id="412-本章小结"><a class="anchor" href="#412-本章小结" aria-hidden="true">#</a>4.12 本章小结</h2><ul>
+<li>v1 是 v2 的&quot;上一代内核&quot;，仍服务 SDK 嵌入、ACP 与迁移场景；<code>restoreAgentRecord</code> 甚至能恢复 v2 写出的会话文件。</li>
+<li>特色是 VSCode 风格手写 DI 容器（零依赖）：叶子优先构造的构造前环检测 + 防御栈，Proxy 延迟实例化 + 早监听器驻车。</li>
+<li>loop 被刻意设计为&quot;无状态纯循环&quot;，只通过 <code>LLM</code>、<code>buildMessages</code>、<code>buildTools</code>、<code>dispatchEvent</code>、<code>LoopHooks</code> 五个窄接口与宿主交互。</li>
+<li>容错分层精细：step 级退避重试、媒体投影三级降级重发、上下文溢出观测学习后强制压缩——三层防御保证同一段历史不会被 provider 反复拒绝而死循环。</li>
+<li>持久化是事件溯源式 wire log：resume 逐条重放重建内存态（不发事件/不调 LLM/不执行工具）。</li>
+</ul>
+
+    </article>
+    <footer class="page-footer">
+      <a class="nav-prev" href="ch03.html">← 第 3 章 v2 引擎：DI × Scope 新架构</a>
+      <a class="nav-next" href="ch05.html">第 5 章 KAP 服务器与 kosong：服务端外壳与 LLM 抽象 →</a>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

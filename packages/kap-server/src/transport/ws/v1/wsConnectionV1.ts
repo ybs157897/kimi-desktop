@@ -30,6 +30,7 @@ import {
 } from '@moonshot-ai/transcript';
 import { ulid } from 'ulid';
 import type { RawData, WebSocket } from 'ws';
+import type { TerminalFrame } from '@moonshot-ai/agent-core-v2/os/interface/terminal';
 
 import type { CredentialValidator } from '../../../services/auth/credentials';
 import type { IConnectionRegistry } from '../connectionRegistry';
@@ -51,6 +52,7 @@ import {
   type TargetSubscription,
 } from './sessionEventBroadcaster';
 import { FsWatchBridge } from './fsWatchBridge';
+import type { TerminalBridge } from './terminalBridge';
 
 const DEFAULT_MAX_BUFFER_SIZE = 1000;
 
@@ -77,6 +79,7 @@ export interface WsConnectionV1Options {
   readonly socket: WebSocket;
   readonly broadcaster: SessionEventBroadcaster;
   readonly fsWatchBridge?: FsWatchBridge;
+  readonly terminalBridge?: TerminalBridge;
   readonly connectionRegistry: IConnectionRegistry;
   /**
    * Present-only credential check for the post-connect `client_hello`
@@ -107,6 +110,7 @@ export class WsConnectionV1 implements BroadcastTarget {
   private readonly socket: WebSocket;
   private readonly broadcaster: SessionEventBroadcaster;
   private readonly fsWatchBridge?: FsWatchBridge;
+  private readonly terminalBridge?: TerminalBridge;
   private readonly validateCredential?: CredentialValidator;
   private readonly maxBufferSize: number;
   private readonly flushIntervalMs: number;
@@ -142,6 +146,7 @@ export class WsConnectionV1 implements BroadcastTarget {
     this.socket = opts.socket;
     this.broadcaster = opts.broadcaster;
     this.fsWatchBridge = opts.fsWatchBridge;
+    this.terminalBridge = opts.terminalBridge;
     this.validateCredential = opts.validateCredential;
     this.logger = opts.logger;
     this.maxBufferSize = opts.maxBufferSize ?? DEFAULT_MAX_BUFFER_SIZE;
@@ -182,6 +187,10 @@ export class WsConnectionV1 implements BroadcastTarget {
     else this.sendSubscribedFrame(envelope);
   }
 
+  sendTerminalFrame(frame: TerminalFrame): void {
+    this.sendImmediateFrame(frame);
+  }
+
   private onMessage(data: RawData): void {
     if (this.closed) return;
     let frame: InboundFrame;
@@ -214,9 +223,15 @@ export class WsConnectionV1 implements BroadcastTarget {
       case 'watch_fs_remove':
         this.enqueueControl(() => this.onWatchFs(frame, false));
         return;
+      case 'terminal_attach':
+      case 'terminal_detach':
+      case 'terminal_input':
+      case 'terminal_resize':
+      case 'terminal_close':
+        this.enqueueControl(() => this.onTerminalControl(frame));
+        return;
       default:
-        // Unknown / not-yet-implemented control frame (e.g. terminal_*, abort)
-        // — ignore for now; terminal/abort stay on REST.
+        // Unknown / not-yet-implemented control frame (for example abort).
         return;
     }
   }
@@ -427,6 +442,60 @@ export class WsConnectionV1 implements BroadcastTarget {
     );
   }
 
+  private async onTerminalControl(frame: InboundFrame): Promise<void> {
+    const bridge = this.terminalBridge;
+    if (bridge === undefined) {
+      this.sendImmediateFrame(buildAck(frame.id ?? '', 1, 'terminal unavailable', {}));
+      return;
+    }
+    const payload = frame.payload ?? {};
+    const sessionId = typeof payload['session_id'] === 'string' ? payload['session_id'] : '';
+    const terminalId = typeof payload['terminal_id'] === 'string' ? payload['terminal_id'] : '';
+    if (frame.id === undefined || sessionId === '' || terminalId === '') {
+      this.sendImmediateFrame(buildAck(frame.id ?? '', 1, 'invalid terminal control payload', {}));
+      return;
+    }
+    try {
+      switch (frame.type) {
+        case 'terminal_attach': {
+          const sinceSeq = typeof payload['since_seq'] === 'number' ? payload['since_seq'] : undefined;
+          const result = await bridge.attach(this, sessionId, terminalId, sinceSeq);
+          this.sendImmediateFrame(buildAck(frame.id, 0, 'success', { attached: true, replayed: result.replayed }));
+          return;
+        }
+        case 'terminal_detach':
+          bridge.detach(this, sessionId, terminalId);
+          this.sendImmediateFrame(buildAck(frame.id, 0, 'success', { detached: true }));
+          return;
+        case 'terminal_input': {
+          const data = payload['data'];
+          if (typeof data !== 'string') throw new Error('terminal input data must be a string');
+          await bridge.write(sessionId, terminalId, data);
+          this.sendImmediateFrame(buildAck(frame.id, 0, 'success', { accepted: true }));
+          return;
+        }
+        case 'terminal_resize': {
+          const cols = payload['cols'];
+          const rows = payload['rows'];
+          if (!Number.isInteger(cols) || !Number.isInteger(rows) || Number(cols) <= 0 || Number(rows) <= 0) {
+            throw new Error('terminal cols and rows must be positive integers');
+          }
+          await bridge.resize(sessionId, terminalId, Number(cols), Number(rows));
+          this.sendImmediateFrame(buildAck(frame.id, 0, 'success', { resized: true }));
+          return;
+        }
+        case 'terminal_close':
+          await bridge.close(sessionId, terminalId);
+          this.sendImmediateFrame(buildAck(frame.id, 0, 'success', { closed: true }));
+          return;
+      }
+    } catch (error) {
+      this.sendImmediateFrame(
+        buildAck(frame.id, 1, error instanceof Error ? error.message : String(error), {}),
+      );
+    }
+  }
+
   /**
    * Shared attach path behind `client_hello` (legacy inline subscriptions)
    * and `subscribe`. Subscribes the connection via the broadcaster, then
@@ -620,6 +689,7 @@ export class WsConnectionV1 implements BroadcastTarget {
     this.broadcaster.removeGlobalTarget(this);
     for (const sid of this.subscriptions.keys()) this.broadcaster.unsubscribe(sid, this);
     this.fsWatchBridge?.detachConnection(this);
+    this.terminalBridge?.detachConnection(this);
     // registry removal is handled by registerWsV1 on the socket 'close' event.
   }
 }

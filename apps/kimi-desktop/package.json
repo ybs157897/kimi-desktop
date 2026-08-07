@@ -1,0 +1,62 @@
+{
+  "name": "@moonshot-ai/kimi-desktop",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "imports": {
+    "#/*": {
+      "types": [
+        "./src/renderer/src/*.ts",
+        "./src/renderer/src/*.tsx",
+        "./src/renderer/src/*/index.ts",
+        "./src/renderer/src/*/index.tsx"
+      ],
+      "default": "./src/renderer/src/*"
+    }
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "start": "electron .",
+    "dist": "electron-vite build && electron-builder",
+    "dist:dir": "electron-vite build && electron-builder --dir"
+  },
+  "dependencies": {
+    "@moonshot-ai/kap-server": "workspace:^",
+    "@moonshot-ai/protocol": "workspace:^",
+    "@moonshot-ai/transcript": "workspace:^",
+    "@tanstack/react-query": "^5.74.4",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "is-hotkey": "^0.2.0",
+    "katex": "^0.18.1",
+    "marked": "^18.0.9",
+    "node-pty": "^1.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "shiki": "^4.4.2",
+    "slate": "^0.126.0",
+    "slate-react": "^0.126.0",
+    "ws": "^8.18.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.4",
+    "@types/katex": "^0.16.8",
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "tailwindcss": "^4.1.4",
+    "typescript": "6.0.2",
+    "vite": "^6.3.3",
+    "vitest": "4.1.4"
+  }
+}

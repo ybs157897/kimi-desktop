@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第 8 章 minidb：自研嵌入式数据库 · Kimi Code 实现详解</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" href="index.html">
+      <span class="brand-name">Kimi Code 实现详解</span>
+      <span class="brand-sub">从终端到 DI 引擎 · 源码解读</span>
+    </a>
+    <nav class="side-nav"><div class="group">本书</div><a href="index.html">Kimi Code 源码解读：从终端到 DI 引擎</a>
+      <div class="group">正文</div><a href="ch01.html">第 1 章 总览与架构</a>
+      <a href="ch02.html">第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</a>
+      <a href="ch03.html">第 3 章 v2 引擎：DI × Scope 新架构</a>
+      <a href="ch04.html">第 4 章 v1 引擎：上一代内核</a>
+      <a href="ch05.html">第 5 章 KAP 服务器与 kosong：服务端外壳与 LLM 抽象</a>
+      <a href="ch06.html">第 6 章 TUI 与 VSCode 集成：两个平行前端</a>
+      <a href="ch07.html">第 7 章 协议层：线协议、客户端 SDK 与 ACP 桥</a>
+      <a href="ch08.html" class="active">第 8 章 minidb：自研嵌入式数据库</a>
+      <a href="ch09.html">第 9 章 基础设施：认证、遥测、执行环境与调试</a>
+      <div class="group">研究附录</div><a href="research/research-01.html">01 · apps/kimi-code —— CLI 主应用研究报告</a>
+      <a href="research/research-02.html">02 · agent-core-v2：DI × Scope 新架构 agent 引擎</a>
+      <a href="research/research-03.html">03 · agent-core（旧架构 agent 核心）研究报告</a>
+      <a href="research/research-04.html">04. kap-server + kosong：Kimi Code 的服务端外壳与 LLM 抽象层</a>
+      <a href="research/research-05.html">05 · pi-tui 与 VSCode 扩展（apps/vscode）</a>
+      <a href="research/research-06.html">06 · 协议层（protocol / klient / node-sdk / transcript / acp）研究报告</a>
+      <a href="research/research-07.html">任务 7/8：minidb —— 嵌入式 KV/文档数据库研究报告</a>
+      <a href="research/research-08.html">任务 8/8：基础设施层研究报告</a></nav>
+  </aside>
+  <main class="content">
+    <header class="page-header">
+      <div class="crumbs"><a href="index.html">Kimi Code 实现详解</a> / <span>正文</span></div>
+      <h1 class="page-title">第 8 章 minidb：自研嵌入式数据库</h1>
+    </header>
+    <nav class="page-toc"><div class="toc-title">本章目录</div><ol><li class="toc-2"><a href="#81-定位与演化">8.1 定位与演化</a></li><li class="toc-2"><a href="#82-数据模型与磁盘帧">8.2 数据模型与磁盘帧</a></li><li class="toc-2"><a href="#83-写入提交路径单次-set">8.3 写入提交路径（单次 set）</a></li><li class="toc-2"><a href="#84-组提交group-commit">8.4 组提交（group commit）</a></li><li class="toc-2"><a href="#85-非阻塞压缩compaction">8.5 非阻塞压缩（compaction）</a></li><li class="toc-2"><a href="#86-索引体系">8.6 索引体系</a></li><li class="toc-2"><a href="#87-Generation持久化索引检查点stage-5">8.7 Generation：持久化索引检查点（stage 5）</a></li><li class="toc-2"><a href="#88-ClusterDb多进程分片">8.8 ClusterDb：多进程分片</a></li><li class="toc-2"><a href="#89-多进程正确性lockfilets">8.9 多进程正确性（lockfile.ts）</a></li><li class="toc-2"><a href="#810-事件循环友好性">8.10 事件循环友好性</a></li><li class="toc-2"><a href="#811-关键代码位置索引">8.11 关键代码位置索引</a></li><li class="toc-2"><a href="#812-本章小结">8.12 本章小结</a></li></ol></nav>
+    <article class="markdown-body">
+<h1 id="第-8-章-minidb自研嵌入式数据库">第 8 章 minidb：自研嵌入式数据库</h1><blockquote>
+<p>研究对象：<code>packages/minidb</code>（约 1.8 万行 TS，零运行时依赖，仅 <code>node:*</code> 内置模块）。
+学习目标：理解一个&quot;教科书级&quot;的日志结构嵌入式数据库——Redis 风格内存 KV + SQLite 风格持久化（WAL + 快照 + 组提交 + 崩溃恢复），外加二级索引、全文检索与多进程分片。</p>
+</blockquote>
+<h2 id="81-定位与演化"><a class="anchor" href="#81-定位与演化" aria-hidden="true">#</a>8.1 定位与演化</h2><p>minidb 是 <strong>pure-Node.js 嵌入式键值/JSON 文档数据库</strong>：<code>&quot;A pure-Node.js embedded key-value database mixing Redis-style in-memory KV with SQLite-style durable persistence (WAL + snapshot)&quot;</code>。</p>
+<ul>
+<li><strong>Redis 侧</strong>：内存 <code>Map</code> 主索引 O(1) GET/SET、TTL（惰性 + 主动过期）、AOF 式 WAL 重写（BGREWRITEAOF 思想）、跳表（zskiplist）、RESP 协议服务器、maxmemory 驱逐策略。</li>
+<li><strong>SQLite 侧</strong>：append-only WAL + 快照、group commit、三种 fsync 策略（<code>synchronous</code> FULL/NORMAL/OFF 对应物）、单写者多读者、索引化查询。</li>
+</ul>
+<p><strong>在 Kimi Code 中的角色</strong>：</p>
+<ol>
+<li><strong>kap-server</strong>：用 <code>MiniDb</code> 构建全局会话/消息全文搜索服务（<code>searchService.ts</code>——写入用 <code>batch()</code>，读取用 <code>searchBoundedAsync</code>）；</li>
+<li><strong>agent-core-v2</strong>：用 <strong><code>ClusterDb</code></strong>（<code>/cluster</code> 子路径）做会话查询存储——多进程分片、跨分片合并查询；</li>
+<li><strong>apps/kimi-code</strong>：把 text-build worker 打包进 SEA 资产。</li>
+</ol>
+<p><strong>演化脉络</strong>（从代码注释里的 stage 编号还原）：stage 1-4 基础存储（Map + WAL + 快照 + 压缩 + 索引 + RESP server）；stage 5 <strong>persistent index generations</strong>（加载检查点 + WAL 增量重放，替代&quot;打开时全量重建&quot;）；stage 6 统一维护调度器 + worker 线程化文本构建 + 异步读 API；stage 7-12 围绕<strong>提交语义</strong>（WAL 毒化/组回滚/模糊提交）、在线备份、openOrRebuild、并发正确性加固。README 中大量 <code>review #N</code> 注释表明这是一份被多轮代码评审打磨过的代码库。</p>
+<p><strong>为什么自研</strong>（DESIGN_NOTES 的答案）：log-structured 而非 paged B-tree（顺序写 + 重放式恢复 + 简单崩溃安全，代价是内存索引 + 压缩策略，分别用 Map/跳表和二级索引解决）；V8 <code>Map</code> 免费获得 Redis 的增量 rehash；单线程事件循环天然串行化（NeDB 的并发-1 executor 免费获得）；<strong>约束第一条就是 pure Node.js、零原生绑定</strong>——Kimi Code 需要把数据库打进 SEA 单文件可执行。</p>
+<h2 id="82-数据模型与磁盘帧"><a class="anchor" href="#82-数据模型与磁盘帧" aria-hidden="true">#</a>8.2 数据模型与磁盘帧</h2><p>记录 = <code>{ key, value, dt1..dtN }</code>：key 字符串 ≤128 字节、<strong>有序</strong>（内部以 binary 字符串规范化保证字节序）；value 任意 JSON（<code>buffer|string|json</code> 三种 codec）；dt 列是任意多个顶层时间列（epoch-ms），与 value 分离、独立索引。</p>
+<p>磁盘帧（codec.ts:26-42）：</p>
+<pre class="hljs"><code><span class="hljs-attribute">off</span>   size  字段
+ <span class="hljs-attribute">0</span>    <span class="hljs-number">2</span>    magic = <span class="hljs-number">0</span>x4D <span class="hljs-number">0</span>x44 (<span class="hljs-string">&quot;MD&quot;</span>)
+ <span class="hljs-attribute">2</span>    <span class="hljs-number">1</span>    type   <span class="hljs-number">1</span>=SET <span class="hljs-number">2</span>=DEL(墓碑) <span class="hljs-number">3</span>=BATCH
+ <span class="hljs-attribute">4</span>    <span class="hljs-number">1</span>    flags
+ <span class="hljs-attribute">6</span>    <span class="hljs-number">2</span>    keyLen uint16
+ <span class="hljs-attribute">8</span>    <span class="hljs-number">4</span>    valLen uint32 (DEL 为 <span class="hljs-number">0</span>)
+<span class="hljs-attribute">10</span>    <span class="hljs-number">4</span>    metaLen uint32 (可无)
+<span class="hljs-attribute">14</span>    <span class="hljs-number">8</span>    expireAt int64 ms (<span class="hljs-number">0</span>=无)
+<span class="hljs-attribute">22</span>   k     key
+<span class="hljs-attribute">22</span>+k v     value
+<span class="hljs-attribute">22</span>+k+v m   meta (dt 列等)
+<span class="hljs-attribute">22</span>+k+v+m <span class="hljs-number">4</span>  crc32 —— 对<span class="hljs-meta"> [type..meta] 的 CRC-32 TRAILER</span></code></pre><p><strong>定长头让读者在读 payload 前即可算出全长</strong>；CRC 作 trailer 支持单趟验证；BATCH 帧的 value 域内再嵌一组子 op——一个 batch 只有一帧 = 一次组提交。</p>
+<h2 id="83-写入提交路径单次-set"><a class="anchor" href="#83-写入提交路径单次-set" aria-hidden="true">#</a>8.3 写入提交路径（单次 set）</h2><pre class="hljs"><code><span class="hljs-function"><span class="hljs-title">set</span><span class="hljs-params">(key, value, {ttl, dt})</span></span>
+  ├─ ensureOpen / ensureWritable
+  ├─ writeOps<span class="hljs-selector-class">.enter</span>()                    ← backup 门闩：备份期间返回 BACKUP_IN_PROGRESS
+  ├─ <span class="hljs-built_in">awaitRotation</span>()                     ← 压缩旋转临界区则停车
+  ├─ <span class="hljs-built_in">prepareSet</span>():
+  │    checkKey (≤<span class="hljs-number">128</span> 非空)；normDt / ttl 校验（finite）
+  │    <span class="hljs-built_in">encode</span>(value) → vbuf
+  │    canonical = <span class="hljs-built_in">decode</span>(vbuf)          ← json codec：编码后重解码=持久视图（索引一致性的根）
+  │    textTokens = 各 TextIndex<span class="hljs-selector-class">.prepareAdd</span>(canonical)   ← 分词器抛错在此拒绝写入
+  ├─ indexes.checkUnique（存在 unique 索引时包在 serializeUniqueWrites 链中）
+  ├─ memoryGuard.ensureMemoryFor（TTL 排空 → evict-lru → reject）
+  ├─ <span class="hljs-built_in">retryOnWalSeal</span>(commitSetOp)         ← WAL_SEALED / 旋转中 → 等旋转后重跑一次
+  └─ <span class="hljs-built_in">commitSetOp</span>():                      （与 wal<span class="hljs-selector-class">.append</span> 同一同步段）
+       frame = <span class="hljs-built_in">encodeFrame</span>(SET)
+       appended = wal<span class="hljs-selector-class">.appendLoc</span>(frame)   ← 同步得预测偏移 + batchId
+       <span class="hljs-built_in">applyOp</span>(op, applyBox)             ← 同一 tick 改 store + dt/compound/secondary/<span class="hljs-selector-tag">text</span> 索引
+       <span class="hljs-built_in">groupNoteKey</span>(group, pk, prev)     ← 组回滚登记
+       await appended<span class="hljs-selector-class">.done</span>               ← 提交点：帧进入 OS <span class="hljs-attribute">page</span> cache（always 策略含 fsync）
+         └─ 失败: rollbackGroup / restoreKey（seq 守卫）+ kickWalRecovery → 抛 ambiguous 错误
+       settleGroup
+       <span class="hljs-keyword">if</span> valueMode===<span class="hljs-string">&#x27;disk&#x27;</span>: publishWalRef   ← done 后才发布磁盘指针
+       <span class="hljs-built_in">maybeAutoCompact</span>()</code></pre><p>三个关键契约：</p>
+<ol>
+<li><strong>为什么 apply 与 append 必须同 tick</strong>：压缩的快照阶段与写并发——<code>applyOp</code> 在 <code>wal.append</code> 之后同步执行，保证 fence 时刻 store 已含该写；若跨 await，压缩可能拍下&quot;WAL 有帧但 store 没有&quot;的中间态。disk 模式下指针发布延迟到 <code>done</code> 之后，是因为 <code>appendLoc</code> 的偏移是<strong>预测值</strong>，字节还在内存队列里。</li>
+<li><strong>applyOp 契约</strong>（write-path.ts:525）：&quot;must not throw&quot;是结构性的——一切可能失败的验证（key 长度、TTL、编码、自定义分词器抛错）都在 prepare 边界完成，使 <code>applyOp</code> 成为纯赋值函数。</li>
+<li><strong>提交点 = 帧的 <code>done</code> Promise resolve</strong>。<code>set()</code> resolve 前内存状态可能已变（apply 先行），因此失败路径必须回滚，否则重开重放会&quot;复活&quot;被拒写的状态。<strong><code>ambiguous</code> 语义</strong>：WAL 写失败发生时磁盘上到底有没有这批字节是未知的（writev 部分落盘），调用方不能假设&quot;rejected 即无效果&quot;。</li>
+</ol>
+<h2 id="84-组提交group-commit"><a class="anchor" href="#84-组提交group-commit" aria-hidden="true">#</a>8.4 组提交（group commit）</h2><pre class="hljs"><code>tick N:  <span class="hljs-built_in">set</span>(A) → appendLoc(frameA, <span class="hljs-attribute">batchId</span>=7)
+        <span class="hljs-built_in">set</span>(B) → appendLoc(frameB, <span class="hljs-attribute">batchId</span>=7)     ← 同 tick 共享组
+        <span class="hljs-built_in">set</span>(C) → appendLoc(frameC, <span class="hljs-attribute">batchId</span>=7)
+        └─ setImmediate(flushBatch)
+macrotask: flushBatch():  writev([A,B,C]) → writeGen++ → resolve A/B/C（always 策略再 fsync）</code></pre><ul>
+<li>一个 <code>writev(2)</code> 覆盖整批——Node 纯 JS 下最大的吞吐收益（bench：并发写 everysec 组提交 ~725k ops/s，vs 逐条同步 always 模式 ~328 ops/s，差 2200 倍）。</li>
+<li><strong>失败整组回滚</strong>：组注册表（wal-group.ts）按 (WAL, batchId) 记录每 key 的批前记录；失败时逆序 reject、按组把 store/索引整体恢复到批前（与重开重放&quot;整组帧一起消失&quot;等价）。</li>
+<li><strong>毒化语义</strong>（WAL_POISONED）：写失败后所有 append 立即拒绝；owner 通过 <code>recoverWalInPlace</code> <strong>原地恢复</strong>——<code>truncate(db.wal, poison.failedAtOffset)</code> 精确去掉未确认字节。截断失败 → <code>writeDisabled</code> 状态（写全拒绝、读继续、close 跳过最终 flush——被拒写的残留帧在重开重放时&quot;复活&quot;）。<code>poisonPending</code> 是同机制的另一入口：<strong>applyOp 违反&quot;不抛错&quot;契约</strong>时，已入队未确认的帧必须永远不上盘。</li>
+</ul>
+<h2 id="85-非阻塞压缩compaction"><a class="anchor" href="#85-非阻塞压缩compaction" aria-hidden="true">#</a>8.5 非阻塞压缩（compaction）</h2><pre class="hljs"><code><span class="hljs-function"><span class="hljs-title">compact</span>():
+  <span class="hljs-variable">phase</span> <span class="hljs-number">1</span> <span class="hljs-variable">fence</span>:      <span class="hljs-variable">wal.flush</span>(); <span class="hljs-variable">baseOffset</span> = <span class="hljs-variable">wal.size</span>
+  <span class="hljs-variable">phase</span> <span class="hljs-number">2</span> <span class="hljs-variable">snapshot</span>:   <span class="hljs-title">writeSnapshot</span>(<span class="hljs-variable">store</span> → <span class="hljs-variable">db.snapshot.tmp</span>)   ← 非阻塞，写者继续
+  <span class="hljs-variable">phase</span> <span class="hljs-number">2.5</span> <span class="hljs-variable">pre</span>-<span class="hljs-variable">copy</span>: 循环 ≤<span class="hljs-number">5</span> 轮：<span class="hljs-variable">flush</span> → <span class="hljs-variable">head</span>=<span class="hljs-variable">wal.size</span> → <span class="hljs-variable">gap</span>=<span class="hljs-variable">head</span>-<span class="hljs-variable">copiedUpTo</span>
+                      <span class="hljs-variable">gap</span> ≤ <span class="hljs-number">64</span><span class="hljs-variable">KiB</span> 停；不收敛（<span class="hljs-variable">gap</span> &gt; <span class="hljs-variable">prevGap</span>*<span class="hljs-number">0.7</span>）停
+                      <span class="hljs-title">copyFileRange</span>(<span class="hljs-variable">wal</span> → <span class="hljs-variable">db.wal.tmp</span>)</span>
+  <span class="hljs-variable">phase</span> <span class="hljs-number">3</span> <span class="hljs-variable">rotation</span>（唯一阻塞段）:
+      <span class="hljs-variable">_rotateLock</span> = <span class="hljs-variable">new</span> <span class="hljs-variable">Promise</span>        ← 新写者在此停车
+      <span class="hljs-variable">wal.seal</span>()                       ← 在飞写者 <span class="hljs-variable">append</span> 立即 <span class="hljs-variable">WAL_SEALED</span> → 对端重试
+      <span class="hljs-variable">drain</span> 循环: <span class="hljs-variable">flush</span> → 拷贝剩余尾部（密封后 <span class="hljs-variable">head</span> 不再动 → 必然终止）
+      <span class="hljs-function"><span class="hljs-title">rotateReplace</span>(<span class="hljs-variable">snapshot.tmp</span> → <span class="hljs-variable">db.snapshot</span>) + <span class="hljs-title">fsyncDir</span>(<span class="hljs-variable">strict</span>)   ← 快照先
+      <span class="hljs-title">rotateReplace</span>(<span class="hljs-variable">wal.tmp</span> → <span class="hljs-variable">db.wal</span>)        + <span class="hljs-title">fsyncDir</span>(<span class="hljs-variable">strict</span>)      ← <span class="hljs-variable">WAL</span> 后
+      <span class="hljs-variable">fresh</span> <span class="hljs-variable">WAL</span> <span class="hljs-variable">open</span>；<span class="hljs-title">remap</span>()（磁盘指针重映射）；<span class="hljs-variable">valueReader.reopenBoth</span>()</span>
+      <span class="hljs-function"><span class="hljs-title">releaseRotation</span>()</span>
+  <span class="hljs-variable">phase</span> <span class="hljs-number">4</span> <span class="hljs-variable">bookkeeping</span>: <span class="hljs-variable">stats</span> + <span class="hljs-function"><span class="hljs-title">onCompacted</span>()（<span class="hljs-variable">generations</span> 开启 = 同一事务发布新代数）</span></code></pre><ul>
+<li><strong>崩溃安全论证</strong>：恢复总是&quot;加载快照 + 重放 WAL&quot;（LWW）。两个 rename <strong>先快照后 WAL</strong>：若崩溃落在两者之间，新快照配旧完整 WAL——重放整个旧 WAL 对 fence 前帧幂等、对 fence 后帧正确；反序则旧快照配截断新 WAL，丢失 fence 前数据。该论证依赖每次 rename 后<strong>严格 fsync 目录</strong>（不支持的平台显式降级）。</li>
+<li><strong>pre-copy 收敛控制</strong>：写风暴中 append 速率 ≈ 拷贝速率时 gap 永不缩小（实测 WAL 无界增长、磁盘放大 ~20x）——5 轮 + 0.7 收敛比，不收敛就让旋转段吸收残余尾部。</li>
+<li><strong>旋转失败自愈</strong>：seal 是单向的，seal 后任何失败都会让后续写永久卡死 → catch 块换入<strong>全新 WAL</strong>（在路径当前真实 EOF 追加）。</li>
+</ul>
+<h2 id="86-索引体系"><a class="anchor" href="#86-索引体系" aria-hidden="true">#</a>8.6 索引体系</h2><table>
+<thead>
+<tr>
+<th>索引</th>
+<th>数据结构</th>
+<th>查询</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>主键</td>
+<td><code>Map</code> + 有序跳表</td>
+<td>O(1) get；O(log N) range/prefix</td>
+</tr>
+<tr>
+<td>dt 列</td>
+<td>每列一个 <code>SkipList&lt;number,string&gt;</code></td>
+<td>O(log N) range / 有序迭代</td>
+</tr>
+<tr>
+<td>二级 equality</td>
+<td><code>Map&lt;scalarKey, Set&lt;pk&gt;&gt;</code></td>
+<td>O(1) findEq</td>
+</tr>
+<tr>
+<td>二级 range</td>
+<td><code>SkipList</code></td>
+<td>O(log N + limit)</td>
+</tr>
+<tr>
+<td>复合索引</td>
+<td>每组值一个 <code>SkipList</code>（orderBy 键, pk）</td>
+<td>组内有序范围，无全排序</td>
+</tr>
+<tr>
+<td>全文索引</td>
+<td>内存字典 + 磁盘 postings + 内存 delta/墓碑</td>
+<td>TF-IDF 评分、AND/OR</td>
+</tr>
+</tbody></table>
+<ul>
+<li><strong>SkipList</strong>：Redis zskiplist 泛化，<strong>span 字段</strong>实现 O(log N) rank 与高效分页；<code>bulkLoad</code> 对已排序输入做确定性平衡 4 叉塔构建（O(N)），供 generation 镜像载入。</li>
+<li><strong>二级索引事务</strong>（index-manager.ts:221）：<code>staged → persist → publish</code> 三步——create 时索引先进 <code>staged</code> 私有区（对查询不可见，但写维护路径已开始喂它，unique 校验也对其生效），sidecar 原子持久化成功后 <code>publish()</code> 才移入 live map。消除&quot;并发 create 共用同一 tmp 文件&quot;与&quot;持久化失败导致注册表与磁盘分叉&quot;两类竞态。</li>
+<li><strong>unique 校验</strong>：<code>checkUniqueBatch</code> 是&quot;批后状态&quot;验证——按 value 建批内 claim map + 对 live holder 做 <code>assertVacated</code>（holder 是 claimant 本人或批内删除/迁走者才算合法）——因此&quot;两个 key 交换唯一值&quot;这类合法转换被接受，且与顺序无关。</li>
+</ul>
+<p><strong>查询引擎</strong>（query-engine.ts）：候选集收集顺序 = key（惰性迭代器）→ dt 各列求交 → text 全文命中求交 → filter 中可索引谓词交集 → 全空则全表扫描。<strong>dt 有序 fast path</strong>（tryDtOrderedLimit）：查询恰好&quot;单 dt 列范围 + 按该列排序 + 有 limit&quot;时，直接按 dt 跳表顺序游走、命中 limit 即停——不物化、不排序。同步 <code>query()</code> 与异步 <code>queryAsync()</code> 双管道严格镜像。</p>
+<p><strong>全文索引</strong>（text-index）：内存词典 + delta 写缓冲（写路径零磁盘 IO）+ 磁盘 postings（delta+varint 压缩、CRC 帧）+ 墓碑；磁盘 postings 只在<strong>基座提交</strong>（generation 构建/压缩/打开重建）时重写。<strong>rebase 机制</strong>：<code>beginRebase()</code> 开始捕获写入 → 后台构建新基座 → <code>commitRebase()</code> 整体换绑（O(1) 交换）→ 重放捕获的 op；<code>baseEpoch</code> 保证跨基座交换的异步读不脏读。<strong>ngram 分词器</strong>：NFKC+小写归一后按码点切 2/3 元，crc32 哈希到 2^22 桶；查询端短词只发 2 元、长词只发 3 元（更少更选择性）；下游 <code>normalizeLiteral</code> 确认步骤保证<strong>零假阳性</strong>——解决 <code>C++</code>、<code>$\frac{a}{b}$</code>、emoji 这类符号密集文本的子串精确搜索。</p>
+<h2 id="87-Generation持久化索引检查点stage-5"><a class="anchor" href="#87-Generation持久化索引检查点stage-5" aria-hidden="true">#</a>8.7 Generation：持久化索引检查点（stage 5）</h2><pre class="hljs"><code>db.<span class="hljs-keyword">snapshot</span> / db.wal                权威数据（不变）
+db.indexes.json / db.textindexes.json   索引定义 sidecar（真源）
+generations/
+  g<span class="hljs-number">-000001</span>/                         已发布代数（不可变）
+    store / dt.<span class="hljs-keyword">index</span> / secondary.<span class="hljs-keyword">index</span> / compound.<span class="hljs-keyword">index</span> / <span class="hljs-type">text</span>-&lt;n&gt;.*
+    <span class="hljs-keyword">snapshot</span>       db.<span class="hljs-keyword">snapshot</span> 的硬链接（disk 模式 <span class="hljs-keyword">ref</span> 指向它）
+    manifest.json  最后写 —— 目录内文件&quot;有意义&quot;的判据
+<span class="hljs-keyword">CURRENT</span>                            一行：当前代数 id</code></pre><ul>
+<li><strong>发布协议</strong>（崩溃安全）：构建进 <code>g-N.tmp-*</code> → 逐文件写 + fsync → fsync tmp 目录 → rename 为 <code>g-N</code> → fsync <code>generations/</code> → 原子替换 CURRENT → fsync db 目录。CURRENT 只会指向完全 fsync 过的代数；中途崩溃只残留 tmp 目录。</li>
+<li><strong>加载协议</strong>：读 CURRENT → 校验 manifest（未知版本 = 结构化回退，<strong>永不删除</strong>）→ 校验 WAL/快照锚点（dev/ino + size）→ 载入 store 镜像 + 每个<strong>定义哈希</strong>仍匹配的索引镜像 → 重放 checkpoint 之后的 WAL 帧。任何失败回退到传统完整恢复，回退路径不碰权威数据。</li>
+<li><strong>定义哈希</strong>：每个索引的 <code>crc32(stableJson(def))</code> 决定该索引镜像是否仍有效——定义变更只作废该索引（从已载入 store 重建单索引）。</li>
+</ul>
+<h2 id="88-ClusterDb多进程分片"><a class="anchor" href="#88-ClusterDb多进程分片" aria-hidden="true">#</a>8.8 ClusterDb：多进程分片</h2><ul>
+<li><strong>路由</strong>：<code>stableHash32(key) % shardCount</code> 纯哈希，所有进程无需协调即一致。</li>
+<li><strong>写</strong>：<code>ShardLockPool</code> 按需获取分片写锁（LRU 缓存、默认 16 分片），<strong>锁租约</strong>：<code>lockRenewMs</code> 定时续期（证明存活）+ <code>lockHoldMs</code>（默认 250ms）上限——到点让出锁，防连续写入进程饿死他人。</li>
+<li><strong>读</strong>：不取锁。本进程持有写锁时用缓存 writer，否则用<strong>只读 MiniDb 实例 + 指纹再校验</strong>（WAL 增量为快路径）；落后时<strong>增量追赶</strong> <code>catchUpFromWal</code>（只应用新增 WAL 帧，而非整体重开）。</li>
+<li><strong>一致性</strong>：单 key / 同分片 batch 强一致（每分片单写者 + 原子 WAL 帧）；跨分片 best-effort，<code>crossShard:&#39;2pc&#39;</code> 预留未实现（打开即拒绝）。</li>
+<li><strong>索引</strong>：集群级注册表为真源；每个分片 writer 打开后应用缺失定义；<code>query</code> 用 skip=0、limit=skip+limit 扇出再全局重排。</li>
+</ul>
+<h2 id="89-多进程正确性lockfilets"><a class="anchor" href="#89-多进程正确性lockfilets" aria-hidden="true">#</a>8.9 多进程正确性（lockfile.ts）</h2><p>O_EXCL 创建 + <strong>令牌</strong>（<code>pid:uuid</code>）；stale 接管<strong>只在 owner PID 已死时</strong>发生（<code>process.kill(pid,0)</code>），永不因&quot;太老&quot;接管。接管是竞争协议：先写 watch（让竞争者全程可见）→ 检查 → 写 bid → rename → <strong>自适应 settle 等待</strong>（60ms~2s，按本次接管耗时的 4 倍缩放——固定值在共享 CI 上会被调度停顿击穿）→ 终验。</p>
+<p><strong>只读副本与 generation 配对</strong>：只读 opener 扫描 snapshot/WAL 时若恰逢写者压缩旋转，可能把旧快照配新截断 WAL——<code>recover()</code> 跑<strong>有界多趟</strong>：每趟对两个文件做 dev/ino/size 指纹（打开 fd 前 + 最后读后重 stat），任何代数切换 → 整趟作废、指数退避重试。耗尽重试抛 <code>RecoveryGenerationChurnError</code>。</p>
+<h2 id="810-事件循环友好性"><a class="anchor" href="#810-事件循环友好性" aria-hidden="true">#</a>8.10 事件循环友好性</h2><ul>
+<li>快照编码<strong>分块 + 每 2000 条让出</strong>；disk 模式快照值读取按 (file, offset) 分组排序 → 限并发（默认 8）异步定位读 + 每片 8MiB 字节预算——顺序 I/O 而非随机 readSync。</li>
+<li>全文构建走 <strong>worker_thread</strong>（有界内存聚合，超预算落排好序的段 → 分段外部归并）；worker 只写 tmp 目录，主线程<strong>验证（sanity + 流式 crc）后才 <code>commitRebase</code></strong>；worker 缺失/槽位不足/自定义分词器/小语料（&lt;4096 文档）→ 内联在主线程。</li>
+<li>维护调度器：每库同时一个重型任务、队列背压、statfs 磁盘预检、AbortSignal 取消、<code>markPublishing()</code> 后关闭<strong>等待</strong>而非取消。</li>
+</ul>
+<h2 id="811-关键代码位置索引"><a class="anchor" href="#811-关键代码位置索引" aria-hidden="true">#</a>8.11 关键代码位置索引</h2><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/codec.ts:26-33</code></td>
+<td>帧常量（MAGIC &quot;MD&quot;、22 字节头、CRC trailer）</td>
+</tr>
+<tr>
+<td><code>src/wal.ts:30</code></td>
+<td><code>FsyncPolicy</code>：always/everysec/no</td>
+</tr>
+<tr>
+<td><code>src/wal.ts:188-217</code></td>
+<td><code>appendLoc</code>：预测偏移 + 组 id</td>
+</tr>
+<tr>
+<td><code>src/wal.ts:225-312</code></td>
+<td><code>flushBatch</code>：writev 组提交、毒化点 = 批首帧偏移</td>
+</tr>
+<tr>
+<td><code>src/wal.ts:340-344</code></td>
+<td><code>poisonPending</code>：applyOp 违约兜底</td>
+</tr>
+<tr>
+<td><code>src/store.ts:118-147</code></td>
+<td><code>Store</code>：map + 跳表 + TTL 堆 + 字节记账</td>
+</tr>
+<tr>
+<td><code>src/store.ts:218-243</code></td>
+<td><code>setRef</code>：seq 身份守卫</td>
+</tr>
+<tr>
+<td><code>src/store.ts:375-390</code></td>
+<td><code>bulkLoadRefs</code>：generation O(N) 灌入</td>
+</tr>
+<tr>
+<td><code>src/write-path.ts:202-228</code></td>
+<td><code>set</code> 全管道</td>
+</tr>
+<tr>
+<td><code>src/write-path.ts:232-300</code></td>
+<td><code>commitSetOp</code>：同 tick append+apply</td>
+</tr>
+<tr>
+<td><code>src/write-path.ts:525-534</code></td>
+<td>applyOp &quot;must not throw&quot; 契约注释</td>
+</tr>
+<tr>
+<td><code>src/write-path.ts:607-640</code></td>
+<td><code>restoreKey</code>/<code>restoreGroupKey</code>：seq 守卫回滚</td>
+</tr>
+<tr>
+<td><code>src/compaction.ts:238-400</code></td>
+<td><code>runCompaction</code> 全流程</td>
+</tr>
+<tr>
+<td><code>src/compaction.ts:321-331</code></td>
+<td><code>remap</code> 磁盘指针重映射</td>
+</tr>
+<tr>
+<td><code>src/recovery.ts:105-113</code></td>
+<td><code>frameToOps</code>：三方共享解释层</td>
+</tr>
+<tr>
+<td><code>src/skiplist.ts:59-120</code></td>
+<td><code>SkipList</code> + <code>bulkLoad</code></td>
+</tr>
+<tr>
+<td><code>src/index-manager.ts:209-228</code></td>
+<td>staged 事务区</td>
+</tr>
+<tr>
+<td><code>src/index-manager.ts:335-364</code></td>
+<td><code>checkUniqueBatch</code> 批后验证</td>
+</tr>
+<tr>
+<td><code>src/query-engine.ts:155-223</code></td>
+<td><code>tryDtOrderedLimit</code> fast path</td>
+</tr>
+<tr>
+<td><code>src/text-index/index.ts:81-189</code></td>
+<td><code>TextIndex</code>：delta/墓碑/双基座/baseEpoch</td>
+</tr>
+<tr>
+<td><code>src/trigram.ts:66-80</code></td>
+<td>ngram 分词器（crc32 哈希桶）</td>
+</tr>
+<tr>
+<td><code>src/generation.ts:139-211</code></td>
+<td>manifest / indexDefHash</td>
+</tr>
+<tr>
+<td><code>src/generation-builder.ts</code></td>
+<td>代数构建与 CURRENT 原子发布</td>
+</tr>
+<tr>
+<td><code>src/backup.ts:60-80</code></td>
+<td>在线备份 fence</td>
+</tr>
+<tr>
+<td><code>src/lockfile.ts:74-120</code></td>
+<td>watch-bid-rename 接管协议</td>
+</tr>
+<tr>
+<td><code>src/cluster/index.ts:69-139</code></td>
+<td><code>ClusterDb</code></td>
+</tr>
+<tr>
+<td><code>src/cluster/lock-pool.ts</code></td>
+<td>分片锁池（租约/让出/LRU）</td>
+</tr>
+<tr>
+<td><code>src/maintenance.ts:28-52</code></td>
+<td>维护调度器</td>
+</tr>
+<tr>
+<td><code>src/worker/text-build-core.ts</code></td>
+<td>worker 全文构建（外部归并）</td>
+</tr>
+<tr>
+<td><code>src/memory-guard.ts:77-101</code></td>
+<td><code>ensureMemoryFor</code>：TTL 排空 → evict-lru → reject</td>
+</tr>
+</tbody></table>
+<h2 id="812-本章小结"><a class="anchor" href="#812-本章小结" aria-hidden="true">#</a>8.12 本章小结</h2><ul>
+<li>minidb 是日志结构嵌入式数据库（Bitcask/Redis AOF 血统）：<strong>WAL 是唯一真源，一切索引都是可重建的派生状态，恢复永远&quot;加载快照 + 重放 WAL（LWW）&quot;</strong>。</li>
+<li>最精细的工程投入在提交语义：applyOp 与 WAL append 同 tick、组回滚 + 毒化截断原地恢复、<code>ambiguous</code> 错误语义、WAL_SEALED 透明重试、seq 身份守卫——注释里几十处 <code>review #N</code> 显示这是被多轮评审打磨的代码。</li>
+<li>查询能力远超&quot;KV 库&quot;：zskiplist 的 span 字段支撑 O(log N) rank、Mongo 风格统一 <code>query()</code>、CJK 分词 + TF-IDF 全文索引、n-gram 哈希子串精确检索、persistent generations 检查点让启动免于全量重建。</li>
+<li>多进程扩展走&quot;分片 + 每分片单写者&quot;而非全局锁：哈希路由、锁租约 + lockHoldMs 让出防饿死、只读实例指纹再校验 + WAL 增量追赶；强一致限于单分片，跨分片 best-effort（2pc 预留未实现）。</li>
+</ul>
+
+    </article>
+    <footer class="page-footer">
+      <a class="nav-prev" href="ch07.html">← 第 7 章 协议层：线协议、客户端 SDK 与 ACP 桥</a>
+      <a class="nav-next" href="ch09.html">第 9 章 基础设施：认证、遥测、执行环境与调试 →</a>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

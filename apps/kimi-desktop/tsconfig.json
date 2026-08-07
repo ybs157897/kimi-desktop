@@ -1,0 +1,13 @@
+{
+  // Mirror the repo root tsconfig (moduleResolution bundler, strict flags) —
+  // the renderer consumes `@moonshot-ai/transcript` / `@moonshot-ai/protocol`
+  // through source `exports`, so their sources are type-checked here too.
+  // Only the environment (DOM + vite client types) differs from the root.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"],
+    "noEmit": true
+  },
+  "include": ["src", "test", "electron.vite.config.ts", "vitest.config.ts"]
+}

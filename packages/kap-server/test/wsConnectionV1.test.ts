@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { IConnectionRegistry } from '../src/transport/ws/connectionRegistry';
 import type { SessionEventBroadcaster } from '../src/transport/ws/v1/sessionEventBroadcaster';
+import type { TerminalBridge } from '../src/transport/ws/v1/terminalBridge';
 import {
   type WsConnectionV1Options,
   WsConnectionV1,
@@ -253,9 +254,66 @@ describe('WsConnectionV1 transcript subscriptions (subscribe_v2)', () => {
     return { broadcaster, calls, detaches };
   }
 
-  function controlFrame(type: string, payload: Record<string, unknown>): string {
+function controlFrame(type: string, payload: Record<string, unknown>): string {
     return JSON.stringify({ type, id: 'req-1', payload });
-  }
+}
+
+it('attaches a terminal when the control frame is valid and relays replayed output', async () => {
+  const socket = new FakeSocket();
+  const terminalBridge = {
+    attach: vi.fn(async (conn: { sendTerminalFrame: (frame: unknown) => void }) => {
+      conn.sendTerminalFrame({
+        type: 'terminal_output',
+        seq: 7,
+        session_id: 's1',
+        terminal_id: 't1',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        payload: { data: 'ready' },
+      });
+      return { replayed: 1 };
+    }),
+    detachConnection: vi.fn(),
+  } as unknown as TerminalBridge;
+  const conn = makeConn(socket, { terminalBridge });
+
+  socket.emit('message', controlFrame('terminal_attach', {
+    session_id: 's1',
+    terminal_id: 't1',
+    since_seq: 6,
+  }));
+
+  await vi.waitFor(() => expect(terminalBridge.attach).toHaveBeenCalledOnce());
+  expect(socket.frames()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: 'terminal_output', seq: 7, payload: { data: 'ready' } }),
+    expect.objectContaining({ type: 'ack', id: 'req-1', code: 0, payload: { attached: true, replayed: 1 } }),
+  ]));
+  conn.close();
+});
+
+it('writes terminal input when the client sends a valid control frame', async () => {
+  const socket = new FakeSocket();
+  const write = vi.fn(async () => {});
+  const terminalBridge = {
+    write,
+    detachConnection: vi.fn(),
+  } as unknown as TerminalBridge;
+  const conn = makeConn(socket, { terminalBridge });
+
+  socket.emit('message', controlFrame('terminal_input', {
+    session_id: 's1',
+    terminal_id: 't1',
+    data: 'pwd\n',
+  }));
+
+  await vi.waitFor(() => expect(write).toHaveBeenCalledWith('s1', 't1', 'pwd\n'));
+  expect(socket.frames()).toContainEqual(expect.objectContaining({
+    type: 'ack',
+    id: 'req-1',
+    code: 0,
+    payload: { accepted: true },
+  }));
+  conn.close();
+});
 
   it('forwards subscribe_v2 grades and transcript_since to the broadcaster and stores them per session', async () => {
     const socket = new FakeSocket();

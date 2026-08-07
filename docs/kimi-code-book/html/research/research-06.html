@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>06 · 协议层（protocol / klient / node-sdk / transcript / acp）研究报告 · Kimi Code 实现详解</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" href="../index.html">
+      <span class="brand-name">Kimi Code 实现详解</span>
+      <span class="brand-sub">从终端到 DI 引擎 · 源码解读</span>
+    </a>
+    <nav class="side-nav"><div class="group">本书</div><a href="../index.html">Kimi Code 源码解读：从终端到 DI 引擎</a>
+      <div class="group">正文</div><a href="../ch01.html">第 1 章 总览与架构</a>
+      <a href="../ch02.html">第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</a>
+      <a href="../ch03.html">第 3 章 v2 引擎：DI × Scope 新架构</a>
+      <a href="../ch04.html">第 4 章 v1 引擎：上一代内核</a>
+      <a href="../ch05.html">第 5 章 KAP 服务器与 kosong：服务端外壳与 LLM 抽象</a>
+      <a href="../ch06.html">第 6 章 TUI 与 VSCode 集成：两个平行前端</a>
+      <a href="../ch07.html">第 7 章 协议层：线协议、客户端 SDK 与 ACP 桥</a>
+      <a href="../ch08.html">第 8 章 minidb：自研嵌入式数据库</a>
+      <a href="../ch09.html">第 9 章 基础设施：认证、遥测、执行环境与调试</a>
+      <div class="group">研究附录</div><a href="research-01.html">01 · apps/kimi-code —— CLI 主应用研究报告</a>
+      <a href="research-02.html">02 · agent-core-v2：DI × Scope 新架构 agent 引擎</a>
+      <a href="research-03.html">03 · agent-core（旧架构 agent 核心）研究报告</a>
+      <a href="research-04.html">04. kap-server + kosong：Kimi Code 的服务端外壳与 LLM 抽象层</a>
+      <a href="research-05.html">05 · pi-tui 与 VSCode 扩展（apps/vscode）</a>
+      <a href="research-06.html" class="active">06 · 协议层（protocol / klient / node-sdk / transcript / acp）研究报告</a>
+      <a href="research-07.html">任务 7/8：minidb —— 嵌入式 KV/文档数据库研究报告</a>
+      <a href="research-08.html">任务 8/8：基础设施层研究报告</a></nav>
+  </aside>
+  <main class="content">
+    <header class="page-header">
+      <div class="crumbs"><a href="../index.html">Kimi Code 实现详解</a> / <span>研究附录</span></div>
+      <h1 class="page-title">06 · 协议层（protocol / klient / node-sdk / transcript / acp）研究报告</h1>
+    </header>
+    <nav class="page-toc"><div class="toc-title">本章目录</div><ol><li class="toc-2"><a href="#1-子系统定位与职责">1. 子系统定位与职责</a></li><li class="toc-3"><a href="#11-与-KAP-agent-core-agent-core-v2-的关系">1.1 与 KAP / agent-core / agent-core-v2 的关系</a></li><li class="toc-2"><a href="#2-包目录清单与依赖关系">2. 包/目录清单与依赖关系</a></li><li class="toc-3"><a href="#21-依赖关系总览workspace-内部--表示依赖">2.1 依赖关系总览（workspace 内部，-&gt; 表示依赖）</a></li><li class="toc-3"><a href="#22-目录模块清单按包">2.2 目录/模块清单（按包）</a></li><li class="toc-2"><a href="#3-模块结构与核心类型">3. 模块结构与核心类型</a></li><li class="toc-3"><a href="#31-protocol线协议-schema">3.1 protocol：线协议 schema</a></li><li class="toc-3"><a href="#32-klient契约驱动的-v2-客户端-facade">3.2 klient：契约驱动的 v2 客户端 facade</a></li><li class="toc-3"><a href="#33-node-sdk双引擎统一宿主-SDK">3.3 node-sdk：双引擎统一宿主 SDK</a></li><li class="toc-3"><a href="#34-transcript转录渲染数据层">3.4 transcript：转录渲染数据层</a></li><li class="toc-3"><a href="#35-acp-adapter-与-acp-serverACP-桥">3.5 acp-adapter 与 acp-server：ACP 桥</a></li><li class="toc-2"><a href="#4-关键数据流-状态机-时序">4. 关键数据流 / 状态机 / 时序</a></li><li class="toc-3"><a href="#41-WS-多端同步协议protocol-定义kap-server-实现">4.1 WS 多端同步协议（protocol 定义，kap-server 实现）</a></li><li class="toc-3"><a href="#42-klient-双传输-RPC-路径">4.2 klient 双传输 RPC 路径</a></li><li class="toc-3"><a href="#43-node-sdk-v2-会话接线session-wiring">4.3 node-sdk v2 会话接线（session-wiring）</a></li><li class="toc-3"><a href="#44-transcript-数据流">4.4 transcript 数据流</a></li><li class="toc-3"><a href="#45-ACP-会话主流程两包同构">4.5 ACP 会话主流程（两包同构）</a></li><li class="toc-2"><a href="#5-重要实现细节">5. 重要实现细节</a></li><li class="toc-3"><a href="#51-protocol">5.1 protocol</a></li><li class="toc-3"><a href="#52-klient">5.2 klient</a></li><li class="toc-3"><a href="#53-node-sdk">5.3 node-sdk</a></li><li class="toc-3"><a href="#54-transcript">5.4 transcript</a></li><li class="toc-3"><a href="#55-acp-adapter-acp-server">5.5 acp-adapter / acp-server</a></li><li class="toc-2"><a href="#6-关键代码位置索引">6. 关键代码位置索引</a></li><li class="toc-3"><a href="#61-protocol">6.1 protocol</a></li><li class="toc-3"><a href="#62-klient">6.2 klient</a></li><li class="toc-3"><a href="#63-node-sdk">6.3 node-sdk</a></li><li class="toc-3"><a href="#64-transcript">6.4 transcript</a></li><li class="toc-3"><a href="#65-acp-adapter">6.5 acp-adapter</a></li><li class="toc-3"><a href="#66-acp-server">6.6 acp-server</a></li><li class="toc-2"><a href="#7-与其它子系统的接口">7. 与其它子系统的接口</a></li><li class="toc-3"><a href="#71-向外暴露的-API">7.1 向外暴露的 API</a></li><li class="toc-3"><a href="#72-与其它子系统的关键接口面">7.2 与其它子系统的关键接口面</a></li><li class="toc-3"><a href="#73-演进观察">7.3 演进观察</a></li></ol></nav>
+    <article class="markdown-body">
+<h1 id="06-协议层protocol-klient-node-sdk-transcript-acp研究报告">06 · 协议层（protocol / klient / node-sdk / transcript / acp）研究报告</h1><blockquote>
+<p>分析对象：<code>packages/protocol</code>（5,394 行 src / 10,510 行含测试）、<code>packages/klient</code>（4,931 行）、<code>packages/node-sdk</code>（7,153 行）、<code>packages/transcript</code>（3,824 行）、<code>packages/acp-adapter</code>（5,534 行）、<code>packages/acp-server</code>（5,483 行）
+报告日期：2026-08-06。行号引用均以本仓库当前 HEAD 为准；除标注外均为 src 下文件。</p>
+</blockquote>
+<h2 id="1-子系统定位与职责"><a class="anchor" href="#1-子系统定位与职责" aria-hidden="true">#</a>1. 子系统定位与职责</h2><p>这六个包构成 Kimi Code 的&quot;协议层&quot;：一端定义 Kimi Code 引擎（agent-core / agent-core-v2）<strong>对外线协议</strong>的类型与契约，另一端把同一套引擎能力翻译成<strong>第三方集成协议（ACP）<strong>与</strong>宿主 SDK 外观</strong>。可以按&quot;面向谁&quot;把它们分成三组：</p>
+<ul>
+<li><strong>线协议规范（<code>protocol</code>）</strong>：Kimi Code daemon 的 REST + WebSocket 协议 schema 库。它定义了信封（envelope）、错误码、分页、WS 控制帧、事件类型、消息/会话/任务/工具/FS 等全部线上数据形状。它是<strong>纯类型与纯 schema</strong>（zod），零运行时逻辑，唯一目的是让多个实现方（v1 引擎、v2 引擎、服务器、客户端、Web UI）对同一份协议说话。<code>kap-server</code> 是它的主要&quot;消费者-镜像&quot;：<code>packages/kap-server/src/protocol/</code> 存在一份<strong>同名同构的协议拷贝</strong>（含 <code>events-zod.ts</code>、<code>rest-*.ts</code>），且 kap-server 的 <code>package.json</code> 并不依赖本包——两处靠人工保持同步，这解释了为什么 protocol 包本身在 v2 时代处于&quot;半冻结&quot;状态。</li>
+<li><strong>客户端 SDK 双雄（<code>klient</code> + <code>node-sdk</code>）</strong>：<code>klient</code> 是面向 <strong>agent-core-v2 引擎</strong>的传输无关客户端 facade（<code>global.*</code> / <code>session(id).*</code> / <code>agent(id).*</code>，ipc/memory 双传输）；<code>node-sdk</code>（<code>@moonshot-ai/kimi-code-sdk</code>）是<strong>对外发布</strong>的宿主 SDK，把 v1/v2 两代引擎统一成一套 <code>KimiHarness</code>/<code>Session</code> 外观。<code>klient</code> 是 v2 时代的&quot;内网客户端&quot;，<code>node-sdk</code> 是&quot;公共入口&quot;。</li>
+<li><strong>ACP 桥（<code>acp-adapter</code> + <code>acp-server</code>）</strong>：Agent Client Protocol（ACP，Anthropic 主导的开放协议，见 <a href="https://agentclientprotocol.com/" target="_blank" rel="noopener">https://agentclientprotocol.com/</a>，Zed / JetBrains 等编辑器用它驱动编码 agent）的两种服务器实现。<code>acp-adapter</code> 桥接 <strong>v1 引擎</strong>（agent-core + node-sdk 的 KimiHarness），<code>acp-server</code> 桥接 <strong>v2 引擎</strong>（agent-core-v2 + klient），二者都是 <code>kimi acp</code> 子命令的后端，通过 <code>KIMI_CODE_LEGACY_FLAG</code> 切换。</li>
+<li><strong>转录层（<code>transcript</code>）</strong>：会话转录（transcript）的<strong>同构渲染数据层</strong>——把引擎事件流投影为可渲染的回合制时间线（turn/step/frame 树），供 Web UI（经 kap-server REST/WS）消费。它是协议层里唯一&quot;向下&quot;消费引擎事件、向上提供渲染模型的包。</li>
+</ul>
+<h3 id="11-与-KAP-agent-core-agent-core-v2-的关系"><a class="anchor" href="#11-与-KAP-agent-core-agent-core-v2-的关系" aria-hidden="true">#</a>1.1 与 KAP / agent-core / agent-core-v2 的关系</h3><p>&quot;KAP&quot;（Kimi Agent Protocol）不是一个独立协议文件，而是 <strong><code>/api/v1</code> REST + <code>/api/v1/ws</code> WebSocket 整套线协议的对外统称</strong>（详见 04 号报告）。本层六个包与 KAP 的关系：</p>
+<pre class="hljs"><code>                     ┌────────────────── KAP（线协议，/api/v1 REST + WS）──────────────────┐
+                     │                                                                     │
+   @moonshot-ai/protocol  ── 定义信封/错误码/事件/请求响应 schema（规范源，纯 zod）          │
+        ▲ 镜像（手工同步）        ▲ 定义事件帧类型                                   │
+        │                        │                                                    │
+ kap-server/src/protocol/ ── 服务器侧协议拷贝            agent-core(v1) rpc/* ── v1 引擎用 protocol 定义 RPC 线契约
+        │                        │                                                    │
+   kap-server（REST/WS 宿主）    agent-core-v2 ── 引擎侧（仅 tool display schema）        │
+        │                        │                                                    │
+        └── WS 事件流 ── 消费方：Web UI（浏览器）、klient 事件契约的镜像、pi-tui      │
+                                                                                     │
+   @moonshot-ai/klient  ── agent-core-v2 的客户端 facade（ipc/memory，契约驱动）      │
+   @moonshot-ai/node-sdk ── 宿主 SDK（v1: agent-core createRPC；v2: klient/memory）   │
+   @moonshot-ai/acp-adapter ── ACP stdio 服务器（v1 引擎）                             │
+   @moonshot-ai/acp-server   ── ACP stdio 服务器（v2 引擎，native）                    │
+   @moonshot-ai/transcript   ── 转录渲染数据层（被 kap-server 消费）                    │</code></pre><p>关键架构事实：</p>
+<ol>
+<li><strong>protocol 是&quot;规范源&quot;而非&quot;运行依赖&quot;</strong>：v2 引擎链（agent-core-v2、kap-server、klient）几乎不 import 它——agent-core-v2 只用了 <code>ToolInputDisplay</code>（<code>tool/toolContract.ts:21</code>、<code>agent/toolExecutor/toolExecutorService.ts:23</code>），kap-server 完全用自己的拷贝，klient 仅把它作为 devDependency 做编译期 parity 断言。真正的运行依赖方是 <strong>v1 引擎 agent-core</strong>（rpc/core-api、rpc/events、rpc/core-impl 及 oauth/skill/config/fileStore/workspace/terminal/message 等服务的 wire 类型）和 <strong>acp-server</strong>（事件类型）。</li>
+<li><strong>两代客户端是&quot;同一协议、两个实现&quot;</strong>：node-sdk 的 v1 客户端走 agent-core 的 <code>createRPC</code>（进程内 + setTimeout/JSON 模拟网络），v2 客户端走 <code>bootstrap()</code> + klient memory 传输——但对外暴露<strong>恒定的 v1 协议形状</strong>（<code>Event</code>/<code>SessionSummary</code>/<code>KimiConfig</code>）。v1 语义兼容层被完整地搬进了 node-sdk 的 <code>v2/</code> 目录（event-mapper、session-mapper、config-mapper、resume-replay、import-context）。</li>
+<li><strong>两个 ACP 实现是&quot;迁移产物&quot;</strong>：<code>acp-adapter</code>（SDK ^0.23，旧 <code>AgentSideConnection</code> API，v1 引擎）是 reference implementation；<code>acp-server</code>（SDK ^1.3，新 <code>agent()</code> builder API，v2 引擎）是从前者移植的 native 版本，模块一一对应并新增 FS/终端反向 RPC。<code>kimi acp</code> 默认走 acp-server，仅 <code>KIMI_CODE_LEGACY_FLAG=1</code> 时回退 acp-adapter。</li>
+<li><strong>transcript 是唯一被 kap-server 直接依赖的协议层包</strong>：engine → kap-server → transcript 契约，方向单向；前端（Web UI）经 kap-server 的 REST/WS 面间接消费。</li>
+</ol>
+<h2 id="2-包目录清单与依赖关系"><a class="anchor" href="#2-包目录清单与依赖关系" aria-hidden="true">#</a>2. 包/目录清单与依赖关系</h2><h3 id="21-依赖关系总览workspace-内部--表示依赖"><a class="anchor" href="#21-依赖关系总览workspace-内部--表示依赖" aria-hidden="true">#</a>2.1 依赖关系总览（workspace 内部，-> 表示依赖）</h3><pre class="hljs"><code><span class="hljs-variable">@moonshot-ai</span>/protocol
+  &lt;- agent-core      (v1 引擎：rpc 层 + 各服务 wire 类型，运行依赖)
+  &lt;- agent-core-v2   (仅 ToolInputDisplay 类型，<span class="hljs-number">2</span> 个文件)
+  &lt;- klient          (仅 devDependency：test/contract-parity.ts 编译期断言)
+  &lt;- acp-server      (事件类型：AssistantDeltaEvent/ToolCallStartedEvent/TurnEndReason 等)
+  （kap-server 不依赖本包——自持 src/protocol/ 同名拷贝）
+
+<span class="hljs-variable">@moonshot-ai</span>/klient
+  -&gt; agent-core-v2   (<span class="hljs-attribute">workspace</span>:^，类型 + DI token，运行时)
+  -&gt; zod
+  -&gt; protocol        (devDep，parity 测试)
+  &lt;- acp-server      (组合根：<span class="hljs-built_in">createKlient</span>({scope}) memory 传输)
+  &lt;- node-sdk        (sdk-rpc-client-v2.ts：createKlient memory 传输做 SDK RPC 客户端)
+
+<span class="hljs-variable">@moonshot-ai</span>/kimi-code-sdk (node-sdk)
+  -&gt; agent-core / agent-core-v2 / kaos / kimi-code-oauth / kosong / klient (全 devDep，tsdown alwaysBundle 进发布产物)
+  &lt;- acp-adapter     (唯一 runtime 消费者：KimiHarness 注入)
+  （工厂 createKimiHarness/createKimiHarnessV2 仓库内无人调用——留给外部 IDE 插件等宿主）
+
+<span class="hljs-variable">@moonshot-ai</span>/transcript
+  -&gt; zod (仅此一个依赖，刻意<span class="hljs-string">&quot;结构封闭、内容开放&quot;</span>)
+  &lt;- kap-server      (coreEventMap.ts 投影 / transcriptService / sessionEventBroadcaster / routes/transcript)
+  &lt;- apps/kimi-inspect
+
+<span class="hljs-variable">@moonshot-ai</span>/acp-adapter
+  -&gt; <span class="hljs-variable">@agentclientprotocol</span>/sdk ^<span class="hljs-number">0.23</span>.<span class="hljs-number">0</span> / agent-core / kaos / kimi-code-sdk
+  &lt;- apps/kimi-code  (cli/sub/acp.ts legacy 路径，KIMI_CODE_LEGACY_FLAG)
+
+<span class="hljs-variable">@moonshot-ai</span>/acp-server
+  -&gt; <span class="hljs-variable">@agentclientprotocol</span>/sdk ^<span class="hljs-number">1.3</span>.<span class="hljs-number">0</span> / agent-core-v2 / klient / protocol
+  &lt;- apps/kimi-code  (cli/sub/acp-native.ts native 路径，动态 import)</code></pre><h3 id="22-目录模块清单按包"><a class="anchor" href="#22-目录模块清单按包" aria-hidden="true">#</a>2.2 目录/模块清单（按包）</h3><table>
+<thead>
+<tr>
+<th>包</th>
+<th>目录</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>protocol</td>
+<td><code>src/</code>（根 14 文件）</td>
+<td>信封/错误码/分页/时间/request-id/事件/显示载荷/WS 控制帧/AsyncAPI</td>
+</tr>
+<tr>
+<td>protocol</td>
+<td><code>src/rest/</code>（24 文件）</td>
+<td>每个 REST 域一套 <code>*Request/Response</code> zod schema（session/message/prompt/fs/approval/question/task/tool/skill/terminal/workspace/auth/oauth/meta/config/modelCatalog/file/fsBrowse/connection/guiStore/snapshot）</td>
+</tr>
+<tr>
+<td>klient</td>
+<td><code>src/core/</code></td>
+<td><code>KlientChannel</code> SPI、<code>createKlientFromChannel</code>、四相位校验、事件 hub、三个 facade</td>
+</tr>
+<tr>
+<td>klient</td>
+<td><code>src/contract/</code></td>
+<td>27 个 wire 服务的 zod 契约（global 16 文件 + session 7 + agent 4）</td>
+</tr>
+<tr>
+<td>klient</td>
+<td><code>src/transports/ipc/</code></td>
+<td>unix socket NDJSON 传输（channel/codec/host）</td>
+</tr>
+<tr>
+<td>klient</td>
+<td><code>src/transports/memory/</code></td>
+<td>in-process dispatcher（scope 解析 + 反射调用 + JSON 克隆）</td>
+</tr>
+<tr>
+<td>node-sdk</td>
+<td><code>src/</code>（根 12 文件）</td>
+<td><code>SDKRpcClientBase</code>（~80 方法外观）、v1/v2 客户端、harness、session、auth、catalog、config-rpc、model-provider</td>
+</tr>
+<tr>
+<td>node-sdk</td>
+<td><code>src/v2/</code>（7 文件）</td>
+<td>6 个 v1↔v2 映射层 + session-wiring 事件桥</td>
+</tr>
+<tr>
+<td>transcript</td>
+<td><code>src/model/</code>（11 文件）</td>
+<td>领域模型：turn/step/frame/item/interaction/task/todo/attachment/prompt/meta/ids</td>
+</tr>
+<tr>
+<td>transcript</td>
+<td><code>src/ops/</code>、<code>src/store/</code></td>
+<td>L2 幂等操作（14 种 op + 纯函数 reducer）、L1 存储（AgentTranscript/TranscriptStore）</td>
+</tr>
+<tr>
+<td>transcript</td>
+<td><code>src/granularity/</code>、<code>src/view/</code>、<code>src/pagination/</code>、<code>src/history/</code>、<code>src/contract/</code></td>
+<td>L3 订阅粒度、L4 视图注册表、turn-cursor 分页、冷重建、线上契约 schema</td>
+</tr>
+<tr>
+<td>acp-adapter</td>
+<td><code>src/</code>（18 文件）</td>
+<td><code>AcpServer</code>/<code>AcpSession</code>/<code>events-map</code>/<code>convert</code>/<code>approval</code>/<code>question</code>/<code>mcp</code>/<code>modes</code>/<code>slash</code>/<code>kaos-acp</code>/<code>config-options</code>/<code>model-catalog</code>/<code>auth-methods</code>/<code>version</code>/<code>log-guard</code>/<code>marker</code></td>
+</tr>
+<tr>
+<td>acp-server</td>
+<td><code>src/</code>（19 文件 + 2 子目录）</td>
+<td><code>start</code>（组合根）/<code>server</code>/<code>session</code>/<code>events-map</code>/<code>convert</code>/<code>replay</code>/<code>interaction-bridge</code>/<code>approval</code>/<code>question</code>/<code>acp-client</code>/<code>acp-fs/</code>/<code>acp-terminal/</code> + 与 adapter 同名的支撑模块</td>
+</tr>
+</tbody></table>
+<h2 id="3-模块结构与核心类型"><a class="anchor" href="#3-模块结构与核心类型" aria-hidden="true">#</a>3. 模块结构与核心类型</h2><h3 id="31-protocol线协议-schema"><a class="anchor" href="#31-protocol线协议-schema" aria-hidden="true">#</a>3.1 protocol：线协议 schema</h3><p><strong>信封与错误（<code>envelope.ts</code>、<code>error-codes.ts</code>）</strong>。所有 REST 响应统一 <code>{ code, msg, data, request_id }</code> 信封（<code>data</code> nullable，可选 <code>details</code>/<code>stack</code>）；<code>okEnvelope</code> 固定 <code>code:0, msg:&#39;success&#39;</code>。错误码按十进制前缀分区：<code>0</code> 成功、<code>4xxxx</code> 客户端错误（HTTP-4xx 类比）、<code>5xxxx</code> daemon 内部、<code>6xxxx</code> 工具运行时、<code>7xxxx</code> LLM provider 透传（msg 保留上游原文）、<code>8xxxx</code> MCP 透传、<code>9xxxx</code> 预留。细分包括：<code>40001/40002</code> 校验与畸形请求；<code>40110-40113</code> 认证（provisioning/token 缺失/401/模型无法解析）；<code>40401-40416</code> 十六种 not_found；<code>40901-40920</code> 冲突类（SESSION_BUSY、APPROVAL_ALREADY_RESOLVED、GOAL_* 系列等）；<code>41001-41003</code> 过期；<code>41301-41305</code> 超限（文件过大/FS 超 10MB/命中超限/路径越界/grep 超 30s）；<code>42902</code> WS watch 超限；<code>50001/50003</code> 兜底；<code>60001/60002</code> 工具错误。<code>ErrorCodeReason</code> 提供每码的稳定点分字符串（<code>session.not_found</code> 等），供日志与客户端分类。文件头还显式列了<strong>保留不再复用</strong>的码（40101-40103、42901、50002）。</p>
+<p><strong>消息模型（<code>message.ts</code>）</strong>。<code>Message { id, session_id, role(user/assistant/tool/system), content[], created_at, prompt_id?, parent_message_id?, metadata? }</code>；<code>content</code> 是 7 种块的判别联合：<code>text</code>/<code>tool_use</code>/<code>tool_result</code>/<code>image</code>/<code>video</code>/<code>file</code>/<code>thinking</code>。图片/视频共用 <code>ImageSource</code>（<code>url</code>/<code>base64</code>/<code>file</code> 三态，url 可带 provider 文件 id）；<code>file</code> 块只带元数据（<code>file_id/name/media_type/size</code>），字节永远走 <code>/files</code> 通道。</p>
+<p><strong>会话与工作区（<code>session.ts</code>、<code>workspace.ts</code>）</strong>。<code>Session</code> 是列表与详情共用的核心形状，含 <code>busy</code>（任一 agent 有活跃 turn 或后台租约）、<code>main_turn_active?</code>、<code>pending_interaction?</code>（<code>none/approval/question</code>）、<code>last_turn_reason?</code>、<code>agent_config</code>（model/system_prompt/tools/mcp_servers/thinking/permission_mode/plan_mode/swarm_mode/goal_*）、<code>usage</code>（token/成本/上下文）、<code>permission_rules</code>、<code>message_count</code>、<code>last_seq</code>。注意设计取舍：<strong><code>busy</code> 取代了旧的五值 <code>status</code> 枚举</strong>——awaiting 状态改由 approval/question 通道表达，turn 结果由 <code>turn.ended</code> 事件表达，&quot;客户端自行组合呈现&quot;。<code>workspace_id</code> 强格式 <code>wd_&lt;slug&gt;_&lt;hash12&gt;</code>。</p>
+<p><strong>任务/工具/审批/提问/FS/文件（<code>task.ts</code>、<code>tool.ts</code>、<code>approval.ts</code>、<code>question.ts</code>、<code>fs.ts</code>、<code>file.ts</code>）</strong>。<code>Task { kind: subagent|bash|tool, status: running|completed|failed|cancelled, ... }</code> 并保留 <code>BackgroundTask*</code> 旧名别名（v1 引擎/TUI 仍用）；<code>ToolDescriptor { name, description, input_schema, source: builtin|skill|mcp, active? }</code>，<code>McpServer { transport: stdio|http|sse, status: connected|connecting|disconnected|error }</code>；<code>ApprovalRequest</code> 带 <code>expires_at</code>（60s），<code>ApprovalResponse { decision: approved|rejected|cancelled, scope?, feedback?, selected_label? }</code>；<code>QuestionRequest</code> 一次 1-4 问，答案五态（single/multi/other/multi_with_other/skipped），method 记录 <code>enter/space/number_key/click</code>；FS 域覆盖 <code>FsEntry</code>（含 etag/mime/git_status）、<code>FsSearchHit</code>（fuzzy 命中带 score 与 match_positions）、<code>FsGrepFileHit</code>（行/列/上下文）、<code>FsChangeEvent</code>（WS watch 变更，coalesced_window_ms）；<code>FileMeta</code> 带 <code>expires_at</code>。</p>
+<p><strong>显示载荷（<code>display.ts</code>）</strong>。<code>ToolInputDisplay</code> 14 种（command/file_io/diff/search/url_fetch/agent_call/skill_call/todo_list/task/task_stop/plan_review/goal_start/generic）与 <code>ToolResultDisplay</code> 12 种（command_output/file_content/diff/search_results/url_content/agent_summary/task/todo_list/structured/text/error/generic）——这是&quot;工具调用如何呈现在 UI 上&quot;的协议化描述，<code>plan_review</code> 的 options 直接承载 ExitPlanMode 的审批选项，<code>goal_start</code> 携带启动菜单所需的 permission mode。</p>
+<p><strong>事件（<code>events.ts</code>，1,939 行，本包最大文件）</strong>。两层结构：</p>
+<ul>
+<li><strong>TS 接口层</strong>（1-991 行）：<code>AgentEvent</code> 是 51 种事件的判别联合（interface，含 <code>config.changed</code>），<code>Event = AgentEvent &amp; { agentId, sessionId }</code>。按主题可分组：<ul>
+<li>turn 生命周期：<code>turn.started</code>（带 <code>PromptOrigin</code>——13 种来源：user/skill_activation/plugin_command/injection/shell_command/compaction_summary/system_trigger/task/background_task/cron_job/cron_missed/hook_result/retry）、<code>turn.ended</code>（reason: completed/cancelled/failed/blocked + KimiErrorPayload）、<code>turn.step.started/completed/retrying/interrupted</code>（step.completed 带细粒度 LLM 延迟拆分：llmFirstTokenLatencyMs 拆 client 构建 vs server 首 token，llmStreamDurationMs 拆 server decode vs client consume）；</li>
+<li>流式增量：<code>assistant.delta</code>、<code>thinking.delta</code>、<code>tool.call.delta</code>（argumentsPart）、<code>tool.call.started</code>（带 display）、<code>tool.progress</code>（ToolUpdate 五态）、<code>tool.result</code>（is_error/synthetic）；</li>
+<li>agent 状态：<code>agent.status.updated</code>（model/thinkingEffort/contextTokens/usage/<code>phase</code>）、<code>AgentPhase</code> 是 8 态判别联合（idle/running/streaming/tool_call/retrying/awaiting_approval/interrupted/ended）——UI 渲染&quot;agent 正在干什么&quot;的权威来源；</li>
+<li>子代理：<code>subagent.spawned/started/suspended/completed/failed</code>（spawned 带 model/thinkingEffort/swarmIndex/runInBackground）；</li>
+<li>任务：<code>task.started/terminated</code>（TaskInfo 三态：process/agent/question）+ 旧名 <code>background.task.*</code> 别名；<code>shell.output/started/completed</code>（瞬态，<code>!</code> 命令流）；</li>
+<li>会话/全局：<code>session.work_changed</code>（busy/main_turn_active/pending_interaction/last_turn_reason）、<code>session.meta.updated</code>、<code>session.created</code>、<code>workspace.created/updated/deleted</code>、<code>config.changed</code>（注意：schema 定义了但<strong>未并入 zod 判别联合</strong>——<code>agentEventSchema</code> 只有 50 个成员，见 §6.1 索引）、<code>model_catalog.changed</code>（带 per-provider diff）；</li>
+<li>其余：<code>goal.updated</code>（GoalSnapshot + budget report）、<code>skill.activated</code>、<code>plugin_command.activated</code>、<code>compaction.*</code> 四件套、<code>cron.fired</code>、<code>prompt.submitted/completed/aborted/steered</code>、<code>hook.result</code>、<code>mcp.server.status</code>、<code>tool.list.updated</code>、<code>warning</code>、<code>error</code>（KimiErrorPayload：code/message/retryable/cause 递归）。</li>
+</ul>
+</li>
+<li><strong>zod schema 层</strong>（993-1939 行）：每个接口配一个 <code>*Schema</code>（<code>satisfies z.ZodType&lt;...&gt;</code> 保证形状同步），最后 <code>agentEventSchema = z.discriminatedUnion(&#39;type&#39;, [50 个])</code>、<code>eventSchema = agentEventSchema.and({agentId, sessionId})</code>。</li>
+<li><strong>volatile 分类</strong>（1915-1939 行）：<code>VOLATILE_EVENT_TYPES</code> 列 8 种瞬态事件（三个 delta、tool.progress、shell.*、agent.status.updated）——不 journal、不推进 seq、断线不重放；已标记 deprecated，分类权移交 kap-server 的 <code>isVolatileSignal</code>。</li>
+</ul>
+<p><strong>WS 控制面（<code>ws-control.ts</code>）</strong>。<code>WS_PROTOCOL_VERSION = 2</code>（IM 式多端同步：游标 <code>{seq, epoch}</code>、seq 持久化、volatile 事件带 <code>volatile:true</code>、<code>resync_required</code> 增 <code>epoch_changed</code> 原因）。三类帧：事件帧 <code>{type, seq, epoch?, volatile?, offset?, session_id?, timestamp, payload}</code>（<code>offset</code> 是流式 delta 的累计字符偏移，客户端按 <code>snapshot.in_flight_turn.*_text.length</code> 对齐去重）、控制帧 <code>{type, id?, payload}</code>、ACK 帧 <code>{type:&#39;ack&#39;, id, code, msg, payload}</code>。控制操作 12 种：<code>client_hello</code>（握手，订阅字段已 deprecated 移入 subscribe）、<code>subscribe/unsubscribe</code>（per-session 游标 + agent_filter + watch_fs）、<code>watch_fs_add/remove</code>、<code>abort</code>、<code>terminal_attach/detach/input/resize/close</code>、<code>pong</code>；系统帧 4 种：<code>server_hello</code>（ws_connection_id/protocol_version/heartbeat_ms/max_event_buffer_size/capabilities）、<code>ping</code>、<code>resync_required</code>、<code>error</code>。所有操作以 <code>WsOperationDefinition</code> 表驱动——<code>asyncapi.ts</code> 从同一张表生成 AsyncAPI 3.1.0 文档（<code>createAsyncApiDocument</code>，zod→JSON Schema draft-7）。</p>
+<p><strong>REST 面（<code>rest/*.ts</code>）</strong>。每文件头部注释即路由文档。要点：<code>rest/session.ts</code> 是路由最全的域（create/list/get/profile/fork/:btw/children/status/:compact/:undo/:archive/:restore/export）；<code>rest/prompt.ts</code> 定义 <code>PromptSubmission</code>（status: running/queued/blocked 三态 + steer/abort，abort 幂等返回 40903）；<code>rest/snapshot.ts</code> 定义 <strong>IM 式初始同步</strong>：<code>as_of_seq + epoch</code> 水位、<code>in_flight_turn</code>（assistant_text/thinking_text 累计 + running_tools + current_prompt_id）、subagents 花名册；<code>rest/fs.ts</code> 是最大的 REST 域（list/read/stat/search/grep/git_status/diff/mkdir/list_many/stat_many/open/reveal/open_in/download，全部带上限默认值）；<code>rest/meta.ts</code> 的 <code>MetaResponse.backend: &#39;v1&#39;|&#39;v2&#39;</code> 让客户端探测引擎代数；<code>rest/oauth.ts</code> 的 <code>OAuthFlowStart</code> 双态（pending 设备码 / authenticated 短路）。</p>
+<h3 id="32-klient契约驱动的-v2-客户端-facade"><a class="anchor" href="#32-klient契约驱动的-v2-客户端-facade" aria-hidden="true">#</a>3.2 klient：契约驱动的 v2 客户端 facade</h3><p><strong>分层（AGENTS.md 明示为铁律）</strong>：Facade（唯一公共 API，禁止 service locator/escape hatch）→ Contract（zod 全量 schema）→ <code>KlientChannel</code>（唯一传输 SPI）→ ipc / memory。核心类型：</p>
+<ul>
+<li><code>KlientChannel</code>（<code>core/channel.ts:35</code>）：<code>call(scope, service, method, args)</code> / <code>stream(...)</code> / <code>listen(scope, source, handler, onError)</code> / <code>close()</code>；<code>ScopeRef { workspaceId?, sessionId?, agentId? }</code>（空对象 = core/app scope）；<code>EventSourceRef = {kind:&#39;stream&#39;, name} | {kind:&#39;emitter&#39;, service, event}</code>——stream 镜像 kap-server WS 的 eventMap（core <code>events</code>、session <code>interactions</code>、agent <code>events</code>），emitter 指某个服务的 <code>onDid*</code> 属性。</li>
+<li><code>Klient</code>（<code>core/klient.ts:38</code>）：<code>{ global: GlobalFacade, events, session(sessionId): SessionHandle, close() }</code>；<code>SessionHandle</code>/<code>AgentHandle</code> 各带 <code>events</code> hub。工厂 <code>createKlientFromChannel(channel, {validate=true})</code> 由各传输入口调用，因此<strong>任何传输返回的 Klient 形状与行为完全一致</strong>。</li>
+<li><code>ProcedureContract</code>（<code>contract/types.ts</code>）：<code>{input: z.tuple, output}</code> / <code>{chunk, streaming:true}</code> / <code>EventRegistration</code>；<code>contract/index.ts</code> 聚合 27 个 wire 服务的 <code>globalContract</code> 查表。</li>
+<li><code>EventHub</code>（<code>core/events/hub.ts</code>）：<code>keyOf</code> 把注册归并为三类订阅键（<code>bus</code>/<code>stream:&lt;name&gt;</code>/<code>emitter:&lt;svc&gt;:&lt;event&gt;</code>），<code>acquire/release</code> ref-count——最后一个监听器退订才 dispose 底层订阅；<code>deliver</code> 对 bus 类解包 <code>{type,payload}</code>、stream 类整条转发；监听器抛错与校验失败都进 <code>onError</code> 而不 kill 订阅流。</li>
+<li>Facade 三件套：<code>global.ts</code>（10 个子 facade：sessions/env/auth/config/models/providers/plugins/flags/workspaces/hostFs + capabilities）、<code>session.ts</code>（生命周期 + approvals/questions/interactions/skills + <code>status()</code> 派生）、<code>agent.ts</code>（RPC 通道 + 域服务直调 + <code>modelResolver.generate</code> 特判）。</li>
+<li>契约校验（<code>core/validation.ts</code>）：四相位 <code>input/output/chunk/event</code>，<code>KlientValidationError</code> 带 phase/procedure/issues/payload。</li>
+</ul>
+<h3 id="33-node-sdk双引擎统一宿主-SDK"><a class="anchor" href="#33-node-sdk双引擎统一宿主-SDK" aria-hidden="true">#</a>3.3 node-sdk：双引擎统一宿主 SDK</h3><p><code>SDKRpcClientBase</code>（<code>rpc.ts:144</code>，~80 个方法的 v1 RPC 外观基类）是骨架：所有 session/agent 域方法 + 事件/审批/提问注册表 + <code>AsyncLocalStorage</code> 承载 <code>interactiveAgentId</code>（多 agent 复用客户端）。两个子类：</p>
+<ul>
+<li><code>SDKRpcClient</code>（v1）：agent-core 的 <code>createRPC&lt;CoreAPI, SDKAPI&gt;()</code> 进程内 RPC 对 + <code>new KimiCore(coreRpc, ...)</code>，<code>ClientAPI</code>（emitEvent/requestApproval/requestQuestion/toolCall）承载引擎反向调用。</li>
+<li><code>SDKRpcClientV2</code>（<code>sdk-rpc-client-v2.ts</code>，2,258 行）：<code>bootstrap()</code> 出 agent-core-v2 Scope → <code>createKlient({scope})</code>（memory 传输，仍穿契约校验 + JSON 往返）→ 每个 v1 方法 override 成 v2 服务调用；<code>engineAccessor</code> 是刻意标注的 in-process-only 逃生口（App 级服务直取）；未迁移方法落 <code>getRpc()</code> 抛 <code>not_implemented</code>。</li>
+</ul>
+<p><code>KimiHarness</code>（<code>kimi-harness.ts</code>）是宿主顶层门面：session 注册表（<code>Map&lt;id, Session&gt;</code>）+ 全局配置/插件/MCP/auth 操作 + telemetry。<code>Session</code>（<code>session.ts:789</code> 行）是单会话门面：prompt/工具/背景任务/目标/技能 + <code>closed</code> 状态机。<code>v2/</code> 目录 6 个映射层：<code>event-mapper</code>（v2 DomainEvent → v1 Event，丢弃 10 种 v2-only 类型、改名 2 种）、<code>session-wiring</code>（每活会话一份：agent bus 订阅→事件转发 + pending interaction 三路桥）、<code>session-mapper</code>/<code>config-mapper</code>（v2 分域 → v1 单文档）、<code>global-mcp</code>（v1 <code>&lt;home&gt;/mcp.json</code> 存储 CRUD）、<code>resume-replay</code>（一次性 v1 Agent 折叠 wire.jsonl）、<code>import-context</code>（字节级复刻 v1 import 消息）。</p>
+<h3 id="34-transcript转录渲染数据层"><a class="anchor" href="#34-transcript转录渲染数据层" aria-hidden="true">#</a>3.4 transcript：转录渲染数据层</h3><p><strong>四层架构</strong>：L1 <code>AgentTranscript</code>（单 agent 聚合态，<code>apply()</code> 批量收敛 + <code>onChange</code> 单次通知 + <code>snapshot(window)</code> 尾部窗口化）/ <code>TranscriptStore</code>（session 根，懒建 agent + roster 可观测）；L2 <code>operation.ts</code>（<strong>14 种 op</strong>：turn.upsert/step.upsert/frame.upsert/append/items.remove/marker/task.upsert/interaction.upsert/removal/prompt.upsert/meta.merge/reset/undo/clear——其中 <code>append</code> 是<strong>唯一非幂等</strong> op）+ <code>apply.ts</code>（纯函数 copy-on-write reducer，<code>applyOperation</code> 统一 switch）；L3 <code>grade.ts</code>（<code>TranscriptGradeSpec</code>：<code>&#39;*&#39;</code> 通配 + agent 覆盖，<code>needsResetOnTransition</code> 仅升级需 reset）+ <code>filterOps.ts</code>（按 op 种类裁剪 + <code>redactSnapshotForGrade</code> 脱敏）；L4 <code>view/registry.ts</code>（<code>view ?? name</code>/<code>origin.kind</code>/<code>marker</code>/<code>task.kind</code> 四类 key 的泛型注册表，<code>C</code> 承载宿主框架组件类型）。领域模型在 <code>model/</code>：turn 是自然键 <code>t&lt;ordinal&gt;</code>、step <code>t3.2</code>、frame <code>t3.2.f4</code>；frame 是叶子渲染单元（text/thinking/tool_call/notice），从不嵌套，靠 <code>taskId/approvalId/todoId/agentRefs</code> 交叉引用；interaction（审批/提问）<strong>永不进分页时间线</strong>。<code>contract/schema.ts</code> 独家拥有全部转录线上契约（<code>transcriptSeqSchema</code> op-batch 排序契约、REST 响应、<code>transcript.reset/ops</code> WS 事件）。</p>
+<h3 id="35-acp-adapter-与-acp-serverACP-桥"><a class="anchor" href="#35-acp-adapter-与-acp-serverACP-桥" aria-hidden="true">#</a>3.5 acp-adapter 与 acp-server：ACP 桥</h3><p>两包模块一一对应（<code>server</code>/<code>session</code>/<code>events-map</code>/<code>convert</code>/<code>approval</code>/<code>question</code>/<code>modes</code>/<code>slash</code>/<code>config-options</code>/<code>model-catalog</code>/<code>auth-methods</code>/<code>version</code>/<code>marker</code>/<code>builtin-commands</code>），差异在接入面：</p>
+<ul>
+<li><strong>acp-adapter</strong>：<code>AcpServer implements Agent</code>（SDK 0.23 <code>AgentSideConnection</code>），会话经 <code>harness.createSession({kaos, mcpServers})</code> 驱动 v1 引擎；<code>AcpKaos</code> 装饰 <code>LocalKaos</code>，<code>readText/writeText</code> 走 ACP <code>fs/readTextFile/writeTextFile</code> 反向 RPC（覆盖 Zed 未保存缓冲）；<code>log-guard</code> 把 console 重定向 stderr 保护 stdout JSON-RPC 通道；<code>version.ts</code> 是 Python kimi-cli version.py 的移植（协议协商整数 v1 / spec v0.10.x）。</li>
+<li><strong>acp-server</strong>：组合根 <code>start.ts</code> 按 <code>bootstrap()</code> → <code>createKlient({scope})</code> → <code>core.accessor.get(IAcpConnection)</code> → <code>app.connect(stream)</code> → <code>acpClientFromContext</code> → <code>AcpServer</code> 顺序装配（<code>getServer()</code> 惰性解引用解决连接先于 server 的时序）；<code>acp-fs/acpFsService.ts</code> 在 <strong>Session scope</strong> 注册影子 <code>IHostFileSystem</code>（文本读写走 ACP fs 反向 RPC，append 用读-改-写模拟）；<code>acp-terminal/acpTerminalRunner.ts</code> 在 <strong>Agent scope</strong> 注册影子 <code>ISessionProcessRunner</code>（Bash 调用判别四元组 <code>args.length===3 &amp;&amp; args[1]===&#39;-c&#39; &amp;&amp; NO_COLOR===&#39;1&#39; &amp;&amp; TERM===&#39;dumb&#39;</code>，<code>terminal/create</code> 执行、250ms 轮询输出、4MB 头部截断）；<code>interaction-bridge.ts</code> 把 v2 interaction kernel 的 pending 交互反向桥为 <code>requestPermission</code>/<code>elicitation/create</code>。</li>
+</ul>
+<h2 id="4-关键数据流-状态机-时序"><a class="anchor" href="#4-关键数据流-状态机-时序" aria-hidden="true">#</a>4. 关键数据流 / 状态机 / 时序</h2><h3 id="41-WS-多端同步协议protocol-定义kap-server-实现"><a class="anchor" href="#41-WS-多端同步协议protocol-定义kap-server-实现" aria-hidden="true">#</a>4.1 WS 多端同步协议（protocol 定义，kap-server 实现）</h3><pre class="hljs"><code><span class="language-xml">客户端                                    服务器（kap-server）
+  │ 连接                                  │
+  ├─ client_hello</span><span class="hljs-template-variable">{client_id}</span><span class="language-xml"> ────────────►│ server_hello</span><span class="hljs-template-variable">{ws_connection_id,
+  │                                      │   protocol_version:2, capabilities}</span><span class="language-xml">
+  ├─ subscribe</span><span class="hljs-template-variable">{session_ids,              │
+  │    cursors:{sid:{seq,epoch}</span><span class="language-xml">},        │ 校验游标 epoch 匹配 → 逐 session 分配
+  │    agent_filter?, watch_fs?} ───────►│  ack</span><span class="hljs-template-variable">{accepted[], not_found[],
+  │                                      │       resync_required[], cursors[]}</span><span class="language-xml">
+  │                                      │
+  │   ◄── 事件帧 </span><span class="hljs-template-variable">{type, seq, epoch?, volatile?, offset?, payload}</span><span class="language-xml">
+  │         durable 事件：seq 单调递增（journal 偏移，重启幸存）
+  │         volatile 事件：seq=当前持久水位 + volatile:true（断线不重放）
+  │                                      │
+  │   ◄── resync_required</span><span class="hljs-template-variable">{reason: buffer_overflow|session_recreated|epoch_changed}</span><span class="language-xml">
+  │        客户端处理：GET /sessions/</span><span class="hljs-template-variable">{sid}</span><span class="language-xml">/snapshot → as_of_seq → 重新 subscribe
+  │              （快照水位与 WS 流无缝衔接，无缺口无重复）
+  │
+  ├─ abort</span><span class="hljs-template-variable">{session_id, prompt_id}</span><span class="language-xml"> ──────►│ ack</span><span class="hljs-template-variable">{aborted, at_seq}</span><span class="language-xml">
+  ├─ terminal_attach</span><span class="hljs-template-variable">{terminal_id, since_seq}</span><span class="language-xml"> ► ack</span><span class="hljs-template-variable">{attached, replayed:N}</span><span class="language-xml">
+  │   ◄── terminal_output</span><span class="hljs-template-variable">{seq, data}</span><span class="language-xml"> / terminal_exit</span><span class="hljs-template-variable">{exit_code}</span><span class="language-xml">
+  ├─ ping ──► pong（非ce 回显）</span></code></pre><p><strong>恢复协议（rest/snapshot.ts 定义）</strong>：① <code>GET /sessions/{sid}/snapshot</code>（原子于水位 <code>as_of_seq</code>，含 <code>in_flight_turn</code> 的流式累计态）→ ② WS <code>subscribe</code> 带 <code>cursors[sid]={seq: as_of_seq, epoch}</code> → ③ 应用 <code>seq &gt; as_of_seq</code> 的后续 durable 事件。服务器读取水位→组装→重读水位，若期间落入 durable 事件则有限重试（durable 低频，几乎立即收敛）。<code>offset</code> 字段让客户端对 volatile delta 做累计偏移对齐：<code>offset &lt; 本地长度</code> 为重复（跳过），<code>offset &gt; 本地长度</code> 为丢帧（重新快照）。</p>
+<h3 id="42-klient-双传输-RPC-路径"><a class="anchor" href="#42-klient-双传输-RPC-路径" aria-hidden="true">#</a>4.2 klient 双传输 RPC 路径</h3><pre class="hljs"><code>facade.method(args)
+  → ScopedCaller（klient.ts:<span class="hljs-number">51</span>）查 globalContract[service][<span class="hljs-keyword">method</span>]
+  → <span class="hljs-title function_">parseInput</span>（<span class="hljs-title function_">input</span> 校验）→ <span class="hljs-title function_">channel</span>.<span class="hljs-title function_">call</span><span class="hljs-params">(scope, service, <span class="hljs-keyword">method</span>, wireArgs)</span>
+       ├─ <span class="hljs-title function_">ipc</span>: trimTrailingUndefined → <span class="hljs-comment">{type:&#x27;call&#x27;, id, scope, service, method, args}</span>
+       │        ── unix socket NDJSON ──▶ host.handleFrame → dispatcher.call
+       │        ◀── <span class="hljs-comment">{type:&#x27;result&#x27;|&#x27;error&#x27;, id, data|code,msg}</span>
+       └─ memory: dispatcher.call → resolveScope → accessor.get(token)[<span class="hljs-keyword">method</span>]<span class="hljs-params">(...args)</span>
+  → <span class="hljs-title function_">wireClone</span><span class="hljs-params">(<span class="hljs-keyword">result</span>)</span>（<span class="hljs-title function_">memory</span> 侧模拟 <span class="hljs-title function_">JSON</span> 边界；<span class="hljs-title function_">ipc</span> 天然 <span class="hljs-title function_">JSON</span>）
+  → <span class="hljs-title function_">parseOutput</span> → 返回</code></pre><p><strong>scope 解析语义</strong>（memory dispatcher，镜像 kap-server）：<code>workspaceId</code> → <code>IWorkspaceLifecycleService.handlerFor({workspaceId})</code>；<code>sessionId</code> → <code>getLiveSessionById</code>（不存在抛 40404）；<code>agentId===&#39;main&#39;</code> → <strong><code>ensureMainAgent(session)</code> 现场物化</strong>（无 agent 创建、首次使用物化）；其他 agentId → <code>IAgentLifecycleService.get()</code>。</p>
+<p><strong>事件订阅路径</strong>：引擎事件源 → dispatcher 逐 payload <code>wireClone</code> → ipc <code>{type:&#39;event&#39;, id, data}</code> 帧（或 memory 同步回调）→ <code>EventHub.deliver(key, raw)</code> → 按注册表分类解包/转发 → <code>parseEvent</code> → 监听器。同一事件源多事件名共享一条底层订阅，ref-count 驱动释放。</p>
+<p><strong>流式过程（双端队列）</strong>：客户端 <code>stream()</code> 维护 <code>buffer</code> + <code>waiters</code>，<code>stream_data</code> 帧 push、<code>next()</code> 拉取、<code>return()</code> 发 <code>stream_cancel</code>；宿主端 <code>AbortController</code> 包住 <code>for await</code>，socket 断开即 abort；memory 端惰性启动（首个 <code>next()</code> 才取 <code>[Symbol.asyncIterator]</code>）。</p>
+<h3 id="43-node-sdk-v2-会话接线session-wiring"><a class="anchor" href="#43-node-sdk-v2-会话接线session-wiring" aria-hidden="true">#</a>4.3 node-sdk v2 会话接线（session-wiring）</h3><pre class="hljs"><code>createSession → <span class="hljs-built_in">wireSession</span>()
+  → 订阅 IAgentLifecycleService.onDidCreate（含未来 subagent）
+      ├─ 每 agent: IEventBus<span class="hljs-selector-class">.subscribe</span> → translateDomainEvent → sink<span class="hljs-selector-class">.receiveEvent</span>
+      └─ ISessionInteractionService<span class="hljs-selector-class">.onDidChangePending</span> → bridgeNewPendingInteractions
+           （approval/question/user_tool 三路桥，bridgedInteractionIds 去重）
+关闭：engine close → followWorkspaceHandlers<span class="hljs-selector-class">.onDidCloseSession</span> → unwireSession → wiring<span class="hljs-selector-class">.dispose</span>()</code></pre><p>审批的 v1 push vs v2 pull 桥：v1 引擎同步调 <code>SDKAPI.requestApproval</code>；v2 引擎把审批&quot;停放&quot;在 interaction kernel，<code>onDidChangePending</code> 通知后由桥拉到同一条 <code>base.requestApproval</code>（继承 v1 的 no-handler 取消语义），结果写回 <code>ISessionApprovalService.decide(id, response)</code>——kernel 对已非 pending 的 id 是 no-op，取消后迟到回答安全。</p>
+<h3 id="44-transcript-数据流"><a class="anchor" href="#44-transcript-数据流" aria-hidden="true">#</a>4.4 transcript 数据流</h3><pre class="hljs"><code>live:  engine IEventBus (DomainEvent)
+         → AgentTranscriptProjector.<span class="hljs-built_in">map</span>()      [kap-server，事件→<span class="hljs-built_in">op</span>]
+         → ops[]（<span class="hljs-built_in">append</span> 增量 / 边界 <span class="hljs-built_in">flush</span> 全量 upsert）
+         → AgentTranscript.<span class="hljs-built_in">apply</span>()             [L1 唯一收敛路径]
+             → 纯函数 applyOperation 逐 <span class="hljs-built_in">op</span> 归约，gap 捕获
+         → onChange(accepted ops)
+             → TranscriptService.journalOps（每批 +<span class="hljs-number">1</span> seq）→ 广播
+             → SessionEventBroadcaster 按连接粒度 filterOpsForGrade 扇出
+                 → WS transcript.ops（volatile:<span class="hljs-literal">true</span>，载荷带 seq）
+         → 客户端 AgentTranscript.<span class="hljs-built_in">apply</span>() → UI
+
+cold:  wire.jsonl → groupMessagesIntoSnapshot（<span class="hljs-built_in">context</span> 消息→turn 树）
+         → foldWireRecordFacts（非 <span class="hljs-built_in">context</span> 记录→tasks/interactions/todos/meta/标记）
+         → 以幂等 upsert 序列灌入 live store（绝不 <span class="hljs-built_in">reset</span>，防覆盖直播 ops）</code></pre><p><strong>订阅握手</strong>：<code>subscribe_v2</code> 校验 → 升级（<code>needsResetOnTransition</code>）→ <code>redactSnapshotForGrade</code> → <code>transcript.reset</code>（带 seq 水位）；有 <code>transcript_since</code> 且日志覆盖 → 补发缺失批次；否则 reset；<code>transcriptSeeded</code> 门控后续 ops 扇出。</p>
+<h3 id="45-ACP-会话主流程两包同构"><a class="anchor" href="#45-ACP-会话主流程两包同构" aria-hidden="true">#</a>4.5 ACP 会话主流程（两包同构）</h3><pre class="hljs"><code>client ── session/new{cwd, mcpServers} ──▶ AcpServer<span class="hljs-selector-class">.newSession</span>
+  <span class="hljs-number">1</span>. auth 门（adapter: auth<span class="hljs-selector-class">.status</span>()；server: <span class="hljs-built_in">ensureReady</span>() 双探针）
+  <span class="hljs-number">2</span>. 预铸 sessionId → 建 kaos/scope 注入 → 引擎 createSession
+  <span class="hljs-number">3</span>. 注册 approval/question 反向桥 → 构建 configOptions → 响应 {sessionId, configOptions}
+  <span class="hljs-number">4</span>. <span class="hljs-built_in">setTimeout</span>(<span class="hljs-number">0</span>) 推 available_commands_update（等生命周期响应先落地，Zed 静默丢帧）
+
+client ── session/prompt{blocks} ──▶ AcpSession<span class="hljs-selector-class">.prompt</span>
+  <span class="hljs-selector-tag">a</span>. 图片压缩阶段注册 pendingPromptAborts（此窗口 cancel 可拦截）
+  <span class="hljs-selector-tag">b</span>. detectSlashIntent：/skill:X → activateSkill；builtin → 本地命令；否则 session<span class="hljs-selector-class">.prompt</span>
+  c. runTurnBody：订阅引擎事件 → events-map 纯函数 → session/update 通知（fire-and-forget）
+  d. turn.ended（匹配 turnId）→ settle：<span class="hljs-built_in">resolve</span>({stopReason}) / <span class="hljs-built_in">reject</span>(auth_required)</code></pre><p><strong>TurnDriver 状态机</strong>（acp-server，session.ts:150-175, 659-726）：</p>
+<pre class="hljs"><code>prompt → driveLaunch
+  ├─ launched <span class="hljs-operator">=</span><span class="hljs-operator">=</span><span class="hljs-operator">=</span> undefined → 无 turn（hook-blocked）→ 立即结算 end_turn
+  ├─ launched.turn_id 落地 → 若 cancelRequested 补发精确 cancel({turnId})（幂等）
+  │       然后回放 early 缓冲中 turnId 匹配的事件（快 turn 先于 launch 返回结束）
+  └─ launch reject → mapPromptLaunchError（auth→auth_required / busy→-<span class="hljs-number">32600</span> / 其余→internalError）
+turn.ended(匹配) → settleDriver 一次 → resolve({stopReason}) / reject
+cancel() → 压缩阶段标记 pendingPromptAborts → agent.cancel({turnId})；turnId 未知置 cancelRequested</code></pre><p><strong>工具调用 wire 侧生命周期</strong>（顺序修复是两包最出彩的防御）：</p>
+<pre class="hljs"><code>provider 流式 args → tool.<span class="hljs-keyword">call</span>.delta（先到！）→ LAZY-<span class="hljs-keyword">CREATE</span> tool_call(status:pending)
+  → 后续 delta → tool_call_update（累积 <span class="hljs-keyword">REPLACE</span> 语义 args 全文）
+tool.<span class="hljs-keyword">call</span>.started（后到）→ 已存在 → <span class="hljs-string">&quot;upgrade&quot;</span> <span class="hljs-keyword">update</span>（补 <span class="hljs-keyword">title</span>/kind/rawInput, status→in_progress）
+                        → 不存在 → <span class="hljs-keyword">CREATE</span> tool_call(in_progress)
+tool.progress → tool_call_up<span class="hljs-meta">date</span>(<span class="hljs-keyword">title</span> 刷新)
+tool.result → tool_call_up<span class="hljs-meta">date</span>(completed/failed, content=结果, rawOutput)
+wire id 前缀 `${turnId}:${rawId}`（模型 retry 复用 rawId 也不冲突）</code></pre><h2 id="5-重要实现细节"><a class="anchor" href="#5-重要实现细节" aria-hidden="true">#</a>5. 重要实现细节</h2><h3 id="51-protocol"><a class="anchor" href="#51-protocol" aria-hidden="true">#</a>5.1 protocol</h3><ol>
+<li><strong>schema 双轨制</strong>：每个线上形状都有&quot;TS 接口 + zod schema&quot;两份定义，用 <code>satisfies z.ZodType&lt;...&gt;</code> 钉住同步；校验（zod）与类型（TS）分离，<code>discriminatedUnion(&#39;type&#39;/&#39;kind&#39;)</code> 提供穷举安全。</li>
+<li><strong>流式 delta 的 offset 对齐契约</strong>（ws-control.ts:44-52）：volatile 文本增量携带累计字符偏移，客户端与 <code>in_flight_turn</code> 快照长度比对——这是&quot;快照 + 增量&quot;恢复模型的粘合剂，缺失则重快照。</li>
+<li><strong>快照水位一致性</strong>（rest/snapshot.ts:1-22 注释）：REST 快照与 WS 事件流通过 <code>as_of_seq</code> 水位绑定，恢复流程&quot;无缺口无重复 by construction&quot;；服务器侧两读水位 + 有限重试处理并发 durable 事件。</li>
+<li><strong>错误信封的字节稳定性</strong>（envelope.ts:26-31）：<code>errEnvelope</code> 的 <code>stack</code> 为 <code>undefined</code> 时字段缺失，线上形状与旧版 <code>{code,msg,data:null,request_id}</code> 逐字节一致（<code>JSON.stringify</code> 丢弃 undefined）。</li>
+<li><strong>兼容别名层</strong>：<code>BackgroundTask*</code>（task.ts:41-43）、<code>DeleteSessionResponse</code>（rest/session.ts:202-205）、<code>helloAckPayloadSchema</code>——v1 引擎/TUI 仍在用旧名，v2 链用新名，协议层同时承载。</li>
+<li><strong>prompt 三态与幂等 abort</strong>（rest/prompt.ts）：submit 返回 <code>running/queued/blocked</code>；<code>abort</code> 幂等——已完成的 prompt 返回 <code>code:40903</code> + <code>{aborted:false, at_seq}</code>（而非错误）。</li>
+<li><strong>capability 探测</strong>（rest/meta.ts）：<code>backend: &#39;v1&#39;|&#39;v2&#39;</code> 字段 + <code>dangerous_bypass_auth</code>——客户端无需探测路由即可识别引擎代数与鉴权模式。</li>
+</ol>
+<h3 id="52-klient"><a class="anchor" href="#52-klient" aria-hidden="true">#</a>5.2 klient</h3><ol start="8">
+<li><strong>双传输字节一致性</strong>：memory dispatcher 对每个入参/返回值/事件载荷过 <code>wireClone = JSON.parse(JSON.stringify(v))</code>（dispatcher.ts:36-39），使 in-process 消费者与跨 socket 消费者观察到完全相同的形状，非序列化泄漏（如 scope handle 混入结果）提前失败；ipc 宿主与 memory 共享同一个 <code>createMemoryDispatcher</code>，两传输&quot;按构造等价&quot;。</li>
+<li><strong>JSON 无 undefined 的三处处理</strong>：<code>trimTrailingUndefined</code> 裁掉尾部可选参数（否则跨 wire 变 <code>null</code> 顶掉引擎默认参数）；<code>maybe()/noResult</code> 归一 HTTP 的 null-vs-undefined 双态；<code>config.replace</code> 把 <code>undefined</code> 显式编码为 <code>null</code>（&quot;清空该域&quot;语义）。</li>
+<li><strong>契约即 drift tripwire</strong>：<code>test/contract-parity.ts</code> 用 <code>AssertWire</code>（双向）/<code>AssertEngineToWire</code>（单向，深 union 镜像为 unknown 时用）在编译期钉住&quot;引擎类型 ↔ wire schema&quot;——引擎类型一改，tsc 先红。这是 klient 不 import protocol 却能保持线形状一致的机制。</li>
+<li><strong>无自动重连</strong>：ipc socket 关闭即 <code>failAll()</code>（拒绝全部 pending/error 全部 stream/清 listens），注释明说&quot;WS 传输才拥有可恢复连接的故事&quot;——重连职责不在本包。</li>
+<li><strong>reflect 调用的两个特例</strong>：非函数成员按属性读取返回（支撑 <code>bootstrapService</code> 逐属性读）；<code>modelResolver.generate</code> 引擎无此方法 → 特判路由到 <code>getRequester(modelId).request(input, signal, params)</code>，把 AbortSignal 传下去（dispatcher.ts:172-211）。</li>
+<li><strong><code>env()</code> 快照缓存</strong>：bootstrap 时冻结进程快照，<code>envPromise ??=</code> 单次 Promise 复用（global.ts:277-294）。</li>
+</ol>
+<h3 id="53-node-sdk"><a class="anchor" href="#53-node-sdk" aria-hidden="true">#</a>5.3 node-sdk</h3><ol start="14">
+<li><strong>迁移地图式开发</strong>：<code>sdk-rpc-client-v2.ts:1-127</code> 文件头注释即迁移清单（每个 override 对应 v1 语义、facade 方法、已知差异）；未迁移方法抛 <code>not_implemented</code>——v1 <code>getRpc()</code> 依赖随迁移完成整体删除。</li>
+<li><strong><code>engineAccessor</code> 逃生口</strong>（:524-526）：v2 客户端持有 bootstrap Scope 可直取 App 级服务——in-process 传输独有，注释强制每个用法注明所替代的 klient facade 方法。</li>
+<li><strong><code>removeProvider</code> 原子级联</strong>（:644-671）：v2 引擎只清默认指针，SDK 用 <code>planProviderRemoval</code> 计算完整 v1 级联（删 provider + 指向它的 models + 悬空默认指针），经 <code>replaceSections</code> 一次原子写——中途退出不留半级联文件。</li>
+<li><strong>resume replay 复用 v1 恢复管线</strong>（<code>resume-replay.ts:104-121</code>）：用一次性 v1 <code>Agent</code> 折叠 <code>wire.jsonl</code>，跑在只读内存 persistence 上（合成追加不落盘），任何失败降级为空结果——step.begin/content.part/compaction patch 等微妙语义全部继承。</li>
+<li><strong><code>contextUsage</code> 刻意不 clamp</strong>（rpc.ts:637）：&gt;100% 是 ACP 通道的文档化溢出信号（REST 侧则 clamp）。</li>
+<li><strong>error 分类原则</strong>（oauth-error.ts:20-23）：只映射可确定类别的 OAuth 错误，未识别错误原样重抛——避免把存储/锁错误误标为 <code>auth.login_required</code> 送用户走错修复路径。</li>
+<li><strong>print 模式后台任务 drain</strong>（:1994-2028）：suppress 终端通知 + <code>tasks.wait(taskId, min(deadline-now, 2^31-1))</code> 循环，定时器上溢钳制 <code>0x7fffffff</code>（≈24.8 天）。</li>
+</ol>
+<h3 id="54-transcript"><a class="anchor" href="#54-transcript" aria-hidden="true">#</a>5.4 transcript</h3><ol start="21">
+<li><strong>幂等机制</strong>：14 种 op 中仅 <code>append</code> 非幂等（operation.ts:64）；其余全是 state-style upsert/merge，每个 upsert 前做<strong>深度字段等价比较</strong>（<code>turnEquals</code>/<code>stepEquals</code>/<code>frameEquals</code>），相等返回 <code>changed:false</code>——去重与&quot;onChange 只发真变更&quot;的依据；重复/乱序消费收敛到相同 store。</li>
+<li><strong>append 四态对齐</strong>（<code>appendAtOffset</code> apply.ts:379-399）：<code>offset &gt; 本地长度</code> → gap（重新快照）；本地已完整包含 → 重复；部分重叠且一致 → 裁剪 novel 后缀合并；重叠不一致 → 也是 gap——<strong>分流式流，绝不静默重写丢弃本地内容</strong>。</li>
+<li><strong>骨架自动补全</strong>：<code>skeletonTurn</code>/<code>skeletonStep</code>（apply.ts:135,146）让 upsert 即使父级未到也能落地，任意 op 顺序自洽；但 append 找不到父 frame 返回 gap。</li>
+<li><strong>粒度过滤&quot;降级安全&quot;设计</strong>：<code>filterOpsForGrade</code> 只按 op 种类门控（append 仅 delta、step/frame.upsert 需 block、其余 turn 级即通）；安全性依据是 producer 在 step/turn 完成边界<strong>重发整帧 flush upsert</strong>，低粒度客户端自然重收敛；升级靠服务端 reset（<code>needsResetOnTransition</code>），过滤层绝不发明第二条投影路径。</li>
+<li><strong>崩溃 == cancelled</strong>（foldFacts.ts:514-518）：冷重建扫描结束仍 pending 的 interaction 一律置 cancelled，防幽灵 pending。</li>
+<li><strong>冷重建 ordinal 对齐</strong>（foldFacts.ts:253-262）：引擎 turnId 按 <code>turn.prompt</code> 记录顺序分配，hidden turn 使引擎 id 与分组 ordinal 漂移 → 用 <code>id - hiddenCount</code> 映射 <code>turn.ended</code>；<code>goal_continuation</code>/<code>subagent</code> 这类真实开 turn 的 system_trigger 必须开 turn（groupTurns.ts:87-97）。</li>
+<li><strong>op-batch seq 契约</strong>（contract/schema.ts:452-468）：per-(session, agent) 单调批次号，每派发一批 +1（非每 op）；reset/REST 响应上的 seq 是&quot;含 ≤N 全部批次&quot;的水位；seq 全部 optional——缺省即 pre-seq 旧协议，回退丢帧信号驱动刷新。</li>
+</ol>
+<h3 id="55-acp-adapter-acp-server"><a class="anchor" href="#55-acp-adapter-acp-server" aria-hidden="true">#</a>5.5 acp-adapter / acp-server</h3><ol start="28">
+<li><strong>流式事件乱序修复</strong>（两包同构）：引擎的 <code>tool.call.delta</code> 先于 <code>tool.call.started</code> 到达（delta 来自模型参数流，started 来自循环派发）——naive 映射会让 <code>tool_call_update</code> 先于 CREATE 上 wire，Zed 报 &quot;Tool call not found&quot;。方案：wire id（<code>${turnId}:${rawId}</code>）簿记 + 首个 delta 懒建 <code>tool_call(status:pending)</code>，started 到达时降级为 upgrade update（adapter session.ts:1021,1169-1183；server session.ts:795-804）。</li>
+<li><strong><code>tool_call_update</code> 的 REPLACE 语义</strong>：ACP 的 <code>ToolCallUpdate.content</code> 是整块替换，delta 累积器每次发累积 args 全文，started 时用完整 <code>stringifyArgs</code> 重置种子（否则首个 delta 吞掉初始 args）；<code>stringifyArgs</code> 对 BigInt/循环结构回退 <code>String()</code>，流式路径永不 crash。</li>
+<li><strong>fail-safe 原则</strong>：未知 approval optionId → rejected；反向 RPC 失败 → rejected/null（宁可拒绝不可误批，与 Python 参考实现一致）；<code>emit</code> 全部 best-effort 不 throw；notification（cancel/extNotification）错误只能 log 不能抛。</li>
+<li><strong>错误映射防泄漏</strong>：<code>auth.login_required</code>/<code>provider.auth_error</code> → <code>RequestError.authRequired()</code>（客户端自驱 re-auth）；其余 → <code>internalError</code>，细节只进日志——防栈帧/PII 泄漏到 wire。</li>
+<li><strong>busy 本地拒绝</strong>（server session.ts:631-638）：v2 引擎对活跃 turn 的 <code>agent.prompt</code> 会排队且返回 <code>undefined</code>（与 hook-blocked 不可区分），放行会覆盖唯一 driver 且第一个 prompt 永不结算——故同步抛 -32600（<code>turn.agent_busy</code>）。</li>
+<li><strong>scope 注册位点选择</strong>（acp-terminal/index.ts:4-10、acpFsService.ts:163-169）：<code>IHostFileSystem</code> 影子注册在 <strong>Session scope</strong>（shadow App-scope 本地实现，持久化消费者不受影响）；<code>ISessionProcessRunner</code> 必须注册在 <strong>Agent scope</strong>——Session-scope 注册会输给 <code>sessionLifecycleService</code> 的 seed，子 scope 集合优先于父 scope。这是 DI×Scope 引擎&quot;影子服务&quot;注入的教科书示例。</li>
+<li><strong>终端输出去重</strong>（server session.ts:828-843 + marker.ts）：terminal-backed 工具调用的卡片只放 <code>{type:&#39;terminal&#39;}</code>（模型仍收全文）；<code>HideOutputMarker</code> 哨兵（引用相等或 <code>__kind</code> 结构匹配，兼容 structured clone）让文本输出短路为 <code>[]</code> 防双渲染。</li>
+<li><strong>版本协商容错</strong>（version.ts:39-51）：客户端版本低于 MIN 仍回当前版本让客户端决定断开；客户端广告更高 major 也回自身版本。</li>
+<li><strong>KLIENT-GAP 记录</strong>（server session.ts:16-21）：无 session MCP 连接视图/compaction 服务（<code>/mcp</code>、<code>/compact</code> 只回说明文本）；<code>exitPlan</code> 用 <code>cancelPlan</code> 替代（状态效果相同）；无 <code>Turn.result</code> promise，结算只靠 <code>turn.ended</code>。</li>
+</ol>
+<h2 id="6-关键代码位置索引"><a class="anchor" href="#6-关键代码位置索引" aria-hidden="true">#</a>6. 关键代码位置索引</h2><h3 id="61-protocol"><a class="anchor" href="#61-protocol" aria-hidden="true">#</a>6.1 protocol</h3><ul>
+<li><code>packages/protocol/src/envelope.ts:3-11</code> — <code>envelopeSchema</code>：所有 REST 响应统一信封 <code>{code,msg,data,request_id}</code></li>
+<li><code>packages/protocol/src/envelope.ts:33-39</code> — <code>errEnvelope</code>：stack 可选且字节稳定</li>
+<li><code>packages/protocol/src/error-codes.ts:12-138</code> — <code>ErrorCode</code>：0/4xxxx/5xxxx/6xxxx/7xxxx/8xxxx 命名空间</li>
+<li><code>packages/protocol/src/error-codes.ts:151-218</code> — <code>ErrorCodeReason</code>：每码稳定点分字符串</li>
+<li><code>packages/protocol/src/events.ts:145-158</code> — <code>PromptOrigin</code>：13 种 turn 来源判别联合</li>
+<li><code>packages/protocol/src/events.ts:447-508</code> — <code>AgentPhase</code>：8 态 agent 运行阶段状态机</li>
+<li><code>packages/protocol/src/events.ts:629-642</code> — <code>turn.started</code>/<code>turn.ended</code> 事件</li>
+<li><code>packages/protocol/src/events.ts:651-676</code> — <code>turn.step.completed</code>：LLM 延迟四分拆</li>
+<li><code>packages/protocol/src/events.ts:938-991</code> — <code>AgentEvent</code> 联合 + <code>Event = AgentEvent &amp; {agentId, sessionId}</code></li>
+<li><code>packages/protocol/src/events.ts:1837-1895</code> — <code>agentEventSchema</code> 判别联合（50 个 schema，注意 <code>config.changed</code> 未并入）</li>
+<li><code>packages/protocol/src/events.ts:1915-1924</code> — <code>VOLATILE_EVENT_TYPES</code>：8 种瞬态事件（已 deprecated）</li>
+<li><code>packages/protocol/src/ws-control.ts:18</code> — <code>WS_PROTOCOL_VERSION = 2</code></li>
+<li><code>packages/protocol/src/ws-control.ts:27-36</code> — <code>sessionCursorSchema</code>：<code>{seq, epoch}</code> IM 式游标</li>
+<li><code>packages/protocol/src/ws-control.ts:38-56</code> — <code>wsEventEnvelopeSchema</code>：事件帧（含 delta offset 对齐字段）</li>
+<li><code>packages/protocol/src/ws-control.ts:379-393</code> — <code>resync_required</code> 三原因</li>
+<li><code>packages/protocol/src/ws-control.ts:481-622</code> — <code>WsOperationDefinition</code> 操作表（12 控制 + 4 系统 + 1 事件）</li>
+<li><code>packages/protocol/src/message.ts:76-96</code> — <code>MessageContent</code> 七种内容块 + <code>Message</code></li>
+<li><code>packages/protocol/src/session.ts:81-116</code> — <code>Session</code>（busy 取代 status 枚举）</li>
+<li><code>packages/protocol/src/rest/session.ts:1-16</code> — 会话路由全景注释</li>
+<li><code>packages/protocol/src/rest/prompt.ts:46-65</code> — <code>PromptSubmission</code>（含 profile/model/thinking/disabled_tools）</li>
+<li><code>packages/protocol/src/rest/prompt.ts:99-103</code> — <code>PromptAbortResponse</code>（幂等 abort）</li>
+<li><code>packages/protocol/src/rest/snapshot.ts:1-22</code> — 快照-订阅恢复协议设计注释</li>
+<li><code>packages/protocol/src/rest/snapshot.ts:50-61</code> — <code>in_flight_turn</code>（流式累计态）</li>
+<li><code>packages/protocol/src/rest/fs.ts:86-129</code> — <code>FsListRequest</code>/<code>FsReadRequest</code>（上限默认值）</li>
+<li><code>packages/protocol/src/rest/meta.ts:26-46</code> — <code>MetaResponse</code>（backend v1/v2 + bypass_auth）</li>
+<li><code>packages/protocol/src/rest/oauth.ts:37-61</code> — <code>OAuthFlowStart</code> 双态（设备码/短路）</li>
+<li><code>packages/protocol/src/display.ts:3-92</code> — <code>ToolInputDisplay</code> 14 种</li>
+<li><code>packages/protocol/src/display.ts:94-159</code> — <code>ToolResultDisplay</code> 12 种</li>
+<li><code>packages/protocol/src/asyncapi.ts:21-77</code> — <code>createAsyncApiDocument</code>：从操作表生成 AsyncAPI 3.1.0</li>
+<li><code>packages/protocol/src/task.ts:41-43</code> — <code>BackgroundTask*</code> 旧名别名</li>
+<li><code>packages/protocol/src/pagination.ts:5-20</code> — 游标分页（before/after 互斥）</li>
+<li><code>packages/protocol/src/time.ts:3-21</code> — ISO-8601 时间 schema（正则 + 归一化）</li>
+</ul>
+<h3 id="62-klient"><a class="anchor" href="#62-klient" aria-hidden="true">#</a>6.2 klient</h3><ul>
+<li><code>packages/klient/src/core/channel.ts:35-57</code> — <code>KlientChannel</code> SPI（call/stream/listen/close）</li>
+<li><code>packages/klient/src/core/klient.ts:45-64</code> — <code>createKlientFromChannel</code> + <code>ScopedCaller</code>（契约查表 + 双相位校验）</li>
+<li><code>packages/klient/src/core/klient.ts:66-97</code> — <code>callStream</code>：流式 chunk 逐条校验包装</li>
+<li><code>packages/klient/src/core/validation.ts:15-31</code> — <code>KlientValidationError</code> 四相位</li>
+<li><code>packages/klient/src/core/events/hub.ts:38-47</code> — <code>keyOf</code> 三类事件源归一</li>
+<li><code>packages/klient/src/core/events/hub.ts:120-147</code> — 订阅 ref-count 共享</li>
+<li><code>packages/klient/src/core/facade/global.ts:273-294</code> — <code>env()</code> 扇出聚合 + Promise 缓存</li>
+<li><code>packages/klient/src/core/facade/global.ts:303-317</code> — <code>sessions.create</code> 三步编排</li>
+<li><code>packages/klient/src/core/facade/session.ts:142-166</code> — <code>status()</code> 派生优先级</li>
+<li><code>packages/klient/src/transports/ipc/channel.ts:304-360</code> — <code>onFrame</code> 帧分派（result/error/event/stream_data/...）</li>
+<li><code>packages/klient/src/transports/ipc/host.ts:100-201</code> — <code>handleFrame</code>：hello 门禁 + dispatcher 桥接</li>
+<li><code>packages/klient/src/transports/ipc/codec.ts:31-48</code> — <code>NdjsonDecoder</code> 增量解码（坏行丢弃）</li>
+<li><code>packages/klient/src/transports/memory/dispatcher.ts:36-39</code> — <code>wireClone</code>：JSON 往返模拟网络边界</li>
+<li><code>packages/klient/src/transports/memory/dispatcher.ts:64-85</code> — <code>resolveScope</code> 四层解析 + main-agent 物化</li>
+<li><code>packages/klient/src/transports/memory/dispatcher.ts:172-211</code> — <code>modelResolver.generate</code> 特判（AbortSignal 传递）</li>
+<li><code>packages/klient/src/transports/memory/serviceRegistry.ts:44-75</code> — wire 服务名→DI token 白名单（27 项）</li>
+<li><code>packages/klient/src/transports/args.ts:7-11</code> — 尾部 undefined 裁剪</li>
+<li><code>packages/klient/src/contract/helpers.ts:19-28</code> — <code>maybe()/noResult</code> null 归一</li>
+<li><code>packages/klient/test/contract-parity.ts:298-309</code> — 编译期 parity 断言工具</li>
+</ul>
+<h3 id="63-node-sdk"><a class="anchor" href="#63-node-sdk" aria-hidden="true">#</a>6.3 node-sdk</h3><ul>
+<li><code>packages/node-sdk/src/rpc.ts:144</code> — <code>SDKRpcClientBase</code>：~80 方法 v1 外观基类</li>
+<li><code>packages/node-sdk/src/rpc.ts:145-156</code> — <code>AsyncLocalStorage</code> 承载 interactiveAgentId</li>
+<li><code>packages/node-sdk/src/rpc.ts:637</code> — <code>contextUsage</code> 不 clamp（溢出信号语义）</li>
+<li><code>packages/node-sdk/src/rpc.ts:913-938</code> — <code>requestApproval</code>：无 handler 自动取消/异常转 error 事件</li>
+<li><code>packages/node-sdk/src/sdk-rpc-client.ts:77-89</code> — v1 接线：<code>createRPC</code> 对 + <code>KimiCore</code></li>
+<li><code>packages/node-sdk/src/sdk-rpc-client-v2.ts:1-127</code> — v2 迁移地图（override 清单 + 已知差异）</li>
+<li><code>packages/node-sdk/src/sdk-rpc-client-v2.ts:408-474</code> — v2 构造：bootstrap + klient memory + ready 门</li>
+<li><code>packages/node-sdk/src/sdk-rpc-client-v2.ts:524-526</code> — <code>engineAccessor</code> 逃生口</li>
+<li><code>packages/node-sdk/src/sdk-rpc-client-v2.ts:644-671</code> — <code>removeProvider</code> 原子级联</li>
+<li><code>packages/node-sdk/src/sdk-rpc-client-v2.ts:1287-1313</code> — 惰性 main agent 物化（无模型静默 unbound）</li>
+<li><code>packages/node-sdk/src/sdk-rpc-client-v2.ts:1994-2028</code> — print 模式后台任务 drain</li>
+<li><code>packages/node-sdk/src/sdk-rpc-client-v2.ts:2103-2147</code> — 全局 MCP OAuth flow 状态机</li>
+<li><code>packages/node-sdk/src/v2/event-mapper.ts:31-53</code> — v2→v1 事件丢弃/改名集</li>
+<li><code>packages/node-sdk/src/v2/session-wiring.ts:147-160</code> — 每 agent <code>IEventBus</code> 订阅 + status 快照折叠</li>
+<li><code>packages/node-sdk/src/v2/session-wiring.ts:169-259</code> — pending interaction 三路桥</li>
+<li><code>packages/node-sdk/src/v2/resume-replay.ts:104-121</code> — 一次性 v1 Agent 折叠 wire.jsonl</li>
+<li><code>packages/node-sdk/src/v2/global-mcp.ts:42-143</code> — <code>&lt;home&gt;/mcp.json</code> CRUD（v1 schema + v2 atomicWrite）</li>
+<li><code>packages/node-sdk/src/kimi-harness.ts:119-141</code> — <code>createSession</code>：RPC→Session→注册表→telemetry</li>
+</ul>
+<h3 id="64-transcript"><a class="anchor" href="#64-transcript" aria-hidden="true">#</a>6.4 transcript</h3><ul>
+<li><code>packages/transcript/src/ops/operation.ts:36</code> — op 联合类型起点</li>
+<li><code>packages/transcript/src/ops/operation.ts:64</code> — <code>append</code> 是唯一非幂等 op 的契约声明</li>
+<li><code>packages/transcript/src/ops/apply.ts:67</code> — <code>applyOperation</code>：14 种 op 唯一归约入口</li>
+<li><code>packages/transcript/src/ops/apply.ts:135,146</code> — <code>skeletonTurn</code>/<code>skeletonStep</code> 骨架自动补全</li>
+<li><code>packages/transcript/src/ops/apply.ts:379-399</code> — <code>appendAtOffset</code> 四态对齐</li>
+<li><code>packages/transcript/src/ops/apply.ts:452-488</code> — <code>items.remove</code> 级联清理锚定 interaction</li>
+<li><code>packages/transcript/src/ops/apply.ts:602-630</code> — <code>meta.merge</code> 浅合并 + null 清徽章</li>
+<li><code>packages/transcript/src/store/agentTranscript.ts:58</code> — <code>apply</code>：批量归约 + 单次 onChange + gap 冒泡</li>
+<li><code>packages/transcript/src/store/agentTranscript.ts:151</code> — <code>snapshot({tailTurns})</code> 尾部窗口化</li>
+<li><code>packages/transcript/src/granularity/filterOps.ts:20</code> — 按 op 种类裁剪的粒度过滤</li>
+<li><code>packages/transcript/src/granularity/filterOps.ts:58</code> — reset 快照按粒度脱敏</li>
+<li><code>packages/transcript/src/granularity/grade.ts:41</code> — <code>needsResetOnTransition</code> 仅升级需 reset</li>
+<li><code>packages/transcript/src/pagination/paginate.ts:53,77</code> — segment 划分：marker 不孤悬、head 只随最老页</li>
+<li><code>packages/transcript/src/contract/schema.ts:468</code> — <code>transcriptSeqSchema</code>：op-batch 排序契约权威定义</li>
+<li><code>packages/transcript/src/contract/schema.ts:489</code> — <code>transcriptSubscribeV2PayloadSchema</code></li>
+<li><code>packages/transcript/src/history/groupTurns.ts:86-97</code> — 隐藏 origin 与开-turn system_trigger 判定</li>
+<li><code>packages/transcript/src/history/foldFacts.ts:253-262</code> — turn-clock 重放（序号漂移补偿）</li>
+<li><code>packages/transcript/src/history/foldFacts.ts:514-518</code> — 崩溃 == cancelled 收尾</li>
+<li><code>packages/transcript/src/view/registry.ts:39</code> — <code>ViewRegistry&lt;C&gt;</code> 四类 key 分发</li>
+<li><code>packages/transcript/src/store/transcriptStore.ts:34</code> — <code>ensureAgent</code> 懒创建 + roster 可观测</li>
+</ul>
+<h3 id="65-acp-adapter"><a class="anchor" href="#65-acp-adapter" aria-hidden="true">#</a>6.5 acp-adapter</h3><ul>
+<li><code>packages/acp-adapter/src/server.ts:221</code> — <code>AcpServer implements Agent</code>（会话 Map + kaos 懒建单例）</li>
+<li><code>packages/acp-adapter/src/server.ts:305-339</code> — <code>initialize</code>：版本协商 + 能力广告</li>
+<li><code>packages/acp-adapter/src/server.ts:341-428</code> — <code>newSession</code>：auth 门 → 预铸 id → AcpKaos → createSession</li>
+<li><code>packages/acp-adapter/src/server.ts:453-616</code> — <code>load/resume</code>：replayHistory 差异</li>
+<li><code>packages/acp-adapter/src/server.ts:1082-1176</code> — <code>runAcpServer</code>：stdio 桥 + 幂等信号清理</li>
+<li><code>packages/acp-adapter/src/session.ts:97</code> — <code>currentTurnId</code>：<code>${turnId}:${rawId}</code> 前缀来源</li>
+<li><code>packages/acp-adapter/src/session.ts:593-717</code> — <code>replayHistory</code>：合成 turnId + toolCallTurnIds</li>
+<li><code>packages/acp-adapter/src/session.ts:797-854</code> — <code>prompt</code>：压缩 token + slash 拦截三分支</li>
+<li><code>packages/acp-adapter/src/session.ts:987-1283</code> — <code>runTurnBody</code>：事件分发 + 懒建/升级</li>
+<li><code>packages/acp-adapter/src/session.ts:1307-1348</code> — <code>handleApproval</code>：requestPermission 阻塞往返，失败→rejected</li>
+<li><code>packages/acp-adapter/src/session.ts:1595-1658</code> — 错误映射（authRequired / internalError 防泄漏）</li>
+<li><code>packages/acp-adapter/src/events-map.ts:93-95</code> — <code>acpToolCallId</code> wire id 前缀规则</li>
+<li><code>packages/acp-adapter/src/events-map.ts:251-272</code> — <code>toolCallLazyCreateToSessionUpdate</code></li>
+<li><code>packages/acp-adapter/src/events-map.ts:291-320</code> — <code>toolCallStartedUpgradeToSessionUpdate</code></li>
+<li><code>packages/acp-adapter/src/convert.ts:25-81</code> — <code>acpBlocksToPromptParts</code>（resource_link 降级为文本）</li>
+<li><code>packages/acp-adapter/src/convert.ts:181-224</code> — <code>fileLinkToTextRef</code>（file:// → 路径文本）</li>
+<li><code>packages/acp-adapter/src/approval.ts:64-72</code> — <code>CANONICAL_OPTIONS</code>（UI 顺序即契约）</li>
+<li><code>packages/acp-adapter/src/approval.ts:160-170</code> — 旧 optionId <code>&#39;approve&#39;</code>/<code>&#39;approve_for_session&#39;</code> 兼容</li>
+<li><code>packages/acp-adapter/src/question.ts:19-25</code> — <code>q{n}_opt_{i}</code>/<code>q{n}_skip</code> 命名空间</li>
+<li><code>packages/acp-adapter/src/kaos-acp.ts:125-136</code> — <code>readText</code> 走 ACP fs 反向 RPC</li>
+<li><code>packages/acp-adapter/src/kaos-acp.ts:280-293</code> — append 读-改-写 + <code>-32002</code> 判不存在</li>
+<li><code>packages/acp-adapter/src/log-guard.ts:1-12</code> — console 重定向（<code>console.error</code> 刻意不动）</li>
+<li><code>packages/acp-adapter/src/version.ts:39-51</code> — 版本协商容错</li>
+<li><code>apps/kimi-code/src/cli/sub/acp.ts:40-44</code> — legacy 开关：<code>isLegacyEnabled()</code> 决定注册哪个实现</li>
+</ul>
+<h3 id="66-acp-server"><a class="anchor" href="#66-acp-server" aria-hidden="true">#</a>6.6 acp-server</h3><ul>
+<li><code>packages/acp-server/src/start.ts:87-179</code> — <code>runAcpServerWithStream</code> 组合根（bootstrap→klient→绑定→close 顺序）</li>
+<li><code>packages/acp-server/src/start.ts:128-135</code> — 惰性 <code>getServer()</code> 时序论证</li>
+<li><code>packages/acp-server/src/server.ts:677-698</code> — <code>createAcpAgentApp</code>：SDK <code>agent()</code> builder 全方法路由</li>
+<li><code>packages/acp-server/src/server.ts:179-226</code> — <code>initialize</code>：capability 声明（fs/terminal/mcp/fork）</li>
+<li><code>packages/acp-server/src/server.ts:603-623</code> — <code>ensureAuthed</code> 双探针</li>
+<li><code>packages/acp-server/src/session.ts:150-175</code> — <code>TurnDriver</code> 接口（early 缓冲/cancelRequested）</li>
+<li><code>packages/acp-server/src/session.ts:631-638</code> — busy 本地拒绝（-32600）</li>
+<li><code>packages/acp-server/src/session.ts:659-702</code> — <code>driveLaunch</code>：无 turn 结算/early 回放/延迟 cancel</li>
+<li><code>packages/acp-server/src/session.ts:747-787</code> — <code>onToolCallStarted</code>：lazy-create + Bash 登记</li>
+<li><code>packages/acp-server/src/session.ts:858-874</code> — <code>onTerminalCreated</code>：shellCommand 后缀匹配关联</li>
+<li><code>packages/acp-server/src/session.ts:980-1010</code> — <code>cancel</code>：压缩阶段标记 + cancelRequested</li>
+<li><code>packages/acp-server/src/events-map.ts:59-74</code> — <code>turnEndReasonToStopReason</code> 四路映射</li>
+<li><code>packages/acp-server/src/events-map.ts:104-106</code> — wire toolCallId 前缀合成</li>
+<li><code>packages/acp-server/src/events-map.ts:265-286</code> — <code>toolCallLazyCreateToSessionUpdate</code></li>
+<li><code>packages/acp-server/src/convert.ts:105-162</code> — <code>compressPromptImageParts</code>（gate→压缩→caption+持久化）</li>
+<li><code>packages/acp-server/src/convert.ts:172-201</code> — mcpServers 转换（acp transport 丢弃）</li>
+<li><code>packages/acp-server/src/interaction-bridge.ts:85-131</code> — pending 全量推送 + inFlight 防重入</li>
+<li><code>packages/acp-server/src/replay.ts:36-76</code> — 历史→通知投影 + 合成 turnId</li>
+<li><code>packages/acp-server/src/acp-terminal/acpTerminalRunner.ts:63-70</code> — Bash 调用判别四元组</li>
+<li><code>packages/acp-server/src/acp-terminal/acpTerminalRunner.ts:205-232</code> — waitForExit/轮询泵/截断跳进</li>
+<li><code>packages/acp-server/src/acp-fs/acpFsService.ts:68-106</code> — readText/writeText 反向 RPC + append 模拟</li>
+<li><code>packages/acp-server/src/acp-fs/acpFsService.ts:163-169</code> — Session-scope 注册位点论证</li>
+<li><code>packages/acp-server/src/modes.ts:72-87</code> — 4 模式→引擎双开关穷举映射</li>
+</ul>
+<h2 id="7-与其它子系统的接口"><a class="anchor" href="#7-与其它子系统的接口" aria-hidden="true">#</a>7. 与其它子系统的接口</h2><h3 id="71-向外暴露的-API"><a class="anchor" href="#71-向外暴露的-API" aria-hidden="true">#</a>7.1 向外暴露的 API</h3><ul>
+<li><strong>protocol</strong>：纯类型 + zod schema 的全量 re-export（<code>src/index.ts</code>）。运行依赖方：agent-core（v1 引擎的 RPC 线契约）、acp-server（事件类型）；devDependency：klient（parity 断言）。kap-server 用自持拷贝，不依赖本包。</li>
+<li><strong>klient</strong>：运行时仅 <code>RPCError</code>/<code>KlientValidationError</code>/<code>createKlientFromChannel</code> + 全量 type-only facade 面；子路径入口 <code>@moonshot-ai/klient/ipc</code>（<code>createKlient({socketPath,token,callTimeoutMs})</code> + <code>serveKlientIpc</code>）、<code>@moonshot-ai/klient/memory</code>（<code>createKlient({scope})</code>）。调用方：acp-server（组合根）、node-sdk（v2 RPC 客户端）。</li>
+<li><strong>node-sdk</strong>：<code>KimiHarness</code>/<code>Session</code>/<code>KimiAuthFacade</code>/<code>SDKRpcClient</code>+<code>createKimiHarness</code>/<code>SDKRpcClientV2</code>+<code>createKimiHarnessV2</code>/<code>KimiConfigRpcClient</code>/<code>KimiForCodingProvider</code>/catalog 全套 + agent-core 精选 re-export（KimiError/ErrorCodes/Event 类型等）。调用方：acp-adapter（唯一 runtime 消费者）；工厂供外部 IDE 插件宿主使用。</li>
+<li><strong>transcript</strong>：<code>EMPTY_AGENT_STATE</code>/<code>applyOperation</code>/<code>appendAtOffset</code>/<code>AgentTranscript</code>/<code>TranscriptStore</code>/grade/filter/registry/paginate/groupTurns/foldFacts + 全部契约 schema 与事件类型。调用方：kap-server（coreEventMap 投影、transcriptService、sessionEventBroadcaster、routes/transcript）、kimi-inspect。</li>
+<li><strong>acp-adapter / acp-server</strong>：<code>runAcpServer</code>/<code>runAcpServerWithStream</code>/<code>AcpServer</code>/<code>AcpSession</code> + 全部映射纯函数。调用方：apps/kimi-code 的 <code>kimi acp</code> 子命令（adapter 走 legacy 标志，server 走 native 动态 import）。</li>
+</ul>
+<h3 id="72-与其它子系统的关键接口面"><a class="anchor" href="#72-与其它子系统的关键接口面" aria-hidden="true">#</a>7.2 与其它子系统的关键接口面</h3><table>
+<thead>
+<tr>
+<th>接口面</th>
+<th>提供方</th>
+<th>消费方</th>
+<th>载体</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>KAP 线协议 schema</td>
+<td>protocol / kap-server/src/protocol</td>
+<td>agent-core(v1)、kap-server、Web UI、pi-tui</td>
+<td>npm 依赖 / 拷贝</td>
+</tr>
+<tr>
+<td>v2 引擎客户端 facade</td>
+<td>klient</td>
+<td>acp-server、node-sdk</td>
+<td><code>KlientChannel</code> SPI</td>
+</tr>
+<tr>
+<td>v1 协议形状宿主 SDK</td>
+<td>node-sdk</td>
+<td>acp-adapter、外部 IDE 插件</td>
+<td><code>KimiHarness</code>/<code>Session</code></td>
+</tr>
+<tr>
+<td>转录契约与 op 投影</td>
+<td>transcript</td>
+<td>kap-server</td>
+<td>REST <code>/transcript*</code> + WS <code>transcript.ops/reset</code></td>
+</tr>
+<tr>
+<td>ACP stdio 服务器</td>
+<td>acp-adapter/acp-server</td>
+<td>Zed / JetBrains 等 ACP 客户端</td>
+<td>JSON-RPC over stdio</td>
+</tr>
+</tbody></table>
+<h3 id="73-演进观察"><a class="anchor" href="#73-演进观察" aria-hidden="true">#</a>7.3 演进观察</h3><ol>
+<li><strong>协议所有权的漂移</strong>：v1 时代 protocol 是引擎 RPC 的直接线契约（agent-core 大量 import）；v2 时代引擎自持服务接口，protocol 降级为&quot;类型镜像&quot;（agent-core-v2 仅 2 处 import、klient 仅 devDep），kap-server 甚至自持拷贝——协议事实上的权威已从&quot;共享包&quot;漂移到&quot;引擎接口 + kap-server 实现&quot;。</li>
+<li><strong>兼容层的位置</strong>：v1 协议形状的兼容包袱（<code>BackgroundTask*</code>、<code>session.status_changed</code>、<code>event.config.changed</code> 游离于判别联合、<code>client_hello</code> 内联订阅、volatile 分类等）全部以&quot;deprecated + 别名 + 可选项&quot;形式沉淀在 protocol 里——它既是规范也是&quot;历史档案&quot;。</li>
+<li><strong>两代 ACP 的并存</strong>是引擎迁移的切片标本：同一 ACP 表面（版本协商、事件映射、批准桥、模式系统）在两代引擎上各实现一遍，差异精确对应引擎代差（构造器注入 vs Scope 服务注入、SDK 0.23 vs 1.3、新增终端/FS 反向 RPC）。<code>kimi acp</code> 的 <code>KIMI_CODE_LEGACY_FLAG</code> 是迁移期的总开关，v1 核心退役时 acp-adapter 与 node-sdk 的 v1 路径可整体删除。</li>
+</ol>
+
+    </article>
+    <footer class="page-footer">
+      <a class="nav-prev" href="research-05.html">← 05 · pi-tui 与 VSCode 扩展（apps/vscode）</a>
+      <a class="nav-next" href="research-07.html">任务 7/8：minidb —— 嵌入式 KV/文档数据库研究报告 →</a>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kimi Code 源码解读：从终端到 DI 引擎 · Kimi Code 实现详解</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" href="index.html">
+      <span class="brand-name">Kimi Code 实现详解</span>
+      <span class="brand-sub">从终端到 DI 引擎 · 源码解读</span>
+    </a>
+    <nav class="side-nav"><div class="group">本书</div><a href="index.html" class="active">Kimi Code 源码解读：从终端到 DI 引擎</a>
+      <div class="group">正文</div><a href="ch01.html">第 1 章 总览与架构</a>
+      <a href="ch02.html">第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</a>
+      <a href="ch03.html">第 3 章 v2 引擎：DI × Scope 新架构</a>
+      <a href="ch04.html">第 4 章 v1 引擎：上一代内核</a>
+      <a href="ch05.html">第 5 章 KAP 服务器与 kosong：服务端外壳与 LLM 抽象</a>
+      <a href="ch06.html">第 6 章 TUI 与 VSCode 集成：两个平行前端</a>
+      <a href="ch07.html">第 7 章 协议层：线协议、客户端 SDK 与 ACP 桥</a>
+      <a href="ch08.html">第 8 章 minidb：自研嵌入式数据库</a>
+      <a href="ch09.html">第 9 章 基础设施：认证、遥测、执行环境与调试</a>
+      <div class="group">研究附录</div><a href="research/research-01.html">01 · apps/kimi-code —— CLI 主应用研究报告</a>
+      <a href="research/research-02.html">02 · agent-core-v2：DI × Scope 新架构 agent 引擎</a>
+      <a href="research/research-03.html">03 · agent-core（旧架构 agent 核心）研究报告</a>
+      <a href="research/research-04.html">04. kap-server + kosong：Kimi Code 的服务端外壳与 LLM 抽象层</a>
+      <a href="research/research-05.html">05 · pi-tui 与 VSCode 扩展（apps/vscode）</a>
+      <a href="research/research-06.html">06 · 协议层（protocol / klient / node-sdk / transcript / acp）研究报告</a>
+      <a href="research/research-07.html">任务 7/8：minidb —— 嵌入式 KV/文档数据库研究报告</a>
+      <a href="research/research-08.html">任务 8/8：基础设施层研究报告</a></nav>
+  </aside>
+  <main class="content">
+    <header class="page-header">
+      <div class="crumbs"><a href="index.html">Kimi Code 实现详解</a> / <span>本书</span></div>
+      <h1 class="page-title">Kimi Code 源码解读：从终端到 DI 引擎</h1>
+    </header>
+    <nav class="page-toc"><div class="toc-title">本章目录</div><ol><li class="toc-2"><a href="#如何使用本书">如何使用本书</a></li><li class="toc-2"><a href="#总目录">总目录</a></li><li class="toc-3"><a href="#第-1-章-总览与架构">第 1 章 总览与架构</a></li><li class="toc-3"><a href="#第-2-章-CLI-应用外壳启动更新与-SEA-打包">第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</a></li><li class="toc-3"><a href="#第-3-章-v2-引擎DI-Scope-新架构-核心章节">第 3 章 v2 引擎：DI × Scope 新架构 ★核心章节</a></li><li class="toc-3"><a href="#第-4-章-v1-引擎上一代内核">第 4 章 v1 引擎：上一代内核</a></li><li class="toc-3"><a href="#第-5-章-KAP-服务器与-kosong">第 5 章 KAP 服务器与 kosong</a></li><li class="toc-3"><a href="#第-6-章-TUI-与-VSCode-集成">第 6 章 TUI 与 VSCode 集成</a></li><li class="toc-3"><a href="#第-7-章-协议层">第 7 章 协议层</a></li><li class="toc-3"><a href="#第-8-章-minidb自研嵌入式数据库">第 8 章 minidb：自研嵌入式数据库</a></li><li class="toc-3"><a href="#第-9-章-基础设施">第 9 章 基础设施</a></li><li class="toc-2"><a href="#快速索引十个必读文件">快速索引：十个必读文件</a></li><li class="toc-2"><a href="#附录">附录</a></li></ol></nav>
+    <article class="markdown-body">
+<h1 id="Kimi-Code-源码解读从终端到-DI-引擎">Kimi Code 源码解读：从终端到 DI 引擎</h1><blockquote>
+<p><strong>《Kimi Code 实现详解》</strong>——一本基于源码逐模块考古写成的技术学习文档。
+覆盖 Moonshot AI（月之暗面）终端 AI 编码代理 <code>kimi</code> 的全部核心子系统：约 20 个 workspace 包、40 万行 TypeScript。</p>
+</blockquote>
+<h2 id="如何使用本书"><a class="anchor" href="#如何使用本书" aria-hidden="true">#</a>如何使用本书</h2><p>本书假设你已了解 TypeScript 基础（class/interface/async/泛型）与前端工程常识（pnpm workspace、Node 生态），目标是读完每一章后能<strong>在源码中独立定位并解释对应机制的实现</strong>。每章统一按&quot;定位 → 结构 → 数据流 → 实现细节 → 代码索引&quot;组织，代码引用格式为 <code>packages/&lt;pkg&gt;/src/&lt;path&gt;.ts:行号</code>（或 <code>apps/&lt;app&gt;/src/...</code>），全部相对仓库根 <code>kimi-code/</code> 解析。</p>
+<blockquote>
+<p>源码基线：<code>~/Documents/ybs/code/proxy/kimiwork/kimi-code</code>（workspace 0.1.x，2026-08 快照）。行号随版本演进可能漂移，请以文件内注释与结构为准。
+术语沿用官方文档约定：轮次（turn）、工具调用（tool call）、审批请求（approval request）、YOLO 模式、Plan 模式、Thinking 模式。</p>
+</blockquote>
+<h2 id="总目录"><a class="anchor" href="#总目录" aria-hidden="true">#</a>总目录</h2><h3 id="第-1-章-总览与架构"><a class="anchor" href="#第-1-章-总览与架构" aria-hidden="true">#</a>第 1 章 总览与架构</h3><ul>
+<li>1.1 Kimi Code 是什么（运行形态：TUI/headless/web/ACP/VSCode）</li>
+<li>1.2 仓库布局与代码规模 Top 10</li>
+<li>1.3 总体架构：壳-引擎严格分层（SDK 门面）</li>
+<li>1.4 设计主线（引擎可替换 / 可重放状态 / 权限第一公民 / 终端完整性）</li>
+<li>1.5 阅读路线图</li>
+</ul>
+<h3 id="第-2-章-CLI-应用外壳启动更新与-SEA-打包"><a class="anchor" href="#第-2-章-CLI-应用外壳启动更新与-SEA-打包" aria-hidden="true">#</a>第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</h3><ul>
+<li>2.1 定位：夹在用户终端与引擎之间的外壳</li>
+<li>2.2 模块地图</li>
+<li>2.3 进程启动时序（main → handleMainCommand → runShell/runPrompt）</li>
+<li>2.4 交互模式启动（stty / crash 恢复 / 信号语义）</li>
+<li>2.5 TUI 层结构（KimiTUI / 控制器 / slash 命令 / reverse-RPC）</li>
+<li>2.6 SDK 事件 → 屏幕的消息流（50ms flush 节流）</li>
+<li>2.7 非交互 <code>-p</code> 模式（事件状态机 / keep-alive / headless 双保险）</li>
+<li>2.8 更新系统（灰度分桶 / 后台安装状态机 / CVE 防御）</li>
+<li>2.9 SEA 打包（5 步流水线 / 资产校验解包 / module hook）</li>
+<li>2.10 迁移与反馈</li>
+<li>2.11 v2 原生 print runner</li>
+<li>2.12 关键代码位置索引</li>
+</ul>
+<h3 id="第-3-章-v2-引擎DI-Scope-新架构-核心章节"><a class="anchor" href="#第-3-章-v2-引擎DI-Scope-新架构-核心章节" aria-hidden="true">#</a>第 3 章 v2 引擎：DI × Scope 新架构 ★核心章节</h3><ul>
+<li>3.1 四层作用域（App/Workspace/Session/Agent）</li>
+<li>3.2 DI Scope 内核（Fiber 五态机 / 级联引擎 / collection 贡献点）</li>
+<li>3.3 回合主循环（请求队列 + 惰性物化 / StepRequest / 错误链）</li>
+<li>3.4 上下文折叠（loopEventFold / computeUndoCut）</li>
+<li>3.5 工具系统（ToolAccesses 冲突语义 / veto 事件链 / 执行管线）</li>
+<li>3.6 权限与审批（12 策略静态链 / waitUntil 冷工厂 / 三层可见性）</li>
+<li>3.7 全量压缩（观测学习 ×0.85 / historySafeToCompact / 输入阶梯）</li>
+<li>3.8 wire 可重放状态机（dispatch / restore / checkpointed model / undo）</li>
+<li>3.9 会话与 Agent 生命周期（sessionSeedAdapters / fork 快照）</li>
+<li>3.10 MCP 集成（mcpCore / 失败阶梯 / OAuth）</li>
+<li>3.11 kosong：LLM 抽象（ProtocolTrait / 两条 pair 注册 / 提示缓存）</li>
+<li>3.12 持久化（write/append 两原语 / AppendLogStore / sticky failure）</li>
+<li>3.13 配置分层（五份视图 / stripEnv）</li>
+<li>3.14 关键代码位置索引</li>
+</ul>
+<h3 id="第-4-章-v1-引擎上一代内核"><a class="anchor" href="#第-4-章-v1-引擎上一代内核" aria-hidden="true">#</a>第 4 章 v1 引擎：上一代内核</h3><ul>
+<li>4.1 定位：被 v2 取代，但绝非死代码</li>
+<li>4.2 手写 DI 容器（环检测双保险 / Proxy 延迟实例化）</li>
+<li>4.3 loop：无状态主循环（事件双路 / 五个窄接口）</li>
+<li>4.4 Agent 聚合根（20 个子管理器 / TurnFlow / 6 钩子）</li>
+<li>4.5 ContextMemory（尾部闭合不变量 / 投影层）</li>
+<li>4.6 容错三层防御（退避重试 / 媒体投影降级 / 溢出观测学习）</li>
+<li>4.7 工具执行的安全边界（coerceToolResult / 2s 宽限 / SSRF 防护）</li>
+<li>4.8 RPC：同进程模拟网络</li>
+<li>4.9 事件溯源式 wire log</li>
+<li>4.10 其它子系统速览（MCP/插件/Hook/后台任务/Goal）</li>
+<li>4.11 关键代码位置索引</li>
+</ul>
+<h3 id="第-5-章-KAP-服务器与-kosong"><a class="anchor" href="#第-5-章-KAP-服务器与-kosong" aria-hidden="true">#</a>第 5 章 KAP 服务器与 kosong</h3><ul>
+<li>5.1 kap-server：传输外壳（startServer 组合根）</li>
+<li>5.2 启动时序与安全模型（loopback/lan/public 分级）</li>
+<li>5.3 WS 事件流（durable/volatile 二分 / 三个一致性机制 / Journal）</li>
+<li>5.4 反射 RPC 面（/api/v1/debug，无白名单）</li>
+<li>5.5 Transcript 双通道（活数据优先 / healTurnOps）</li>
+<li>5.6 搜索服务（generation 发布 / terms vs literal）</li>
+<li>5.7 文件监视（WS 旁路）</li>
+<li>5.8 路由层（defineRoute / :action 约定 / 占位投影）</li>
+<li>5.9 kosong：最薄的 LLM 抽象（消息级工具声明 / 并行工具路由 / 五 adapter）</li>
+<li>5.10 关键代码位置索引</li>
+</ul>
+<h3 id="第-6-章-TUI-与-VSCode-集成"><a class="anchor" href="#第-6-章-TUI-与-VSCode-集成" aria-hidden="true">#</a>第 6 章 TUI 与 VSCode 集成</h3><ul>
+<li>6.1 两条路线（自研终端图形栈 vs 引擎内嵌）</li>
+<li>6.2 pi-tui：差分渲染三策略 / 帧级引用复用 / Kitty 协商 / StdinBuffer</li>
+<li>6.3 VSCode：postMessage 桥 / 不可信 webview / 一会话一 turn / 双许可审批</li>
+<li>6.4 关键代码位置索引</li>
+</ul>
+<h3 id="第-7-章-协议层"><a class="anchor" href="#第-7-章-协议层" aria-hidden="true">#</a>第 7 章 协议层</h3><ul>
+<li>7.1 三组职责（protocol / klient+node-sdk / acp 双桥）</li>
+<li>7.2 protocol：信封与错误码 / 事件 51 种 / WS 控制面 / 快照-订阅恢复</li>
+<li>7.3 klient：契约驱动 facade（KlientChannel / wireClone / parity 断言）</li>
+<li>7.4 node-sdk：双引擎统一（迁移地图 / 事件桥 / 审批 pull 桥）</li>
+<li>7.5 transcript：14 种幂等 op（append 四态对齐 / 粒度过滤）</li>
+<li>7.6 ACP 桥：TurnDriver / 工具调用懒建（REPLACE 语义）</li>
+<li>7.7 关键代码位置索引</li>
+</ul>
+<h3 id="第-8-章-minidb自研嵌入式数据库"><a class="anchor" href="#第-8-章-minidb自研嵌入式数据库" aria-hidden="true">#</a>第 8 章 minidb：自研嵌入式数据库</h3><ul>
+<li>8.1 定位与演化（Redis × SQLite 血统 / stage 1-12）</li>
+<li>8.2 数据模型与磁盘帧（22 字节定长头 + CRC trailer）</li>
+<li>8.3 写入提交路径（同 tick append+apply / ambiguous 语义）</li>
+<li>8.4 组提交（writev / 整组回滚 / 毒化恢复）</li>
+<li>8.5 非阻塞压缩（先快照后 WAL / pre-copy 收敛 / 失败自愈）</li>
+<li>8.6 索引体系（zskiplist / staged 事务 / 查询引擎 / 全文索引）</li>
+<li>8.7 Generation 检查点（CURRENT 原子发布 / 定义哈希）</li>
+<li>8.8 ClusterDb 多进程分片（锁租约 / 指纹再校验 / WAL 追赶）</li>
+<li>8.9 锁文件（watch-bid-rename 接管协议）</li>
+<li>8.10 事件循环友好性</li>
+<li>8.11 关键代码位置索引</li>
+</ul>
+<h3 id="第-9-章-基础设施"><a class="anchor" href="#第-9-章-基础设施" aria-hidden="true">#</a>第 9 章 基础设施</h3><ul>
+<li>9.1 六个单元的分类</li>
+<li>9.2 oauth（设备码登录 / token 生命周期 / 401 竞态恢复 / 墓碑）</li>
+<li>9.3 telemetry（管道五段 / 磁盘兜底 / 崩溃捕获）</li>
+<li>9.4 kaos（Kimi Agent OS：实例级 cwd / 进程组 kill / SSH）</li>
+<li>9.5 tree-sitter-bash（预算封顶 / 永不抛异常 / 差分钉住）</li>
+<li>9.6 migration-legacy（五步迁移 / mtime 还原 / OAuth 不迁移）</li>
+<li>9.7 kimi-inspect（ProxyChannel / transcript 对账 / 虚拟化零依赖）</li>
+<li>9.8 关键代码位置索引</li>
+</ul>
+<h2 id="快速索引十个必读文件"><a class="anchor" href="#快速索引十个必读文件" aria-hidden="true">#</a>快速索引：十个必读文件</h2><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>为什么值得读</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>packages/agent-core-v2/src/app/scopes.ts:12</code></td>
+<td>四层作用域拓扑声明——v2 架构的入口</td>
+</tr>
+<tr>
+<td><code>packages/agent-core-v2/src/_base/di/cascadeEngine.ts:31</code></td>
+<td>级联引擎（传染集/等待区）——DI 内核的心脏</td>
+</tr>
+<tr>
+<td><code>packages/agent-core-v2/src/agent/loop/loopService.ts:610</code></td>
+<td>回合主循环（begin/execute/complete/error 四段）</td>
+</tr>
+<tr>
+<td><code>packages/agent-core-v2/src/agent/permissionPolicy/permissionPolicyService.ts:46</code></td>
+<td>12 策略静态链——权限决策的语义顺序</td>
+</tr>
+<tr>
+<td><code>packages/agent-core-v2/src/wire/wireService.ts:105</code></td>
+<td>wire dispatch——可重放状态机的核心</td>
+</tr>
+<tr>
+<td><code>packages/minidb/src/write-path.ts:525</code></td>
+<td>applyOp &quot;must not throw&quot; 契约注释</td>
+</tr>
+<tr>
+<td><code>packages/minidb/src/compaction.ts:238</code></td>
+<td>非阻塞压缩全流程（先快照后 WAL 的崩溃安全论证）</td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/parse.ts:31</code></td>
+<td>&quot;永不抛异常、预算封顶&quot;的退出契约</td>
+</tr>
+<tr>
+<td><code>packages/pi-tui/src/tui.ts:1267</code></td>
+<td>差分渲染三策略 + 帧级引用复用</td>
+</tr>
+<tr>
+<td><code>apps/kimi-code/src/main.ts:193</code></td>
+<td>失败路径先设 exitCode 的教训</td>
+</tr>
+</tbody></table>
+<h2 id="附录"><a class="anchor" href="#附录" aria-hidden="true">#</a>附录</h2><ul>
+<li>研究报告原始材料（子代理考古产出，含更多代码索引）：<code>research/01-08-*.md</code></li>
+<li>术语速查：<strong>KAP</strong>=Kimi Agent Protocol（/api/v1 REST + WS 的统称）；<strong>ACP</strong>=Agent Client Protocol（Anthropic 主导，编辑器集成用）；<strong>Scope</strong>=v2 引擎的生命周期作用域（App/Workspace/Session/Agent）；<strong>wire</strong>=每 Agent 的 JSONL 可重放状态日志；<strong>klient</strong>=v2 引擎的契约驱动客户端；<strong>kaos</strong>=执行环境抽象（Kimi Agent OS）；<strong>kosong</strong>=LLM 抽象层（&quot;空&quot;）；<strong>generation</strong>=minidb 的持久化索引检查点。</li>
+</ul>
+<hr>
+<p><em>本文档由对 <code>kimi-code</code> 源码的逐子系统考古生成，所有结论均可回溯到对应源码位置。</em></p>
+
+    </article>
+    <footer class="page-footer">
+      <span class="nav-prev disabled"></span>
+      <a class="nav-next" href="ch01.html">第 1 章 总览与架构 →</a>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

@@ -58,6 +58,7 @@ import { extractWsBearerToken } from './transport/ws/bearerProtocol';
 import { SessionEventBroadcaster } from './transport/ws/v1/sessionEventBroadcaster';
 import type { ConfigWarningItem } from './transport/ws/v1/events';
 import { FsWatchBridge } from './transport/ws/v1/fsWatchBridge';
+import { TerminalBridge } from './transport/ws/v1/terminalBridge';
 import { registerWsV1, WS_PATH as WS_PATH_V1 } from './transport/ws/v1/registerWsV1';
 import { getServerVersion } from './version';
 import { classify } from './security/bindClassify';
@@ -415,6 +416,7 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
     transcriptService,
   });
   const fsWatchBridge = new FsWatchBridge({ core, logger });
+  const terminalBridge = new TerminalBridge(core);
 
   // Push config warnings (deprecated keys / env vars in use, invalid sections)
   // to every WS connection as `event.config.warning` whenever the config
@@ -516,6 +518,7 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
     registry: connectionRegistry,
     broadcaster,
     fsWatchBridge,
+    terminalBridge,
     logger,
   });
 

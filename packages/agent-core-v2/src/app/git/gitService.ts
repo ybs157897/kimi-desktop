@@ -45,12 +45,26 @@ export class GitService implements IGitService {
       throw this.gitUnavailable(cwd, inside.stderr.trim() || `git rev-parse exit ${inside.exitCode}`);
     }
 
-    const porc = await this.runCommand('git', ['status', '--porcelain=v1', '--branch'], cwd);
+    const prefixResult = await this.runCommand('git', ['rev-parse', '--show-prefix'], cwd);
+    if (prefixResult.exitCode !== 0) {
+      throw this.gitUnavailable(
+        cwd,
+        prefixResult.stderr.trim() || `git rev-parse exit ${prefixResult.exitCode}`,
+      );
+    }
+    const workspacePrefix = prefixResult.stdout.trim();
+
+    const porc = await this.runCommand(
+      'git',
+      ['status', '--porcelain=v1', '--branch', '--', '.'],
+      cwd,
+    );
     if (porc.exitCode !== 0) {
       throw this.gitUnavailable(cwd, porc.stderr.trim() || `git status exit ${porc.exitCode}`);
     }
 
-    const result = parsePorcelain(porc.stdout, pathFilter);
+    const result = parsePorcelain(porc.stdout, undefined);
+    result.entries = relativizeEntries(result.entries, workspacePrefix, pathFilter);
 
     const dirty = porc.stdout
       .split('\n')
@@ -58,7 +72,11 @@ export class GitService implements IGitService {
     if (dirty) {
       const head = await this.runCommand('git', ['rev-parse', '--verify', '--quiet', 'HEAD'], cwd);
       if (head.exitCode === 0) {
-        const numstat = await this.runCommand('git', ['diff', '--no-color', '--numstat', 'HEAD', '--'], cwd);
+        const numstat = await this.runCommand(
+          'git',
+          ['diff', '--no-color', '--numstat', 'HEAD', '--', '.'],
+          cwd,
+        );
         if (numstat.exitCode === 0) {
           const stats = parseNumstat(numstat.stdout);
           result.additions = stats.additions;
@@ -209,6 +227,21 @@ export class GitService implements IGitService {
       details: { cwd, detail },
     });
   }
+}
+
+function relativizeEntries(
+  entries: FsGitStatusResponse['entries'],
+  workspacePrefix: string,
+  pathFilter: ReadonlySet<string> | undefined,
+): FsGitStatusResponse['entries'] {
+  const result: FsGitStatusResponse['entries'] = {};
+  for (const [path, status] of Object.entries(entries)) {
+    if (workspacePrefix !== '' && !path.startsWith(workspacePrefix)) continue;
+    const relativePath = workspacePrefix === '' ? path : path.slice(workspacePrefix.length);
+    if (relativePath === '' || (pathFilter !== undefined && !pathFilter.has(relativePath))) continue;
+    result[relativePath] = status;
+  }
+  return result;
 }
 
 interface RunResult {

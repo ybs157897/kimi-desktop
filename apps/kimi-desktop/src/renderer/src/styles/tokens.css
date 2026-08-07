@@ -1,0 +1,248 @@
+/*
+ * Design tokens for Kimi Code Desktop.
+ *
+ * Values follow the Codex Desktop design-token tables in
+ * docs/zh/reference/desktop-app.md (「设计 token」节), extracted from the
+ * Codex webview CSS bundle. Component code references them through Tailwind
+ * arbitrary values, e.g. `bg-[var(--color-background-surface)]`, so the
+ * variable names below are part of the public contract — keep them in sync
+ * with the doc tables.
+ *
+ * Structure (mirrors Codex):
+ *   1. named palette (gray / blue / green / red / orange / purple)
+ *   2. typography / radius / spacing / shadow / layout scales
+ *   3. semantic `--color-*` layer — dark by default, switched via
+ *      `[data-theme='light']` / `[data-theme='dark']` on <html>
+ *   4. `--color-token-*` compatibility layer consumed by markdown / prose
+ */
+
+:root {
+  /* ----------------------------- named palette ----------------------------- */
+
+  --gray-0: #ffffff;
+  --gray-50: #f9f9f9;
+  --gray-75: #f3f3f3;
+  --gray-100: #ededed;
+  --gray-300: #afafaf;
+  --gray-500: #5d5d5d;
+  --gray-550: #4f4f4f;
+  --gray-600: #414141;
+  --gray-700: #303030;
+  --gray-750: #282828;
+  --gray-800: #212121;
+  --gray-900: #181818;
+  --gray-1000: #0d0d0d;
+
+  --blue-50: #e5f3ff;
+  --blue-100: #99ceff;
+  --blue-300: #339cff;
+  --blue-400: #0285ff;
+  --blue-500: #0169cc;
+  --blue-900: #00284d;
+
+  --green-400: #04b84c;
+  --green-500: #00a240;
+
+  --red-400: #fa423e;
+  --red-500: #e02e2a;
+
+  --orange-400: #fb6a22;
+
+  --purple-400: #924ff7;
+
+  /* ------------------------------- typography ------------------------------ */
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:
+    ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Chat (and default body) font size; code is one step smaller. */
+  --codex-chat-font-size: 14px;
+  --codex-code-font-size: 12.5px;
+
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 28px;
+  --font-size-2xl: 36px;
+  --font-size-3xl: 48px;
+  --font-size-4xl: 72px;
+
+  /* ------------------------------ corner radius ---------------------------- */
+
+  /* Desktop windows use scale = 1; the scale knob exists for future
+     form-factor variants (compact / cozy). */
+  --corner-radius-scale: 1;
+  --radius-2xs: 2px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 20px;
+  --radius-4xl: 24px;
+  --radius-full: 9999px;
+
+  /* -------------------------------- spacing -------------------------------- */
+
+  --spacing: 0.25rem; /* 4px base */
+  --spacing-toolbar: 16px;
+  --spacing-panel: 12px;
+  --spacing-group: 16px; /* session-group gap */
+  --spacing-item: 4px; /* intra-group gap */
+
+  /* -------------------------------- shadows -------------------------------- */
+
+  --shadow-panel-divider: -8px 0 16px -8px rgb(0 0 0 / 0.18); /* right dock left edge */
+  --shadow-panel-divider-top: 0 -8px 16px -8px rgb(0 0 0 / 0.18); /* bottom dock top edge */
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 0.08);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 4px 8px -2px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 8px 16px -4px rgb(0 0 0 / 0.12);
+  --shadow-floating-panel: 0 12px 36px rgb(0 0 0 / 0.08), 0 2px 8px rgb(0 0 0 / 0.05);
+
+  /* --------------------------------- layout -------------------------------- */
+
+  --layout-right-panel-min-width: 320px;
+  --layout-thread-max-width: 40rem;
+  --layout-markdown-max-width: 64rem;
+  /* Sidebar token-row height: 14px font × 1.5 line-height + 8px vertical padding. */
+  --height-token-row: 29px;
+
+  /* ---------------------------- markdown prose ----------------------------- */
+
+  --markdown-inline-code-border-radius: 6px;
+  --markdown-inline-code-padding: 1px 6px;
+  --markdown-inline-code-font-size: 0.92em;
+  --markdown-code-block-border-radius: 10px;
+  --markdown-code-block-padding: 8px;
+  --markdown-code-block-line-height: 20px;
+  --markdown-list-padding-inline-start: 1.3125rem;
+  --markdown-paragraph-spacing: 0.625rem;
+}
+
+/* -------------------------- semantic layer (dark) --------------------------
+   Dark is the default theme; `[data-theme='light']` on <html> switches. */
+:root,
+[data-theme='dark'] {
+  --color-background-surface: var(--gray-900); /* #181818 */
+  --color-background-surface-under: #000000;
+  --color-background-editor-opaque: var(--gray-800); /* #212121 */
+  --color-background-panel: #202020;
+  --color-terminal-shell: #151515;
+  --color-background-accent: var(--blue-900); /* #00284d */
+
+  --color-button-primary-background: var(--gray-1000); /* main button */
+  --color-button-primary-foreground: var(--gray-0);
+  --color-background-button-secondary: rgb(255 255 255 / 0.05);
+  --color-background-button-secondary-hover: rgb(255 255 255 / 0.08);
+  --color-background-button-tertiary: rgb(255 255 255 / 0.03);
+  --color-background-button-tertiary-hover: rgb(255 255 255 / 0.07);
+
+  --color-text-foreground: var(--gray-0);
+  --color-text-secondary: rgb(255 255 255 / 0.65);
+  --color-text-tertiary: rgb(255 255 255 / 0.45);
+  --color-text-on-accent: var(--gray-1000);
+  --color-text-accent: var(--blue-300);
+  --color-text-success: var(--green-400);
+  --color-text-danger: var(--red-400);
+  --color-text-warning: var(--orange-400);
+
+  /* border: 8% / 16% / 4% white mixes */
+  --color-border: rgb(255 255 255 / 0.08);
+  --color-border-heavy: rgb(255 255 255 / 0.16);
+  --color-border-light: rgb(255 255 255 / 0.04);
+  --color-border-focus: rgb(51 156 255 / 0.7); /* blue-300 @ 70% */
+  --color-border-error: rgb(250 66 62 / 0.4); /* red-400 @ 40% */
+  --color-border-warning: rgb(255 133 73 / 0.4); /* orange @ 40% */
+
+  --color-list-hover: rgb(255 255 255 / 0.08);
+  --color-list-active: rgb(255 255 255 / 0.12);
+
+  /* accent（背景 / 文本）: blue-900 / blue-100 */
+  --color-accent-background: var(--blue-900);
+  --color-accent-text: var(--blue-100);
+
+  /* ------------------ token compatibility layer (prose) ------------------- */
+  --color-token-text-primary: var(--color-text-foreground);
+  --color-token-text-secondary: var(--color-text-secondary);
+  --color-token-text-tertiary: var(--color-text-tertiary);
+  --color-token-text-code-block-background: var(--color-background-button-secondary);
+  --color-token-text-link-foreground: var(--blue-300);
+  --color-token-border: var(--color-border);
+  --color-token-border-light: var(--color-border-light);
+  --color-token-border-heavy: var(--color-border-heavy);
+  --color-token-focus-border: var(--color-border-focus);
+  --color-token-bg-primary: var(--color-background-surface);
+  --color-token-bg-secondary: color-mix(in srgb, var(--color-token-bg-primary) 92%, transparent);
+  --color-token-main-surface-primary: var(--color-background-surface);
+  --color-token-editor-foreground: var(--color-text-foreground);
+  --color-token-list-hover-background: var(--color-list-hover);
+  --color-token-list-active-background: var(--color-list-active);
+  --color-token-on-accent: var(--color-text-on-accent);
+  --color-token-error-foreground: var(--red-400);
+}
+
+/* -------------------------- semantic layer (light) ------------------------ */
+
+[data-theme='light'] {
+  --color-background-surface: #fcfcfb;
+  --color-background-surface-under: #f1f2f1;
+  --color-background-editor-opaque: #ffffff;
+  --color-background-panel: #ffffff;
+  --color-terminal-shell: #171717;
+  --color-background-accent: var(--blue-50); /* #e5f3ff */
+
+  --color-button-primary-background: var(--color-text-foreground); /* foreground base */
+  --color-button-primary-foreground: var(--gray-0);
+  --color-background-button-secondary: rgb(26 28 31 / 0.05);
+  --color-background-button-secondary-hover: rgb(26 28 31 / 0.05);
+  --color-background-button-tertiary: transparent;
+  --color-background-button-tertiary-hover: rgb(26 28 31 / 0.1);
+
+  --color-text-foreground: #1a1c1f;
+  --color-text-secondary: rgb(26 28 31 / 0.65);
+  --color-text-tertiary: rgb(26 28 31 / 0.45);
+  --color-text-on-accent: var(--gray-1000);
+  --color-text-accent: var(--blue-500);
+  --color-text-success: var(--green-500);
+  --color-text-danger: var(--red-500);
+  --color-text-warning: var(--orange-400);
+
+  /* border: 8% / 12% / 5% foreground mixes */
+  --color-border: rgb(26 28 31 / 0.075);
+  --color-border-heavy: rgb(26 28 31 / 0.12);
+  --color-border-light: rgb(26 28 31 / 0.05);
+  --color-border-focus: var(--blue-300);
+  --color-border-error: rgb(224 46 42 / 0.15); /* red-500 @ 15% */
+  --color-border-warning: rgb(226 85 7 / 0.15); /* orange @ 15% */
+
+  --color-list-hover: rgb(26 28 31 / 0.055);
+  --color-list-active: rgb(26 28 31 / 0.085);
+
+  /* accent（背景 / 文本）: blue-50 / blue-300 */
+  --color-accent-background: var(--blue-50);
+  --color-accent-text: var(--blue-300);
+
+  /* ------------------ token compatibility layer (prose) ------------------- */
+  --color-token-text-primary: var(--color-text-foreground);
+  --color-token-text-secondary: var(--color-text-secondary);
+  --color-token-text-tertiary: var(--color-text-tertiary);
+  --color-token-text-code-block-background: var(--color-background-button-secondary);
+  --color-token-text-link-foreground: var(--blue-500);
+  --color-token-border: var(--color-border);
+  --color-token-border-light: var(--color-border-light);
+  --color-token-border-heavy: var(--color-border-heavy);
+  --color-token-focus-border: var(--color-border-focus);
+  --color-token-bg-primary: var(--color-background-surface);
+  --color-token-bg-secondary: color-mix(in srgb, var(--color-token-bg-primary) 92%, transparent);
+  --color-token-main-surface-primary: var(--color-background-surface);
+  --color-token-editor-foreground: var(--color-text-foreground);
+  --color-token-list-hover-background: var(--color-list-hover);
+  --color-token-list-active-background: var(--color-list-active);
+  --color-token-on-accent: var(--color-text-on-accent);
+  --color-token-error-foreground: var(--red-500);
+}

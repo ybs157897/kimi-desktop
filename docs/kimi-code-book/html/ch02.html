@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第 2 章 CLI 应用外壳：启动、更新与 SEA 打包 · Kimi Code 实现详解</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" href="index.html">
+      <span class="brand-name">Kimi Code 实现详解</span>
+      <span class="brand-sub">从终端到 DI 引擎 · 源码解读</span>
+    </a>
+    <nav class="side-nav"><div class="group">本书</div><a href="index.html">Kimi Code 源码解读：从终端到 DI 引擎</a>
+      <div class="group">正文</div><a href="ch01.html">第 1 章 总览与架构</a>
+      <a href="ch02.html" class="active">第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</a>
+      <a href="ch03.html">第 3 章 v2 引擎：DI × Scope 新架构</a>
+      <a href="ch04.html">第 4 章 v1 引擎：上一代内核</a>
+      <a href="ch05.html">第 5 章 KAP 服务器与 kosong：服务端外壳与 LLM 抽象</a>
+      <a href="ch06.html">第 6 章 TUI 与 VSCode 集成：两个平行前端</a>
+      <a href="ch07.html">第 7 章 协议层：线协议、客户端 SDK 与 ACP 桥</a>
+      <a href="ch08.html">第 8 章 minidb：自研嵌入式数据库</a>
+      <a href="ch09.html">第 9 章 基础设施：认证、遥测、执行环境与调试</a>
+      <div class="group">研究附录</div><a href="research/research-01.html">01 · apps/kimi-code —— CLI 主应用研究报告</a>
+      <a href="research/research-02.html">02 · agent-core-v2：DI × Scope 新架构 agent 引擎</a>
+      <a href="research/research-03.html">03 · agent-core（旧架构 agent 核心）研究报告</a>
+      <a href="research/research-04.html">04. kap-server + kosong：Kimi Code 的服务端外壳与 LLM 抽象层</a>
+      <a href="research/research-05.html">05 · pi-tui 与 VSCode 扩展（apps/vscode）</a>
+      <a href="research/research-06.html">06 · 协议层（protocol / klient / node-sdk / transcript / acp）研究报告</a>
+      <a href="research/research-07.html">任务 7/8：minidb —— 嵌入式 KV/文档数据库研究报告</a>
+      <a href="research/research-08.html">任务 8/8：基础设施层研究报告</a></nav>
+  </aside>
+  <main class="content">
+    <header class="page-header">
+      <div class="crumbs"><a href="index.html">Kimi Code 实现详解</a> / <span>正文</span></div>
+      <h1 class="page-title">第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</h1>
+    </header>
+    <nav class="page-toc"><div class="toc-title">本章目录</div><ol><li class="toc-2"><a href="#21-定位夹在用户终端与-agent-引擎之间的外壳">2.1 定位：夹在用户终端与 agent 引擎之间的外壳</a></li><li class="toc-2"><a href="#22-模块地图src">2.2 模块地图（src/）</a></li><li class="toc-2"><a href="#23-进程启动时序">2.3 进程启动时序</a></li><li class="toc-3"><a href="#231-CLI-命令面createProgram">2.3.1 CLI 命令面（createProgram）</a></li><li class="toc-2"><a href="#24-交互模式启动runShell-KimiTUI">2.4 交互模式启动（runShell → KimiTUI）</a></li><li class="toc-2"><a href="#25-TUI-层结构srctui">2.5 TUI 层结构（src/tui/）</a></li><li class="toc-3"><a href="#251-全局状态形状">2.5.1 全局状态形状</a></li><li class="toc-3"><a href="#252-控制器每个一个可独立测试的职责切片">2.5.2 控制器（每个一个可独立测试的职责切片）</a></li><li class="toc-3"><a href="#253-命令与反向-RPC">2.5.3 命令与反向 RPC</a></li><li class="toc-2"><a href="#26-SDK-事件-屏幕的消息流">2.6 SDK 事件 → 屏幕的消息流</a></li><li class="toc-2"><a href="#27-非交互--p-模式的事件状态机">2.7 非交互 -p 模式的事件状态机</a></li><li class="toc-2"><a href="#28-更新系统完整的产品级灰度发布">2.8 更新系统：完整的产品级灰度发布</a></li><li class="toc-3"><a href="#281-灰度滚动发布rolloutts">2.8.1 灰度滚动发布（rollout.ts）</a></li><li class="toc-3"><a href="#282-更新预检状态机preflightts812-行">2.8.2 更新预检状态机（preflight.ts，812 行）</a></li><li class="toc-2"><a href="#29-SEA-打包Node-官方单二进制-postject">2.9 SEA 打包：Node 官方单二进制 + postject</a></li><li class="toc-2"><a href="#210-迁移与反馈">2.10 迁移与反馈</a></li><li class="toc-2"><a href="#211-v2-原生-print-runnerrun-v2-printts861-行">2.11 v2 原生 print runner（run-v2-print.ts，861 行）</a></li><li class="toc-2"><a href="#212-关键代码位置索引">2.12 关键代码位置索引</a></li><li class="toc-2"><a href="#213-本章小结">2.13 本章小结</a></li></ol></nav>
+    <article class="markdown-body">
+<h1 id="第-2-章-CLI-应用外壳启动更新与-SEA-打包">第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</h1><blockquote>
+<p>研究对象：<code>apps/kimi-code</code>（<code>@moonshot-ai/kimi-code</code>，约 5.5 万行 TS，292 个文件）。
+学习目标：理解 <code>kimi</code> 进程从 argv 到 TUI 的完整旅程，以及&quot;桌面级 CLI 产品&quot;的进程生命周期工程（终端恢复、更新灰度、单二进制打包）。</p>
+</blockquote>
+<h2 id="21-定位夹在用户终端与-agent-引擎之间的外壳"><a class="anchor" href="#21-定位夹在用户终端与-agent-引擎之间的外壳" aria-hidden="true">#</a>2.1 定位：夹在用户终端与 agent 引擎之间的外壳</h2><p><code>apps/kimi-code</code> 是用户执行 <code>kimi</code> 时实际运行的进程，仓库根 AGENTS.md 给出的入口链：</p>
+<pre class="hljs"><code><span class="hljs-function"><span class="hljs-title">src</span>/main.ts -&gt;</span> <span class="hljs-function"><span class="hljs-title">src</span>/cli/commands.ts -&gt;</span> src/cli/run-shell.ts
+   -&gt; SDK K<span class="hljs-function"><span class="hljs-title">imiHarness</span> -&gt;</span> src/tui/kimi-tui.ts</code></pre><p>它不实现任何 agent 逻辑——所有能力（会话、工具、流式事件、审批）都经 <code>@moonshot-ai/kimi-code-sdk</code> 的 <code>KimiHarness</code>/<code>Session</code> 门面获得。AGENTS.md 有硬性约束：<strong><code>apps/kimi-code</code> 不得直接 import <code>@moonshot-ai/agent-core</code></strong>（v1 时代产物）。引擎切换仅靠一个工厂函数 + 一个环境变量：</p>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>机制</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>v1（legacy）</td>
+<td><code>createKimiHarness()</code> → <code>SDKRpcClient</code> → 进程内 <code>KimiCore</code>（agent-core RPC 服务）+ JSON-RPC</td>
+</tr>
+<tr>
+<td>v2（默认）</td>
+<td><code>createKimiHarnessV2()</code> → 进程内 <code>bootstrap()</code> agent-core-v2 DI 容器 → <code>createKlient({scope: app})</code>（klient/memory 内存传输）→ 所有调用走 klient 契约校验 + JSON 往返，<strong>与网络传输走同一条验证路径</strong></td>
+</tr>
+</tbody></table>
+<p><code>kimi web</code> 是例外：它在当前进程内直接启动 kap-server（<code>startServer()</code>），不经过 KimiHarness。</p>
+<h2 id="22-模块地图src"><a class="anchor" href="#22-模块地图src" aria-hidden="true">#</a>2.2 模块地图（src/）</h2><pre class="hljs"><code>src/
+├── main.ts               <span class="hljs-comment"># 进程入口：Commander 解析、preflight、分发</span>
+├── built-<span class="hljs-keyword">in</span>-catalog.ts   <span class="hljs-comment"># 构建期注入的 models.dev 目录快照（tsdown define）</span>
+├── cli/
+│   ├── commands.ts       <span class="hljs-comment"># createProgram：主命令面 + 全部子命令注册</span>
+│   ├── options.ts        <span class="hljs-comment"># CLIOptions + validateOptions 冲突校验</span>
+│   ├── run-shell.ts      <span class="hljs-comment"># 交互模式启动（stty、crash 恢复、KimiTUI 装配）</span>
+│   ├── run-prompt.ts     <span class="hljs-comment"># 非交互 -p 模式（事件→输出渲染、goal 模式）</span>
+│   ├── headless-<span class="hljs-keyword">exit</span>.ts  <span class="hljs-comment"># headless 收尾：drain stdio + 兜底强杀</span>
+│   ├── update<span class="hljs-regexp">/           # 更新预检：cdn/</span>rollout<span class="hljs-regexp">/install-lock/i</span>nstall-state/preflight
+│   ├── sub<span class="hljs-regexp">/              # 子命令：acp/</span>doctor<span class="hljs-regexp">/export/</span>login<span class="hljs-regexp">/provider/u</span>pgrade<span class="hljs-regexp">/vis/</span>web
+│   └── v2/               <span class="hljs-comment"># run-v2-print.ts（v2 原生 print runner）</span>
+├── tui/                  <span class="hljs-comment"># 交互式终端 UI（kimi-tui.ts 单文件 3445 行）</span>
+├── native<span class="hljs-regexp">/               # SEA 原生资产：module-hook/</span>native-assets/minidb-worker
+├── migration<span class="hljs-regexp">/            # ~/</span>.kimi → ~/.kimi-code 迁移（检测 + TUI 屏）
+├── feedback/             <span class="hljs-comment"># 反馈提交：zip 打包 + 分片上传</span>
+└── constant<span class="hljs-regexp">/ utils/</span> generated/</code></pre><h2 id="23-进程启动时序"><a class="anchor" href="#23-进程启动时序" aria-hidden="true">#</a>2.3 进程启动时序</h2><pre class="hljs"><code>main()
+  ├─ <span class="hljs-number">1</span>. process.title / installCrashHandlers（kimi-telemetry 全局未捕获记录）
+  ├─ <span class="hljs-number">2</span>. installGlobalProxyDispatcher（全局 fetch → HTTP_PROXY/HTTPS_PROXY，NO_PROXY 生效）
+  ├─ <span class="hljs-number">3</span>. installNativeModuleHook（SEA .node 资产重定向）
+  ├─ <span class="hljs-number">4</span>. installMinidbTextBuildWorker（SEA worker 解包，失败降级内联）
+  ├─ <span class="hljs-number">5</span>. runNativeAssetSmokeIfRequested?（KIMI_CODE_NATIVE_SMOKE=<span class="hljs-number">1</span> 专用退出）
+  ├─ <span class="hljs-number">6</span>. queueMicrotask: cleanupStaleNativeCacheForCurrent（fire-and-forget）
+  └─ <span class="hljs-number">7</span>. createProgram(...).parse(argv)
+handleMainCommand ── validateOptions ──(冲突)→ <span class="hljs-keyword">exit</span> <span class="hljs-number">1</span>
+  ── runUpdatePreflight ──(<span class="hljs-keyword">exit</span>)→ process.<span class="hljs-keyword">exit</span>(<span class="hljs-number">0</span>)
+  ── uiMode == <span class="hljs-string">&#x27;print&#x27;</span> ? → runPrompt（headless）→ finalizeHeadlessRun
+                        └→ runShell（interactive）</code></pre><p>一个值得学习的失败路径技巧（main.ts:193）：<strong>同步先设 <code>process.exitCode = 1</code> 再 await 日志</strong>——失败的 <code>finally</code> 清理会先拆掉已注册的 handle，事件循环可能在 await 期间自然排空并以默认码 0 退出，导致 <code>kimi -p</code> 失败却返回 0 的非确定性 bug。</p>
+<p><code>handleMainCommand</code> 是<strong>可复用、可单测的处理器</strong>，自身不终止进程——<code>validateOptions</code>（15 条显式规则清单，非 zod：prompt 非空、prompt 不能配 yolo/auto/plan、agent 与 agent-file 互斥、session 与 continue 互斥……）→ <code>runUpdatePreflight</code> → 分发。</p>
+<h3 id="231-CLI-命令面createProgram"><a class="anchor" href="#231-CLI-命令面createProgram" aria-hidden="true">#</a>2.3.1 CLI 命令面（createProgram）</h3><p>主命令选项：<code>-S/--session [id]</code>、<code>-r/--resume</code>（隐藏）、<code>-c/--continue</code>、<code>-y/--yolo</code>、<code>--auto</code>、<code>-m/--model</code>、<code>-p/--prompt</code>、<code>--output-format</code>、<code>--skills-dir</code>、<code>--agent/--agent-file</code>、<code>--add-dir</code>、<code>--plan</code>。</p>
+<p>子命令：<code>export</code>、<code>provider</code>（add/list/catalog）、<code>acp</code>、<code>web</code>（+隐藏 <code>server kill</code>、<code>web rotate-token</code>）、<code>login</code>、<code>doctor</code>、<code>vis</code>、<code>migrate</code>、<code>upgrade</code>（alias <code>update</code>）、隐藏的 <code>__plugin_run_node</code>（供插件在宿主 Node 环境执行入口）。</p>
+<p>末尾的 <code>program.argument(&#39;[args...]&#39;)</code> 兜底 action 做新旧选项归一（<code>--resume</code>→<code>session</code>、<code>--yes</code>/<code>--auto-approve</code>→<code>yolo</code>）。</p>
+<h2 id="24-交互模式启动runShell-KimiTUI"><a class="anchor" href="#24-交互模式启动runShell-KimiTUI" aria-hidden="true">#</a>2.4 交互模式启动（runShell → KimiTUI）</h2><pre class="hljs"><code>runShell(opts, version)
+  ├─ loadTuiConfig()            <span class="hljs-comment"># tui.toml；失败→fallback+warning</span>
+  ├─ getColorPalette + currentTheme.setPalette   <span class="hljs-comment"># 必须在 pi-tui 抓 stdin 之前</span>
+  ├─ createKimiHarnessV2|V1     <span class="hljs-comment"># engineV2 = !KIMI_CODE_LEGACY_FLAG</span>
+  ├─ harness.ensureConfigFile() / getConfig()
+  ├─ detectPendingMigration()   <span class="hljs-comment"># ~/.kimi → 目标 home</span>
+  ├─ resolveAgentProfileSelection(--agent/--agent-file)
+  ├─ new KimiTUI(harness, {...})
+  ├─ initializeCliTelemetry / setCrashPhase(<span class="hljs-string">&#x27;runtime&#x27;</span>)
+  ├─ stty -g 保存 + stty -ixon  <span class="hljs-comment"># 关 XON/XOFF 流控</span>
+  ├─ process.on uncaughtException/unhandledRejection → emergencyExit
+  ├─ tui.start()
+  │    ├─ registerSignalHandlers()      <span class="hljs-comment"># SIGTERM→stop(143)；SIGHUP→emergencyExit(129)</span>
+  │    ├─ migrationPlan? → runMigrationScreen
+  │    ├─ maybeRunWorkspaceTrustPrompt()
+  │    ├─ initMainTui() → init()
+  │    │     ├─ authFlow.refreshAvailableModels
+  │    │     ├─ resume 分支：-S &lt;id&gt; 或 -c（列最近会话）
+  │    │     ├─ engineV2 分支：无会话启动（首次消息才创建）← 懒会话
+  │    │     └─ 否则 harness.createSession
+  │    ├─ mountFooter <span class="hljs-regexp">/ renderWelcome /</span> loadBanner / setupAutocomplete
+  │    ├─ startEventLoop()
+  │    └─ finishStartup()       <span class="hljs-comment"># 配置警告/会话回放/事件订阅/技能+插件命令刷新</span>
+  └─ tui.onExit → shutdownTelemetry → <span class="hljs-string">&quot;Bye!&quot;</span> + resume 提示 → 恢复 stty → <span class="hljs-keyword">exit</span></code></pre><p><strong>信号处理与终端恢复是精心设计的防线</strong>：</p>
+<ul>
+<li>SIGHUP/死终端 EIO → <code>emergencyTerminalExit</code>（不做清理，防 EIO 写循环烧 CPU）；</li>
+<li>SIGTERM → 正常 <code>stop()</code>（逐步拆组件、关会话、harness.close、drainInput）后 exit 143；</li>
+<li><code>stop()</code> 的顺序刻意&quot;先停所有 requestRender 来源，再拆 UI&quot;，防止 stop 后定时器继续触发渲染；</li>
+<li>崩溃路径（uncaughtException/unhandledRejection/SIGHUP）都走 <code>emergencyExit</code>：<strong>同步 flush 日志</strong> + <code>restoreTerminalModes()</code> + 恢复 stty + exit——&quot;crash log 只进了异步 sink，必须同步 flush 否则 process.exit 丢掉唯一解释崩溃原因的那行&quot;。</li>
+</ul>
+<h2 id="25-TUI-层结构srctui"><a class="anchor" href="#25-TUI-层结构srctui" aria-hidden="true">#</a>2.5 TUI 层结构（src/tui/）</h2><p><code>KimiTUI</code>（kimi-tui.ts，3445 行）只是<strong>协调器</strong>（装配控制器、转发 slash 命令、处理输入），重逻辑下沉到 controllers/commands/components/reverse-rpc。</p>
+<h3 id="251-全局状态形状"><a class="anchor" href="#251-全局状态形状" aria-hidden="true">#</a>2.5.1 全局状态形状</h3><ul>
+<li><code>TUIState</code>（tui-state.ts:28）：ui/terminal 基件 + 9 个 GutterContainer（transcript/activity/todoPanel/queue/btwPanel/editor）+ footer + editor + appState。</li>
+<li><code>AppState</code>（types.ts:27）：模型/权限/planMode/thinkingEffort/上下文用量/streamingPhase（<code>&#39;idle&#39;|&#39;waiting&#39;|&#39;thinking&#39;|&#39;composing&#39;|&#39;shell&#39;</code>）/主题/通知/goal 等 TUI 全局状态的唯一形状。</li>
+<li><code>TranscriptEntry</code>（types.ts:190）：kind 枚举（welcome/user/assistant/tool_call/thinking/status/skill_activation/plugin_command/cron/goal）+ 渲染模式（markdown/plain/notice）+ 各种附加数据载荷。</li>
+</ul>
+<h3 id="252-控制器每个一个可独立测试的职责切片"><a class="anchor" href="#252-控制器每个一个可独立测试的职责切片" aria-hidden="true">#</a>2.5.2 控制器（每个一个可独立测试的职责切片）</h3><table>
+<thead>
+<tr>
+<th>控制器</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>session-event-handler.ts</code>（1202 行）</td>
+<td><strong>SDK 事件路由中枢</strong>：<code>handleEvent</code> 按 type 分发到 30+ 私有处理器（turn/step/tool/assistant/thinking/hook/goal/compaction/cron/mcp/subagent/background.task/plugin_command）</td>
+</tr>
+<tr>
+<td><code>streaming-ui.ts</code>（909 行）</td>
+<td>流式渲染：缓冲 delta，<strong>50ms 节流 flush</strong>，turn 边界折叠、TodoList 结果提取</td>
+</tr>
+<tr>
+<td><code>session-replay.ts</code>（785 行）</td>
+<td>resume 历史回放渲染（wire.jsonl 重建 transcript）</td>
+</tr>
+<tr>
+<td><code>subagent-event-handler.ts</code></td>
+<td>子代理与 AgentSwarm 进度渲染</td>
+</tr>
+<tr>
+<td><code>tasks-browser.ts</code></td>
+<td>后台任务浏览器面板</td>
+</tr>
+<tr>
+<td><code>editor-keyboard.ts</code> / <code>auth-flow.ts</code> / <code>btw-panel.ts</code></td>
+<td>键盘控制 / 登录流 / 侧问面板</td>
+</tr>
+</tbody></table>
+<h3 id="253-命令与反向-RPC"><a class="anchor" href="#253-命令与反向-RPC" aria-hidden="true">#</a>2.5.3 命令与反向 RPC</h3><ul>
+<li><code>commands/registry.ts</code> 注册 ~40 个内置 slash 命令（<code>/model</code>、<code>/yolo</code>、<code>/auto</code>、<code>/plan</code>、<code>/compact</code>、<code>/goal</code>、<code>/undo</code>、<code>/plugins</code>、<code>/mcp-config</code>、<code>/swarm</code>、<code>/fork</code>…）；<code>skills.ts</code>/<code>plugin-commands.ts</code> 从 SDK 技能/插件列表<strong>动态生成</strong> slash 命令。</li>
+<li><code>reverse-rpc/</code>：SDK 审批/提问回调 → UI 面板的适配层（<code>showApprovalPanel</code>/<code>showQuestionDialog</code>），用户选择写回 SDK 响应。显示块类型：brief/diff/shell/file_op/file_content/url_fetch/search。</li>
+<li><code>theme/</code>：颜色令牌系统（单一事实源）——<code>ColorPalette</code> dark/light 两套语义令牌，<strong>组件禁止直接用 <code>chalk.red</code> 等命名色</strong>（CI 有 <code>chalk-named-color-guard.test.ts</code> 强制）。</li>
+</ul>
+<h2 id="26-SDK-事件-屏幕的消息流"><a class="anchor" href="#26-SDK-事件-屏幕的消息流" aria-hidden="true">#</a>2.6 SDK 事件 → 屏幕的消息流</h2><pre class="hljs"><code>SDK Session（v1 KimiCore RPC / v2 klient+memory）
+  │  session<span class="hljs-selector-class">.onEvent</span>(event)
+  ▼
+SessionEventHandler<span class="hljs-selector-class">.startSubscription</span>()
+  │  event<span class="hljs-selector-class">.sessionId</span> 不匹配 → 丢弃；host<span class="hljs-selector-class">.aborted</span> → 丢弃
+  │  SubAgentEventHandler<span class="hljs-selector-class">.routeChildAgentEvent</span>() → 子代理单独走
+  ▼
+<span class="hljs-function"><span class="hljs-title">handleEvent</span><span class="hljs-params">(event)</span></span> ── <span class="hljs-selector-tag">switch</span>(event.type) <span class="hljs-number">30</span>+ 分支 ──► 各 <span class="hljs-built_in">handleXxx</span>()
+  ├─ turn.started/step<span class="hljs-selector-class">.started</span> ──► streamingUI<span class="hljs-selector-class">.resetToolUi</span>()/<span class="hljs-built_in">setStep</span>()
+  ├─ assistant<span class="hljs-selector-class">.delta</span> ──► <span class="hljs-built_in">appendAssistantDelta</span>() → <span class="hljs-built_in">scheduleFlush</span>()
+  ├─ thinking<span class="hljs-selector-class">.delta</span> ──► <span class="hljs-built_in">appendThinkingDelta</span>()（空 delta 保持 moon spinner）
+  ├─ tool<span class="hljs-selector-class">.call</span>.started/delta ──► <span class="hljs-built_in">registerToolCall</span>()/<span class="hljs-built_in">accumulateToolCallDelta</span>()
+  ├─ tool<span class="hljs-selector-class">.result</span> ──► <span class="hljs-built_in">completeToolResult</span>()（TodoList 工具→todo 面板）
+  ├─ tool<span class="hljs-selector-class">.progress</span> ──► 工具卡片尾部追加输出
+  ├─ goal<span class="hljs-selector-class">.updated</span> ──► 完成消息/生命周期 <span class="hljs-attribute">marker</span>/队列晋升
+  ├─ shell.output/started ──► shellOutputStreams（按 commandId 各自更新）
+  └─ mcp<span class="hljs-selector-class">.server</span><span class="hljs-selector-class">.status</span> ──► spinner→StatusMessage 原位替换
+  ▼
+StreamingUIController
+  ├─ 缓冲：pendingAssistantFlush/pendingThinkingFlush/pendingToolCallFlushIds
+  ├─ <span class="hljs-built_in">scheduleFlush</span>(): 距上次 flush ≥<span class="hljs-number">50ms</span> 才真正落盘（STREAMING_UI_FLUSH_MS=<span class="hljs-number">50</span>）
+  ▼
+pi-tui TUI
+  ├─ <span class="hljs-built_in">requestRender</span>() → nextTick → <span class="hljs-built_in">scheduleRender</span>()（<span class="hljs-number">16ms</span> MIN_RENDER_INTERVAL_MS 合并）
+  └─ <span class="hljs-built_in">doRender</span>(): 渲染组件树 → 行数组 → <span class="hljs-attribute">overlay</span> 合成 → 提取 CURSOR_MARKER
+        → 逐行：raw 字符串引用相等 → 复用上帧处理结果
+        → 只把变化的行按行移动 + 重写输出到终端</code></pre><p>两个边界处理（教科书级）：</p>
+<ul>
+<li><strong>空 thinking delta 的坑</strong>（handleThinkingDelta 注释）：加密/脱敏 reasoning 流出的 thinking delta 可见文本为空或仅空白——若此时切到 thinking 面板模式会停掉 moon spinner 但 ThinkingComponent 永远建不出来（它需要可见文本）。处理：<code>event.delta.trim().length===0 &amp;&amp; !hasThinkingDraft()</code> 时<strong>保持 waiting spinner</strong>。</li>
+<li><strong>goal 队列晋升竞态防护</strong>：<code>queuedMessageDispatchPending</code> 标志解决&quot;队列已被 shift 但延迟发送尚未执行&quot;窗口期；<code>scheduleQueuedGoalPromotion</code> 用 setTimeout(0) 序列化，任一环节失配就回滚。</li>
+</ul>
+<h2 id="27-非交互--p-模式的事件状态机"><a class="anchor" href="#27-非交互--p-模式的事件状态机" aria-hidden="true">#</a>2.7 非交互 -p 模式的事件状态机</h2><pre class="hljs"><code>runPrompt → resolvePromptSession（-S 精确 / -c 最近 / 新建 auto 权限）
+  → runPromptTurn: 订阅 session.onEvent，驱动 session.<span class="hljs-built_in">prompt</span>(prompt)
+       │  事件过滤规则：只处理 main agent (agentId===<span class="hljs-string">&#x27;main&#x27;</span>) 且
+       │  turnId 匹配当前 activeTurnId 的事件
+       ▼
+  turn.started ──→ activeTurnId = id
+  assistant.delta / thinking.delta / tool.call.delta ──→ 缓冲写入
+  turn.step.started / interrupted ──→ <span class="hljs-built_in">flushAssistant</span>()
+  turn.step.retrying ──→ <span class="hljs-built_in">discardAssistant</span>() + 写 retry 通知
+  tool.call.started / tool.result ──→ 工具调用块
+  turn.<span class="hljs-built_in">ended</span>(reason=<span class="hljs-string">&#x27;completed&#x27;</span>) ──→ <span class="hljs-built_in">flushAssistant</span>() + <span class="hljs-built_in">evaluateRunCompletion</span>()
+       ▼
+  evaluateRunCompletion:
+    goal.status===<span class="hljs-string">&#x27;active&#x27;</span>?      → <span class="hljs-built_in">holdEventLoop</span>()（等 goal 续轮）
+    cron 任务 nextFireAt!==null? → <span class="hljs-built_in">holdEventLoop</span>()（等 cron 触发）
+    否则 → <span class="hljs-built_in">finishCompletedTurn</span>()
+  turn.<span class="hljs-built_in">ended</span>(reason≠completed) ──→ <span class="hljs-built_in">finish</span>(Error)</code></pre><p><strong>事件循环保持（keep-alive）技巧</strong>：<code>session.prompt</code> 返回 ≠ run 完成——active goal 或未来 cron 任务会从空闲会话再触发新 turn。而 cron 调度器的 tick 是 <code>unref&#39;d</code> 的，若不持有 ref&#39;d handle，进程会在下一轮触发前排空退出。<code>holdEventLoop()</code> 用一个 <strong>60s 的 no-op <code>setInterval</code>（ref&#39;d）</strong> 作为该 handle，<code>finish()</code> 必定清理它。</p>
+<p><strong>headless 退出双保险</strong>（headless-exit.ts）：<code>kimi -p</code> 不主动 <code>process.exit</code>，靠事件循环自然排空退出；<code>finalizeHeadlessRun</code> 先 <code>drainStdio</code>（空 write 回调探测缓冲排空，10s 上限）再挂 <strong>unref&#39;d 2s 兜底强杀定时器</strong>——健康运行在它触发前自然退出，只有事件循环被 stray handle 卡死时才强杀。注释记录完整问题史：HTTP/2 PING 保活、黑洞连接、遗留 socket 都会 wedge 事件循环。</p>
+<p><strong>清理限时</strong>（raceWithTimeout）：超时后放弃等待但<strong>不吞掉快速失败的 rejection</strong>，且定时器保持 ref&#39;d——防止清理逻辑挂在 unref&#39;d handle 上导致循环排空提前 exit 0。</p>
+<h2 id="28-更新系统完整的产品级灰度发布"><a class="anchor" href="#28-更新系统完整的产品级灰度发布" aria-hidden="true">#</a>2.8 更新系统：完整的产品级灰度发布</h2><p><code>src/cli/update/</code> 六个职责分离的文件，是本包最&quot;产品化&quot;的模块：</p>
+<h3 id="281-灰度滚动发布rolloutts"><a class="anchor" href="#281-灰度滚动发布rolloutts" aria-hidden="true">#</a>2.8.1 灰度滚动发布（rollout.ts）</h3><pre class="hljs"><code>rolloutBucket(deviceId, <span class="hljs-built_in">version</span>) = sha256(deviceId:<span class="hljs-built_in">version</span>) 前 <span class="hljs-number">4</span> 字节 % <span class="hljs-number">100</span>
+rolloutDelayForBatch：按批次数组顺序累加 percent，命中区间取对应 delaySeconds
+  （钳到 <span class="hljs-number">24</span>h），未覆盖区间落最慢批次
+isRolloutEligible：publishedAt + <span class="hljs-built_in">delay</span> 是否已到</code></pre><p>用 <code>sha256(deviceId:version)%100</code> 做<strong>确定性分桶</strong>——同一设备同一版本永远落在同一桶，重启不会在灰度区间边缘横跳。</p>
+<h3 id="282-更新预检状态机preflightts812-行"><a class="anchor" href="#282-更新预检状态机preflightts812-行" aria-hidden="true">#</a>2.8.2 更新预检状态机（preflight.ts，812 行）</h3><pre class="hljs"><code>runUpdatePreflight
+  ├─ KIMI_CODE_NO_AUTO_UPDATE 门 → <span class="hljs-keyword">continue</span>
+  ├─ 读 <span class="hljs-keyword">install</span>.json
+  ├─ [交互] showPendingBackgroundInstallNotice（上次成功未通知?）
+  ├─ 读缓存 → decidePassiveUpdateTarget
+  ├─ 无目标 → 后台 refreshUpdateCache()（fire-<span class="hljs-keyword">and</span>-forget）→ <span class="hljs-keyword">continue</span>
+  ├─ 有目标：
+  │    ├─ 源检测（npm/pnpm/yarn/bun/homebrew/native）
+  │    ├─ 自动安装可行 &amp; 失败&lt;<span class="hljs-number">2</span> 次 &amp; 无活跃安装
+  │    │     → 后台安装（<span class="hljs-keyword">install</span>.lock 跨进程锁 + detached 静默子进程 + <span class="hljs-keyword">install</span>.json 状态机）
+  │    ├─ 否则 <span class="hljs-number">1</span>s 限时前台刷新（超时用缓存值）
+  │    └─ 决策：prompt-<span class="hljs-keyword">install</span>（交互询问）或 manual-<span class="hljs-keyword">command</span>（只给命令）</code></pre><p>后台安装状态机（install.json）：</p>
+<pre class="hljs"><code>empty → <span class="hljs-keyword">active</span>{version,startedAt} → <span class="hljs-keyword">lastSuccess</span>{installedAt,notifiedAt<span class="hljs-operator">:</span><span class="hljs-literal">null</span>}
+                                  → <span class="hljs-keyword">lastFailure</span>{attempts} (≤<span class="hljs-number">2</span>，超出改提示)
+         next 启动时：notifiedAt<span class="hljs-operator">==</span><span class="hljs-literal">null</span> → 打印<span class="hljs-string">&quot;已更新&quot;</span>通知并落 notifiedAt</code></pre><p>工程细节：</p>
+<ul>
+<li><code>latest.json</code> 用 <strong>zod 故意非 strict</strong> schema——未知字段忽略，避免未来 manifest 加字段弄死已发客户端（该教训来自纯文本 <code>/latest</code> 对非 semver 体硬失败）。</li>
+<li>缓存刷新失败<strong>不覆盖旧缓存</strong>（避免瞬时 CDN 故障把已知最新版冲掉）。</li>
+<li><code>installUpdate</code> 用 <code>spawn</code>（win32 走 shell，规避 <strong>CVE-2024-27980</strong> 的 EINVAL）；后台安装 <code>windowsHide: true</code> 防&quot;静默更新弹出控制台窗口&quot;。</li>
+<li>native 源用 <code>set -o pipefail; curl … | bash</code>——<strong>防 curl 失败被 bash 的 0 掩盖</strong>（假成功）。</li>
+<li>每个阶段写 <code>rollout.log</code> 并上报 telemetry。</li>
+</ul>
+<h2 id="29-SEA-打包Node-官方单二进制-postject"><a class="anchor" href="#29-SEA-打包Node-官方单二进制-postject" aria-hidden="true">#</a>2.9 SEA 打包：Node 官方单二进制 + postject</h2><p><strong>不是 pkg / bun / deno，而是 Node.js 官方 SEA + postject</strong>：</p>
+<pre class="hljs"><code>scripts/native/（<span class="hljs-number">5</span> 步流水线）
+  <span class="hljs-number">01</span>-bundle<span class="hljs-selector-class">.mjs</span>   tsdown 出单文件 ESM <span class="hljs-selector-tag">main</span><span class="hljs-selector-class">.mjs</span> + worker 单文件
+  <span class="hljs-number">02</span>-sea-blob<span class="hljs-selector-class">.mjs</span> 收集 <span class="hljs-selector-class">.node</span> 资产 + web 资产，写 <span class="hljs-attr">--experimental-sea-config</span>，生成 blob
+  <span class="hljs-number">03</span>-inject<span class="hljs-selector-class">.mjs</span>   复制 node 可执行文件、移除签名、postject 注入 NODE_SEA_BLOB
+                  （darwin 用 <span class="hljs-attr">--macho-segment-name</span> NODE_SEA）
+  <span class="hljs-number">04</span>-sign<span class="hljs-selector-class">.mjs</span>     codesign（本地 ad-hoc，release 用 APPLE_SIGNING_IDENTITY）
+  <span class="hljs-number">05</span>-verify<span class="hljs-selector-class">.mjs</span>   codesign -dv 验证</code></pre><p>运行时（src/native/）：</p>
+<ul>
+<li><code>getSeaAssetSource()</code>（<code>node:sea</code> isSea/getAssetKeys/getRawAsset）→ manifest 强校验（版本、target、相对路径防穿越、sha256 格式）→ 解包到 <code>~/.cache/kimi-code/native/&lt;version&gt;/&lt;target&gt;/&lt;manifestHash&gt;/</code>，逐文件 sha256 校验 + tmp+rename 原子写。</li>
+<li><code>installNativeModuleHook()</code>：patch <code>Module._load</code>，把 pi-tui 的原生 require（<code>native/&lt;os&gt;/prebuilds/&lt;arch&gt;/*.node</code>）重定向到缓存副本——SEA 二进制里这些文件不存在于原路径。</li>
+<li>缓存 GC：启动时后台清理同 (version,target) 下非当前 hash 目录，fire-and-forget。</li>
+</ul>
+<p><strong>为什么不直接 require node-pty</strong>：SEA 二进制里没有 node_modules，<code>.node</code> 文件以 blob 资产形式内嵌，运行时解包——这是 <code>node-pty</code> 这类原生依赖能进单二进制的原因。</p>
+<h2 id="210-迁移与反馈"><a class="anchor" href="#210-迁移与反馈" aria-hidden="true">#</a>2.10 迁移与反馈</h2><ul>
+<li><strong>迁移</strong>（migration/）：<code>~/.kimi</code> → <code>~/.kimi-code</code> 检测 + TUI 首启迁移屏（3 阶段状态机 <code>ask1 → ask2 → progress → result</code>，4 步进度：config/mcp/user-history/sessions）。<strong>OAuth 凭据故意不迁移</strong>（迁移器绝不复制 credentials——只有 credentials 时视为&quot;无可迁移&quot;，让 /login 重新走认证；只有 oauth-only 数据时返回 null）。</li>
+<li><strong>反馈</strong>（feedback/）：会话/日志/配置打包 zip → <strong>分片上传</strong>（<code>createUploadUrl</code> 返回预签名分片 URL → 并发 3 路 PUT，每片 60s 超时、失败重试 3 次指数退避 → <code>completeUpload</code> 提交 etag 列表；总上限 500 MiB）。</li>
+</ul>
+<h2 id="211-v2-原生-print-runnerrun-v2-printts861-行"><a class="anchor" href="#211-v2-原生-print-runnerrun-v2-printts861-行" aria-hidden="true">#</a>2.11 v2 原生 print runner（run-v2-print.ts，861 行）</h2><p>v2 的 <code>kimi -p</code> <strong>不经过 KimiHarness/Session</strong>：直接 <code>bootstrap()</code> agent-core-v2 app scope → 用原生服务（<code>IAgentPromptService.enqueue()</code> + <code>Turn.result</code>）驱动一轮 turn → 订阅 per-agent <code>IEventBus</code> 渲染原生 <code>DomainEvent</code> 流 → 套用 v1 对齐的 print 后台策略（exit/drain/steer）。TUI 的 v2 路径（SDK 客户端）与 print 的 v2 路径是<strong>两条独立代码路径</strong>。</p>
+<h2 id="212-关键代码位置索引"><a class="anchor" href="#212-关键代码位置索引" aria-hidden="true">#</a>2.12 关键代码位置索引</h2><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/main.ts:56</code></td>
+<td><code>handleMainCommand</code>：可复用命令处理器</td>
+</tr>
+<tr>
+<td><code>src/main.ts:143</code></td>
+<td><code>main()</code>：进程级装配</td>
+</tr>
+<tr>
+<td><code>src/main.ts:193</code></td>
+<td>失败路径：先同步设 exitCode=1</td>
+</tr>
+<tr>
+<td><code>src/cli/commands.ts:19</code></td>
+<td><code>createProgram</code>：全命令面</td>
+</tr>
+<tr>
+<td><code>src/cli/options.ts:64</code></td>
+<td><code>validateOptions</code>：15 条冲突规则</td>
+</tr>
+<tr>
+<td><code>src/cli/run-shell.ts:39</code></td>
+<td><code>runShell</code>：交互启动全装配</td>
+</tr>
+<tr>
+<td><code>src/cli/run-shell.ts:157</code></td>
+<td>stty 保存/<code>-ixon</code>/崩溃恢复</td>
+</tr>
+<tr>
+<td><code>src/cli/run-shell.ts:180</code></td>
+<td><code>emergencyExit</code></td>
+</tr>
+<tr>
+<td><code>src/cli/run-prompt.ts:467</code></td>
+<td><code>runPromptTurn</code>：print 模式事件状态机 + keep-alive interval</td>
+</tr>
+<tr>
+<td><code>src/cli/headless-exit.ts:29</code></td>
+<td><code>scheduleHeadlessForceExit</code>：unref&#39;d 兜底强杀</td>
+</tr>
+<tr>
+<td><code>src/cli/update/preflight.ts:670</code></td>
+<td><code>runUpdatePreflight</code> 全流程</td>
+</tr>
+<tr>
+<td><code>src/cli/update/rollout.ts:24</code></td>
+<td><code>rolloutBucket</code>：sha256(deviceId:version)%100</td>
+</tr>
+<tr>
+<td><code>src/cli/update/cdn.ts</code></td>
+<td><code>latest.json</code> zod 非 strict schema</td>
+</tr>
+<tr>
+<td><code>src/tui/kimi-tui.ts:314</code></td>
+<td><code>class KimiTUI</code>：全局协调器</td>
+</tr>
+<tr>
+<td><code>src/tui/kimi-tui.ts:924</code></td>
+<td><code>stop()</code>：先停渲染源再拆 UI</td>
+</tr>
+<tr>
+<td><code>src/tui/kimi-tui.ts:983</code></td>
+<td><code>registerSignalHandlers</code></td>
+</tr>
+<tr>
+<td><code>src/tui/kimi-tui.ts:1036</code></td>
+<td><code>emergencyTerminalExit</code>：EIO 防烧 CPU</td>
+</tr>
+<tr>
+<td><code>src/tui/controllers/session-event-handler.ts:257</code></td>
+<td><code>handleEvent</code>：30+ 事件分发</td>
+</tr>
+<tr>
+<td><code>src/tui/controllers/streaming-ui.ts:455</code></td>
+<td><code>scheduleFlush</code>：50ms 节流</td>
+</tr>
+<tr>
+<td><code>src/tui/reverse-rpc/index.ts</code></td>
+<td><code>registerReverseRPCHandlers</code></td>
+</tr>
+<tr>
+<td><code>src/native/native-assets.ts:362</code></td>
+<td><code>ensureNativeAssetTree</code>：解包+校验+原子写</td>
+</tr>
+<tr>
+<td><code>src/native/module-hook.ts:26</code></td>
+<td><code>Module._load</code> patch</td>
+</tr>
+<tr>
+<td><code>src/migration/migration-screen.ts:79</code></td>
+<td>迁移屏状态机</td>
+</tr>
+<tr>
+<td><code>src/feedback/upload.ts:59</code></td>
+<td>分片并发上传</td>
+</tr>
+<tr>
+<td><code>scripts/native/build.mjs</code></td>
+<td>SEA 5 步构建编排</td>
+</tr>
+<tr>
+<td><code>packages/node-sdk/src/sdk-rpc-client-v2.ts</code></td>
+<td><code>createKimiHarnessV2</code>（文件头注释是完整迁移清单）</td>
+</tr>
+</tbody></table>
+<h2 id="213-本章小结"><a class="anchor" href="#213-本章小结" aria-hidden="true">#</a>2.13 本章小结</h2><ul>
+<li>壳-引擎分层极干净：CLI/TUI 不碰 agent-core，一切经 SDK 门面；v1→v2 只改一个工厂函数 + 一个环境变量。</li>
+<li>进程生命周期是 CLI 产品的核心工程：stty 恢复、SIGHUP 紧急退出、headless 双保险、清理限时——代码里到处是这类防御的事故注释。</li>
+<li>更新系统是完整产品级实现：确定性灰度分桶、后台静默安装状态机、跨进程锁、安装源感知。</li>
+<li>SEA 打包把&quot;桌面级&quot;体验做进 npm 生态：<code>.node</code> 资产内嵌 + 校验解包 + require 重定向。</li>
+</ul>
+
+    </article>
+    <footer class="page-footer">
+      <a class="nav-prev" href="ch01.html">← 第 1 章 总览与架构</a>
+      <a class="nav-next" href="ch03.html">第 3 章 v2 引擎：DI × Scope 新架构 →</a>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

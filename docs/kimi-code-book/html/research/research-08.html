@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务 8/8：基础设施层研究报告 · Kimi Code 实现详解</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" href="../index.html">
+      <span class="brand-name">Kimi Code 实现详解</span>
+      <span class="brand-sub">从终端到 DI 引擎 · 源码解读</span>
+    </a>
+    <nav class="side-nav"><div class="group">本书</div><a href="../index.html">Kimi Code 源码解读：从终端到 DI 引擎</a>
+      <div class="group">正文</div><a href="../ch01.html">第 1 章 总览与架构</a>
+      <a href="../ch02.html">第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</a>
+      <a href="../ch03.html">第 3 章 v2 引擎：DI × Scope 新架构</a>
+      <a href="../ch04.html">第 4 章 v1 引擎：上一代内核</a>
+      <a href="../ch05.html">第 5 章 KAP 服务器与 kosong：服务端外壳与 LLM 抽象</a>
+      <a href="../ch06.html">第 6 章 TUI 与 VSCode 集成：两个平行前端</a>
+      <a href="../ch07.html">第 7 章 协议层：线协议、客户端 SDK 与 ACP 桥</a>
+      <a href="../ch08.html">第 8 章 minidb：自研嵌入式数据库</a>
+      <a href="../ch09.html">第 9 章 基础设施：认证、遥测、执行环境与调试</a>
+      <div class="group">研究附录</div><a href="research-01.html">01 · apps/kimi-code —— CLI 主应用研究报告</a>
+      <a href="research-02.html">02 · agent-core-v2：DI × Scope 新架构 agent 引擎</a>
+      <a href="research-03.html">03 · agent-core（旧架构 agent 核心）研究报告</a>
+      <a href="research-04.html">04. kap-server + kosong：Kimi Code 的服务端外壳与 LLM 抽象层</a>
+      <a href="research-05.html">05 · pi-tui 与 VSCode 扩展（apps/vscode）</a>
+      <a href="research-06.html">06 · 协议层（protocol / klient / node-sdk / transcript / acp）研究报告</a>
+      <a href="research-07.html">任务 7/8：minidb —— 嵌入式 KV/文档数据库研究报告</a>
+      <a href="research-08.html" class="active">任务 8/8：基础设施层研究报告</a></nav>
+  </aside>
+  <main class="content">
+    <header class="page-header">
+      <div class="crumbs"><a href="../index.html">Kimi Code 实现详解</a> / <span>研究附录</span></div>
+      <h1 class="page-title">任务 8/8：基础设施层研究报告</h1>
+    </header>
+    <nav class="page-toc"><div class="toc-title">本章目录</div><ol><li class="toc-2"><a href="#1-子系统定位与职责">1. 子系统定位与职责</a></li><li class="toc-3"><a href="#11-在-Kimi-Code-整体中的角色">1.1 在 Kimi Code 整体中的角色</a></li><li class="toc-3"><a href="#12-与-agent-core-agent-core-v2-kap-server-的关系">1.2 与 agent-core / agent-core-v2 / kap-server 的关系</a></li><li class="toc-2"><a href="#2-包目录清单与依赖关系">2. 包/目录清单与依赖关系</a></li><li class="toc-3"><a href="#21-文件清单与规模src-下不含测试">2.1 文件清单与规模（src 下，不含测试）</a></li><li class="toc-3"><a href="#22-依赖图workspace-内部">2.2 依赖图（workspace 内部）</a></li><li class="toc-2"><a href="#3-模块结构与核心类型">3. 模块结构与核心类型</a></li><li class="toc-3"><a href="#31-oauth-三层结构">3.1 oauth —— 三层结构</a></li><li class="toc-3"><a href="#32-telemetry-管道式五段">3.2 telemetry —— 管道式五段</a></li><li class="toc-3"><a href="#33-kaos-Kimi-Agent-OS">3.3 kaos —— Kimi Agent OS</a></li><li class="toc-3"><a href="#34-migration-legacy-检测提示执行三段">3.4 migration-legacy —— 检测→提示→执行三段</a></li><li class="toc-3"><a href="#35-tree-sitter-bash-五段流水线">3.5 tree-sitter-bash —— 五段流水线</a></li><li class="toc-3"><a href="#36-kimi-inspect-五层结构">3.6 kimi-inspect —— 五层结构</a></li><li class="toc-2"><a href="#4-关键数据流-状态机-时序">4. 关键数据流 / 状态机 / 时序</a></li><li class="toc-3"><a href="#41-oauth设备码登录时序">4.1 oauth：设备码登录时序</a></li><li class="toc-3"><a href="#42-oauthtoken-生命周期状态机与刷新协调">4.2 oauth：token 生命周期状态机与刷新协调</a></li><li class="toc-3"><a href="#43-telemetry事件管道">4.3 telemetry：事件管道</a></li><li class="toc-3"><a href="#44-kaosexec-与-glob">4.4 kaos：exec 与 glob</a></li><li class="toc-3"><a href="#45-migration-legacy管线与时序">4.5 migration-legacy：管线与时序</a></li><li class="toc-3"><a href="#46-tree-sitter-bash解析流水线">4.6 tree-sitter-bash：解析流水线</a></li><li class="toc-3"><a href="#47-kimi-inspectRPC-消息流与-WS-对账">4.7 kimi-inspect：RPC 消息流与 WS 对账</a></li><li class="toc-2"><a href="#5-重要实现细节">5. 重要实现细节</a></li><li class="toc-3"><a href="#51-oauth">5.1 oauth</a></li><li class="toc-3"><a href="#52-telemetry">5.2 telemetry</a></li><li class="toc-3"><a href="#53-kaos">5.3 kaos</a></li><li class="toc-3"><a href="#54-migration-legacy">5.4 migration-legacy</a></li><li class="toc-3"><a href="#55-tree-sitter-bash">5.5 tree-sitter-bash</a></li><li class="toc-3"><a href="#56-kimi-inspect">5.6 kimi-inspect</a></li><li class="toc-2"><a href="#6-关键代码位置索引">6. 关键代码位置索引</a></li><li class="toc-3"><a href="#oauth">oauth</a></li><li class="toc-3"><a href="#telemetry">telemetry</a></li><li class="toc-3"><a href="#kaos">kaos</a></li><li class="toc-3"><a href="#migration-legacy">migration-legacy</a></li><li class="toc-3"><a href="#tree-sitter-bash">tree-sitter-bash</a></li><li class="toc-3"><a href="#kimi-inspect">kimi-inspect</a></li><li class="toc-2"><a href="#7-与其它子系统的接口">7. 与其它子系统的接口</a></li><li class="toc-3"><a href="#71-oauth-被四个包-一个应用依赖">7.1 oauth —— 被四个包 + 一个应用依赖</a></li><li class="toc-3"><a href="#72-telemetry-被-CLI-与-web-服务器共用">7.2 telemetry —— 被 CLI 与 web 服务器共用</a></li><li class="toc-3"><a href="#73-kaos-agent-core-工具层的执行后端">7.3 kaos —— agent-core 工具层的执行后端</a></li><li class="toc-3"><a href="#74-migration-legacy-应用层一次性调用">7.4 migration-legacy —— 应用层一次性调用</a></li><li class="toc-3"><a href="#75-tree-sitter-bash-agent-core-v2-的命令安全分析">7.5 tree-sitter-bash —— agent-core-v2 的命令安全分析</a></li><li class="toc-3"><a href="#76-kimi-inspect-kap-server-debug-面的官方客户端">7.6 kimi-inspect —— kap-server debug 面的官方客户端</a></li></ol></nav>
+    <article class="markdown-body">
+<h1 id="任务-88基础设施层研究报告">任务 8/8：基础设施层研究报告</h1><blockquote>
+<p>覆盖范围：<code>packages/oauth</code>、<code>packages/telemetry</code>、<code>packages/kaos</code>、<code>packages/migration-legacy</code>、<code>packages/tree-sitter-bash</code> 与 <code>apps/kimi-inspect</code>。
+分析方式：全部源码通读 + 两个并行子代理深读（tree-sitter-bash 的 3.8k 行 parser、kimi-inspect 的 1.2 万行前端）。
+仓库基线：Moonshot AI kimi-code monorepo（TypeScript / pnpm），Node ≥ 24.15，pnpm 10.33。</p>
+</blockquote>
+<hr>
+<h2 id="1-子系统定位与职责"><a class="anchor" href="#1-子系统定位与职责" aria-hidden="true">#</a>1. 子系统定位与职责</h2><p>本报告覆盖的六个单元共同构成 kimi-code 的&quot;基础设施带&quot;——它们不是 agent 循环本身，而是支撑认证、观测、执行环境、旧版迁移、命令安全分析与运行时调试的底座。六个单元分属三类：</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>包</th>
+<th>一句话职责</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>身份与观测</td>
+<td><code>packages/oauth</code></td>
+<td>Kimi OAuth（RFC 8628 设备码流）与&quot;managed auth&quot;全套：token 生命周期、托管配置下发、用量/用户信息/反馈 API 客户端</td>
+</tr>
+<tr>
+<td></td>
+<td><code>packages/telemetry</code></td>
+<td>客户端遥测：事件缓冲、批量上报、崩溃捕获、磁盘失败持久化</td>
+</tr>
+<tr>
+<td>执行与解析</td>
+<td><code>packages/kaos</code></td>
+<td><strong>Kimi Agent OS</strong>——对本地进程/文件系统（以及可选的 SSH 远程环境）的统一执行抽象，供 agent 工具层调用</td>
+</tr>
+<tr>
+<td></td>
+<td><code>packages/tree-sitter-bash</code></td>
+<td>纯 TypeScript 手写 bash 解析器，语法树与 tree-sitter-bash 官方 0.25.0 节点类型一一对应，用于 agent 的 shell 命令权限分析</td>
+</tr>
+<tr>
+<td>迁移</td>
+<td><code>packages/migration-legacy</code></td>
+<td>把旧版 kimi-cli（<code>~/.kimi/</code>）的配置/MCP/技能/会话数据安全迁移到 kimi-code（<code>~/.kimi-code/</code>）</td>
+</tr>
+<tr>
+<td>调试</td>
+<td><code>apps/kimi-inspect</code></td>
+<td>kap-server <code>/api/v1/debug</code> RPC 反射面的 Web 检查器：会话浏览、转录本回放、Service 面板、DI 单元检查</td>
+</tr>
+</tbody></table>
+<h3 id="11-在-Kimi-Code-整体中的角色"><a class="anchor" href="#11-在-Kimi-Code-整体中的角色" aria-hidden="true">#</a>1.1 在 Kimi Code 整体中的角色</h3><ul>
+<li><strong>oauth 是唯一官方认证通道</strong>。Kimi Code 的 <code>/login</code> 走 Moonshot 托管认证（<code>managed:kimi-code</code> provider），而非让用户自备 API key。oauth 包同时承担&quot;managed 配置下发&quot;：登录后从 <code>https://api.kimi.com/coding/v1/models</code> 拉取模型目录，写入 <code>~/.kimi-code/config.toml</code> 的 <code>providers/models/services</code>，把云端模型目录&quot;物化&quot;为本地配置。agent-core 的 <code>managedAuth.ts</code>、<code>oauthService.ts</code>、<code>modelCatalogService.ts</code>、kap-server 的 <code>sessionExport.ts</code> 都依赖它。</li>
+<li><strong>telemetry 是唯一遥测通道</strong>。上报端点 <code>https://telemetry-logs.kimi.com/v1/event</code>，事件名统一加 <code>kfc_</code> 前缀。CLI 与 <code>kimi web</code> 服务器共用同一份基础设施；agent-core 内部事件（<code>mcp_connected</code>、<code>session_load_failed</code> 等）经由传入的 <code>TelemetryClient</code> 汇入同一 sink。</li>
+<li><strong>kaos 是 agent 触手</strong>。agent-core 的 <code>tools/builtin/file/*</code>（read/write/edit/grep/glob）、<code>tools/support/*</code>（run-rg、git-worktree、list-directory）、<code>path-access.ts</code> 策略全部经由 kaos 接口执行——它把&quot;在哪个环境执行&quot;抽象成接口，本地与 SSH 实现可互换，并为未来容器运行时留位。</li>
+<li><strong>tree-sitter-bash 是权限分析的判官</strong>。agent-core-v2 的 <code>app/bashParser/</code> 服务在<strong>执行 shell 命令前</strong>对命令做语法解析，配合权限策略决定放行/询问/拒绝。解析器必须在延迟预算内完成且永不抛异常——权限判断不允许被解析器故障卡死。</li>
+<li><strong>migration-legacy 是升级路径</strong>。kimi-cli（老产品线，Python 实现）用户首次启动 kimi-code 时由 <code>apps/kimi-code/src/migration/</code> 调用它，一次完成 config/mcp/user-history/skills/sessions 五类数据搬迁；vsCode 扩展也复用。</li>
+<li><strong>kimi-inspect 是 kap-server 的&quot;仪表盘&quot;</strong>。kap-server 暴露了 <code>/api/v1/debug/*</code> RPC 反射面（<code>--debug-endpoints</code>，loopback 绑定 + bearer 鉴权），kimi-inspect 是它的官方客户端：不经过它，工程师只能 curl 裸 RPC。</li>
+</ul>
+<h3 id="12-与-agent-core-agent-core-v2-kap-server-的关系"><a class="anchor" href="#12-与-agent-core-agent-core-v2-kap-server-的关系" aria-hidden="true">#</a>1.2 与 agent-core / agent-core-v2 / kap-server 的关系</h3><pre class="hljs"><code>apps<span class="hljs-symbol">/kimi-code</span> (CLI<span class="hljs-operator">/</span>TUI) ──► node-sdk ──► agent-core ──► kaos <span class="hljs-symbol">/</span> oauth <span class="hljs-symbol">/</span> telemetry
+apps<span class="hljs-symbol">/kimi-code</span> (web)     ──► kap-server ──► agent-core-v2 ──► kaos <span class="hljs-symbol">/</span> oauth <span class="hljs-symbol">/</span> tree-sitter-bash
+                                              │
+apps<span class="hljs-symbol">/kimi-inspect</span> ──► kap-server <span class="hljs-symbol">/api/v1/debug</span>  ◄──(RPC 反射面)</code></pre><ul>
+<li>agent-core（v1 引擎）直接依赖 oauth、kaos、telemetry（经 node-sdk 传递）；migration-legacy 依赖 agent-core 的 schema（<code>KimiConfigSchema</code>、<code>HookDefSchema</code>、<code>McpServerConfigSchema</code>）做兼容性校验。</li>
+<li>agent-core-v2（DI × Scope 引擎）依赖 oauth 与 <strong>tree-sitter-bash</strong>（bash 解析服务）；它不直接依赖 kaos（执行抽象由 v1 侧工具层承担）。</li>
+<li>kap-server 依赖 oauth（会话导出鉴权）与 agent-core-v2；kimi-inspect 是 kap-server 的消费者，经 <code>@moonshot-ai/klient</code> 风格的 channel 层调用 debug RPC。</li>
+</ul>
+<hr>
+<h2 id="2-包目录清单与依赖关系"><a class="anchor" href="#2-包目录清单与依赖关系" aria-hidden="true">#</a>2. 包/目录清单与依赖关系</h2><h3 id="21-文件清单与规模src-下不含测试"><a class="anchor" href="#21-文件清单与规模src-下不含测试" aria-hidden="true">#</a>2.1 文件清单与规模（src 下，不含测试）</h3><pre class="hljs"><code>packages<span class="hljs-operator">/</span>oauth<span class="hljs-operator">/</span>src<span class="hljs-symbol">/</span>            (约 <span class="hljs-number">5.2</span>k 行, <span class="hljs-number">23</span> 文件)
+  index.ts <span class="hljs-symbol">/</span> constants.ts <span class="hljs-symbol">/</span> types.ts <span class="hljs-symbol">/</span> utils.ts <span class="hljs-symbol">/</span> errors.ts <span class="hljs-symbol">/</span> api-error.ts
+  identity.ts <span class="hljs-symbol">/</span> storage.ts <span class="hljs-symbol">/</span> token-state.ts <span class="hljs-symbol">/</span> oauth.ts <span class="hljs-symbol">/</span> oauth-manager.ts <span class="hljs-symbol">/</span> toolkit.ts
+  managed-kimi-code.ts <span class="hljs-symbol">/</span> managed-usage.ts <span class="hljs-symbol">/</span> managed-userinfo.ts <span class="hljs-symbol">/</span> managed-feedback.ts
+  managed-feedback-upload.ts <span class="hljs-symbol">/</span> open-platform.ts <span class="hljs-symbol">/</span> custom-registry.ts
+  refreshProviderModels.ts <span class="hljs-symbol">/</span> model-alias-merge.ts
+packages<span class="hljs-operator">/</span>telemetry<span class="hljs-operator">/</span>src<span class="hljs-symbol">/</span>        (约 <span class="hljs-number">1.2</span>k 行, <span class="hljs-number">9</span> 文件)
+  index.ts <span class="hljs-symbol">/</span> types.ts <span class="hljs-symbol">/</span> bootstrap.ts <span class="hljs-symbol">/</span> client.ts <span class="hljs-symbol">/</span> sink.ts <span class="hljs-symbol">/</span> transport.ts <span class="hljs-symbol">/</span> crash.ts
+  systemMetrics.ts <span class="hljs-symbol">/</span> remote.ts
+packages<span class="hljs-operator">/</span>kaos<span class="hljs-operator">/</span>src<span class="hljs-symbol">/</span>             (约 <span class="hljs-number">3</span>k 行, <span class="hljs-number">11</span> 文件)
+  index.ts <span class="hljs-symbol">/</span> kaos.ts <span class="hljs-symbol">/</span> types.ts <span class="hljs-symbol">/</span> errors.ts <span class="hljs-symbol">/</span> current.ts <span class="hljs-symbol">/</span> process.ts
+  local.ts <span class="hljs-symbol">/</span> environment.ts <span class="hljs-symbol">/</span> login-shell-path.ts <span class="hljs-symbol">/</span> internal.ts <span class="hljs-symbol">/</span> ssh.ts
+packages<span class="hljs-operator">/</span>migration-legacy<span class="hljs-operator">/</span>src<span class="hljs-symbol">/</span> (约 <span class="hljs-number">2.9</span>k 行, <span class="hljs-number">25</span> 文件)
+  index.ts <span class="hljs-symbol">/</span> detect.ts <span class="hljs-symbol">/</span> stub-detect.ts <span class="hljs-symbol">/</span> run-migration.ts <span class="hljs-symbol">/</span> types.ts <span class="hljs-symbol">/</span> paths.ts
+  prompt.ts <span class="hljs-symbol">/</span> marker.ts <span class="hljs-symbol">/</span> report.ts <span class="hljs-symbol">/</span> migration-errors-log.ts <span class="hljs-symbol">/</span> atomic-write.ts
+  session-index.ts <span class="hljs-symbol">/</span> kimi-cli-schema.ts
+  steps<span class="hljs-operator">/</span>{config,mcp,skills,user-history}.ts
+  sessions<span class="hljs-operator">/</span>{index,classify,migrate-one,translator,wire-writer,state-writer,
+            close-tool-calls,tool-call-display,workdir-bucket,content-part}.ts
+packages<span class="hljs-operator">/</span>tree-sitter-bash<span class="hljs-operator">/</span>src<span class="hljs-symbol">/</span> (约 <span class="hljs-number">4.8</span>k 行, <span class="hljs-number">7</span> 文件)
+  index.ts <span class="hljs-symbol">/</span> parse.ts <span class="hljs-symbol">/</span> budget.ts <span class="hljs-symbol">/</span> node.ts <span class="hljs-symbol">/</span> grammar.ts <span class="hljs-symbol">/</span> lexer.ts <span class="hljs-symbol">/</span> parser.ts
+apps<span class="hljs-operator">/</span>kimi-inspect<span class="hljs-operator">/</span>src<span class="hljs-symbol">/</span>         (约 <span class="hljs-number">1.2</span> 万行, <span class="hljs-number">50</span><span class="hljs-operator">+</span> 文件)
+  main.tsx <span class="hljs-symbol">/</span> App.tsx <span class="hljs-symbol">/</span> connection.tsx <span class="hljs-symbol">/</span> servers.ts <span class="hljs-symbol">/</span> panels.ts <span class="hljs-symbol">/</span> ui.tsx
+  channel<span class="hljs-operator">/</span>{channel,channels,client,proxy,proxyChannel,wsLike,errors,index}.ts
+  sessions<span class="hljs-operator">/</span>{api,views}.ts  transcript<span class="hljs-operator">/</span>{api,store,ws}.ts  activity<span class="hljs-operator">/</span>{di,store,ws,useSessionActivity}.ts
+  audit<span class="hljs-operator">/</span>{trail,diff,serialize,truncate}.ts  search<span class="hljs-symbol">/api.ts</span>
+  components<span class="hljs-operator">/</span>{ChatView(<span class="hljs-number">1.3</span>k),Sidebar(<span class="hljs-number">639</span>),ModelCatalogView(<span class="hljs-number">608</span>),DiInspectionView(<span class="hljs-number">610</span>),
+              Inspector,BashParserView,AuditPanel,StateTree,...}.tsx</code></pre><h3 id="22-依赖图workspace-内部"><a class="anchor" href="#22-依赖图workspace-内部" aria-hidden="true">#</a>2.2 依赖图（workspace 内部）</h3><pre class="hljs"><code><span class="hljs-variable">@moonshot-ai</span>/kaos 依赖: pathe, <span class="hljs-built_in">ssh2</span>(仅 ./ssh 子路径)
+  ← 被依赖: agent-core, acp-adapter, node-sdk, <span class="hljs-built_in">migration-legacy</span>(dev)
+
+<span class="hljs-variable">@moonshot-ai</span>/kimi-code-oauth 依赖: proper-lockfile, zod (catalog)
+  ← 被依赖: agent-core, agent-core-v2, kap-server, node-sdk, apps/kimi-code
+
+<span class="hljs-variable">@moonshot-ai</span>/kimi-telemetry 依赖: 无 (纯 node 内置)
+  ← 被依赖: apps/kimi-code (经 node-sdk 的 TelemetryClient 桥)
+
+<span class="hljs-variable">@moonshot-ai</span>/tree-sitter-bash 依赖: 无运行时依赖 (零依赖纯 TS)
+  <span class="hljs-attribute">devDeps</span>: tree-sitter-bash<span class="hljs-variable">@0</span>.<span class="hljs-number">25.0</span>(wasm), web-tree-sitter<span class="hljs-variable">@0</span>.<span class="hljs-number">25.10</span> (差分测试对照)
+  ← 被依赖: agent-core-v2 (bashParser 服务)
+
+<span class="hljs-variable">@moonshot-ai</span>/migration-legacy 依赖: <span class="hljs-built_in">agent-core</span>(workspace), smol-toml, zod
+  <span class="hljs-attribute">devDeps</span>: <span class="hljs-built_in">kaos</span>(workspace)
+  ← 被依赖: apps/kimi-code, apps/vscode
+
+<span class="hljs-variable">@moonshot-ai</span>/kimi-inspect 依赖: <span class="hljs-built_in">agent-core-v2</span>(workspace), <span class="hljs-built_in">transcript</span>(workspace),
+                                react19, react-query5, vite6, tailwind4
+  ← 被依赖: 无 (叶子应用)</code></pre><p>要点：oauth 是全 repo 被引用最广的基础包（4 个核心包 + 1 个应用）；tree-sitter-bash 刻意零依赖（连 wasm 都只有 devDeps，用于测试对照）；migration-legacy 是唯一&quot;反向依赖 agent-core&quot;的基础包（要读它的 config schema）；kimi-inspect 是纯前端叶子，只通过 HTTP/WS 与 kap-server 通信。</p>
+<hr>
+<h2 id="3-模块结构与核心类型"><a class="anchor" href="#3-模块结构与核心类型" aria-hidden="true">#</a>3. 模块结构与核心类型</h2><h3 id="31-oauth-三层结构"><a class="anchor" href="#31-oauth-三层结构" aria-hidden="true">#</a>3.1 oauth —— 三层结构</h3><p>oauth 包分三层：<strong>纯 HTTP 层</strong>（oauth.ts）、<strong>状态管理层</strong>（oauth-manager.ts + storage.ts + token-state.ts）、<strong>托管编排层</strong>（toolkit.ts + managed-*.ts）。</p>
+<ul>
+<li><code>oauth.ts</code> — 设备码流的三个 HTTP 封装（<code>requestDeviceAuthorization</code> / <code>pollDeviceToken</code> / <code>refreshAccessToken</code>），全部 POST form-encoded，无状态。<code>DevicePollResult</code> 判别联合：<code>success | pending(errorCode,description) | expired | denied</code>。<code>refreshAccessToken</code> 带指数退避（<code>2^attempt * 1000</code>ms，最多 3 次），401/403/<code>invalid_grant</code> 直接判 <code>OAuthUnauthorizedError</code>，429/5xx 可重试（<code>RetryableRefreshError</code>）。</li>
+<li><code>oauth-manager.ts</code> — <code>OAuthManager</code>：token 生命周期（load/refresh/login/logout），核心是 <code>ensureFresh()</code> 的惰性刷新 + 进程内 coalescing + 跨进程文件锁。<code>TokenState</code> 三态：<code>valid | revoked(墓碑) | missing</code>。</li>
+<li><code>storage.ts</code> — <code>FileTokenStorage</code>：<code>~/.kimi-code/credentials/&lt;name&gt;.json</code>，0600 权限，tmp+fsync+rename 原子写；load 失败一律返回 <code>undefined</code>（从不抛）；<code>pathFor</code> 防目录穿越（basename 校验）。</li>
+<li><code>token-state.ts</code> — 三态视图 + <code>revokedTombstone()</code>（把被拒 token 写成空 access_token 的墓碑记录，保留 scope/token_type）。</li>
+<li><code>identity.ts</code> — 设备身份头：<code>X-Msh-*</code> 五件套 + User-Agent；<code>createKimiDeviceId</code> 在 <code>~/.kimi-code/device_id</code> 落盘（0600）；<code>KIMI_CODE_CUSTOM_HEADERS_ENV</code> 解析（仿 ANTHROPIC_CUSTOM_HEADERS 的 <code>Name: Value</code> 换行格式）。</li>
+<li><code>managed-kimi-code.ts</code> — <strong>managed auth 核心</strong>：<code>resolveKimiCodeOAuthKey</code>（凭据槽位解析，默认 <code>oauth/kimi-code</code>，非默认环境派生 <code>oauth/kimi-code-env-&lt;sha256:16&gt;</code>）、<code>fetchManagedKimiCodeModels</code>（<code>/models</code> 拉取 + <code>ManagedKimiCodeModelInfo</code> 解析）、<code>applyManagedKimiCodeConfig</code>（把模型目录写进 config.toml 的 providers/models/services）、<code>applyManagedKimiCodeLogoutConfig</code> / <code>clearManagedKimiCodeConfig</code>、<code>provisionManagedKimiCodeConfig</code>（拉模型 → 读配置 → apply → 原子写）。</li>
+<li><code>toolkit.ts</code> — <code>KimiOAuthToolkit&lt;TConfig&gt;</code>：面向宿主（CLI/SDK）的门面，<code>login/logout/status/ensureFresh/tokenProvider/getManagedUsage/getManagedUserInfo/submitFeedback/...</code>；内部按 <code>storageName\0oauthHost</code> 缓存 <code>OAuthManager</code> 实例。</li>
+<li><code>managed-usage.ts</code> — <code>/usages</code> 解析：金额定点数（<code>FIXED_POINT_CENTS=1_000_000</code>）转 cents、proto 枚举 <code>TIME_UNIT_*</code> 归一化（300 分钟 → 5h）、summary 合成周窗口。</li>
+<li><code>open-platform.ts</code> / <code>custom-registry.ts</code> — 另外两种 provider 来源：Moonshot 开放平台 API key（<code>moonshot-cn</code>/<code>moonshot-ai</code> 两个预置平台）与第三方 api.json 注册表（<code>kind: &#39;apiJson&#39;</code>，key 由 URL 标识）。</li>
+<li><code>refreshProviderModels.ts</code> — 启动/定时刷新编排：对 config 里每个 provider 分类（managed OAuth / open platform / custom registry / 用户自建），拉取并<strong>选择性合并</strong>模型别名（上游字段覆盖、用户手写字段保留、消失的模型删除、悬空 defaultModel 收敛）。</li>
+</ul>
+<h3 id="32-telemetry-管道式五段"><a class="anchor" href="#32-telemetry-管道式五段" aria-hidden="true">#</a>3.2 telemetry —— 管道式五段</h3><pre class="hljs"><code><span class="hljs-function"><span class="hljs-title">client</span><span class="hljs-params">(track)</span></span> → <span class="hljs-built_in">sink</span>(缓冲/富化) → <span class="hljs-built_in">transport</span>(HTTP上报/磁盘兜底)
+      ↑ <span class="hljs-built_in">queue</span>(启动前预缓冲)        ↑ systemMetricsCollector / crash handler</code></pre><ul>
+<li><code>client.ts</code> — <code>TelemetryClient</code>：全局单例 <code>defaultClient</code> + <code>ScopedTelemetryClient</code>（<code>withContext</code> 派生，覆盖 deviceId/sessionId）。<code>track</code> 时若 sink 未挂接则进内存队列（上限 1000 条，溢出丢最旧）。事件字段：<code>event_id</code>（无横线 UUID）、<code>device_id</code>、<code>session_id</code>、<code>timestamp</code>（秒）、<code>properties</code>（仅允许 primitive，<code>sanitizeProperties</code> 过滤非法值）。</li>
+<li><code>sink.ts</code> — <code>EventSink</code>：每事件注入静态 context（<code>app_name/version/runtime/platform/arch/node_version/os_version/ci/locale/terminal/ui_mode/model/build_sha</code>）；缓冲满 50 条或每 30s 定时 flush；<code>flushSync</code> 走 <code>saveToDisk</code>（关闭时保证不丢）。</li>
+<li><code>transport.ts</code> — <code>AsyncTransport</code>：POST <code>telemetry-logs.kimi.com/v1/event</code>，Bearer 401 时剥掉鉴权头重试一次；429/5xx 视为 <code>TransientTelemetryError</code>，按 <code>[1s,4s,16s]</code> 退避重试；最终失败 <code>saveToDisk</code> 写 <code>~/.kimi-code/telemetry/failed_&lt;rand&gt;.jsonl</code>（0600）；下次启动 <code>retryDiskEvents</code> 补发（&gt;7 天删除）。<code>buildPayload</code> 把事件拍平成 <code>{user_id, events[]}</code>，事件名统一加 <code>kfc_</code> 前缀，properties/context 展平为 <code>property_x</code> / <code>context_x</code>。</li>
+<li><code>crash.ts</code> — <code>installCrashHandlers</code>：<code>uncaughtExceptionMonitor</code>（不干扰默认崩溃行为）+ <code>unhandledRejection</code> 监听（记录后按&quot;是否唯一监听者&quot;决定是否 rethrow 以保留 Node 默认行为；<code>recordedRejections</code> 去重防双报）；<code>CrashPhase</code> 区分 startup/runtime/shutdown；AbortError 一律不报。</li>
+<li><code>systemMetrics.ts</code> — 启动 1.5s 暖采样 + 每 5 分钟一个 <code>system_metrics</code> 事件（rss/heap/cpu_user_system/loadavg/freemem/constrained_memory 等）。</li>
+<li><code>remote.ts</code> — <code>normalizeRemote</code>：git remote URL 归一化（scp 语法、<code>.git</code> 后缀剥离、host:port/path 拼接），用于把 remote 作为事件属性。</li>
+</ul>
+<h3 id="33-kaos-Kimi-Agent-OS"><a class="anchor" href="#33-kaos-Kimi-Agent-OS" aria-hidden="true">#</a>3.3 kaos —— Kimi Agent OS</h3><ul>
+<li><code>kaos.ts</code> — <code>Kaos</code> 接口：<strong>模拟 Python os/pathlib 语义</strong>的统一环境抽象。路径（同步：<code>normpath/gethome/getcwd/pathClass</code>）、目录（<code>chdir/withCwd/withEnv/stat/iterdir/glob</code>）、文件（<code>readBytes/readText/readLines/writeBytes/writeText/mkdir</code>）、进程（<code>exec/execWithEnv → KaosProcess</code>）。</li>
+<li><code>process.ts</code> — <code>KaosProcess</code>：<code>stdin/stdout/stderr</code> 流 + <code>pid/exitCode/wait/kill/dispose</code>，最小化接口以便本地/SSH/容器三种后端共用。</li>
+<li><code>local.ts</code> — <code>LocalKaos</code>：本地实现。关键设计：<strong>每实例独立 <code>_cwd</code></strong>（不碰 <code>process.cwd()</code>，多实例可并存）；<code>exec</code> 用 <code>detached:true</code> 使子进程成为进程组组长，<code>kill</code> 用 <code>process.kill(-pid)</code> 杀整组（Windows 走 <code>taskkill /T /F</code>）；glob 手写 <code>**</code> 展开 + <code>(dev,ino)</code> 环检测（ino=0 的文件系统放弃环检测）；<code>readLines/readTailLines/readLineRange</code> 流式逐块读；UTF-8 严格校验器（<code>createUtf8Validator</code>，E0/ED/F0/F4 边界特判）。</li>
+<li><code>environment.ts</code> — <code>detectEnvironment</code>：纯函数探测 OS/shell（注入 deps 便于测试）；Windows 下定位 Git Bash（<code>KIMI_SHELL_PATH</code> 覆盖 → PATH 里 git.exe 推断 → <code>git --exec-path</code> → 固定候选路径），找不到抛 <code>KaosShellNotFoundError</code>。</li>
+<li><code>login-shell-path.ts</code> — 用 <code>$SHELL -l -c /usr/bin/env</code> 提取登录 shell 的 PATH 并<strong>只追加</strong>当前 PATH 缺失的绝对路径项（防 cwd 依赖注入），memoise 一次。</li>
+<li><code>ssh.ts</code> — <code>SSHKaos</code>（<code>@moonshot-ai/kaos/ssh</code> 子路径导出）：ssh2 客户端 + SFTP 实现同一接口；<code>shellQuote</code> 拼接远程命令、SFTP 错误码映射为 <code>KaosSSHError</code> 子类（NotFound/Permission/Connection）、远程 cwd 用 <code>cd &lt;dir&gt; &amp;&amp; ...</code> 前缀模拟、进程树 kill 用 <code>pkill -P</code> 递归。</li>
+<li><code>current.ts</code> — AsyncLocalStorage 绑定当前 Kaos 实例（<code>runWithKaos/setCurrentKaos/getCurrentKaos</code>），模块级便捷函数（<code>exec/readText/...</code>）转发到当前实例——工具层代码无需处处传递 kaos 对象。</li>
+</ul>
+<h3 id="34-migration-legacy-检测提示执行三段"><a class="anchor" href="#34-migration-legacy-检测提示执行三段" aria-hidden="true">#</a>3.4 migration-legacy —— 检测→提示→执行三段</h3><ul>
+<li><code>detect.ts</code> — <code>detectMigration</code>：扫描 <code>~/.kimi/</code>，产出 <code>MigrationPlan</code>（hasConfig/hasMcp/hasUserHistory/oauthCredentials/workdirs/totalSessions/sessionScanFailures）。sessions 目录按 <code>kimi.json</code> 的 <code>work_dirs</code> 反向解析 md5 bucket → 真实路径。</li>
+<li><code>prompt.ts</code> — 纯决策映射：两层问题（<code>now|later|never</code> × <code>config-only|all-sessions</code>）→ <code>resolveMigrationScope</code>。</li>
+<li><code>run-migration.ts</code> — 五步顺序执行（config → mcp → userHistory → skills → sessions），产出 <code>MigrationReport</code> 落盘 <code>migration-report.json</code>；成功时写 <code>.migrated-to-kimi-code</code> marker。</li>
+<li><code>steps/config.ts</code> — 最复杂的步骤：schema 兼容过滤（providers/models/hooks 逐条用 agent-core schema 校验）、TUI 键拆分（theme/default_editor → tui.toml）、<code>default_yolo</code> → <code>default_permission_mode</code> 映射、未知键丢弃、<code>loop_control/background/experimental</code> 字段白名单、目标三种模式（overwrite/merge/sibling）、冲突时写 <code>config.migrated-from-kimi-cli.toml</code> 兄弟文件。</li>
+<li><code>sessions/</code> — 会话迁移子管线：<code>classify</code>（placeholder/empty/malformed/real 四分类）→ <code>translator</code>（context.jsonl → NormalizedMessage，丢弃 <code>_system_prompt/_checkpoint/_usage</code> 角色）→ <code>close-tool-calls</code>（为悬空 toolCall 合成占位结果，防 kimi-core 挂起后续消息）→ <code>wire-writer</code>（写 <code>agents/main/wire.jsonl</code> 的 <code>context.append_message</code> 记录）→ <code>state-writer</code>（写 state.json，<code>custom.imported_from_kimi_cli: true</code> 标记，供重跑幂等识别）。</li>
+<li><code>marker.ts</code> — 迁移完成标记（<code>.migrated-to-kimi-code</code>，<code>target_paths</code> 列表支持多目标）；<code>shouldSuppressMigration</code> 决定首启是否弹迁移屏；<code>.skip-migration-from-kimi-cli</code> 是用户显式跳过标记。</li>
+</ul>
+<h3 id="35-tree-sitter-bash-五段流水线"><a class="anchor" href="#35-tree-sitter-bash-五段流水线" aria-hidden="true">#</a>3.5 tree-sitter-bash —— 五段流水线</h3><ul>
+<li><code>parse.ts</code> — 唯一入口 <code>parse(source, {timeoutMs=50, maxNodes=50_000})</code>，返回 <code>{ok:true, rootNode, hasError} | {ok:false, reason:&#39;aborted&#39;}</code>；<strong>永不抛异常</strong>——内部 bug 被兜底为 program+ERROR 降级树。</li>
+<li><code>budget.ts</code> — <code>ParseBudget</code>：<code>tick()</code>（建节点时计数 + 查 maxNodes/deadline，超限抛 <code>Aborted</code>）、<code>progress()</code>（只查 deadline，供长 token 扫描循环）。</li>
+<li><code>lexer.ts</code> — 手写逐字符分词器：<code>word|op|io_number|newline|comment|eof</code> 六类 token；heredoc 延迟到行尾扫描（队列挂 newline token）；<code>skipDoubleQuoted/scanBalanced/scanBalancedStatements</code> 带嵌套感知与 case 感知（<code>caseDepths</code> 栈）；<code>MAX_SCAN_DEPTH=1024</code>。</li>
+<li><code>parser.ts</code> — 递归下降（每个 grammar 规则一个方法，注释明示）；先建轻量 <code>Frame</code> 中间树（heredoc body 事后补范围），再 <code>materialize()</code> 迭代转换；内嵌 Pratt 表达式引擎处理算术/<code>[[ ]]</code>；多个深度上限（<code>MAX_PARSE_DEPTH=500</code>、<code>MAX_SUBSTITUTION_DEPTH=150</code>）防爆栈。</li>
+<li><code>grammar.ts</code> — 静态元数据表：保留字、重定向操作符（含官方不支持的 <code>&lt;&gt;</code>）、表达式优先级表（<code>EXPRESSION_PRECEDENCE</code>）。</li>
+<li><code>node.ts</code> — <code>SyntaxNode</code>（type/text/startIndex/endIndex/isNamed/parent/children/namedChildren）；偏移用 UTF-16 码元（刻意偏差，与 JS 切片一致）；<code>descendantsOfType</code> 迭代遍历防深树爆栈。</li>
+</ul>
+<h3 id="36-kimi-inspect-五层结构"><a class="anchor" href="#36-kimi-inspect-五层结构" aria-hidden="true">#</a>3.6 kimi-inspect —— 五层结构</h3><ul>
+<li><code>channel/</code> — <strong>自研 RPC 传输层</strong>（模型是 VS Code <code>ProxyChannel</code>）：<code>channel.ts</code> 定义传输无关契约 <code>IChannel {call, listen}</code> 与 <code>ServiceProxy&lt;T&gt;</code> 映射类型（方法→async 调用、<code>onXxx</code>→事件、普通成员→零参属性读）；<code>client.ts</code> 的 <code>InspectClient</code> 提供四级作用域入口 <code>core / workspace / session / agent</code>，拼出 Service base URL（<code>service = String(decoratorId)</code>，即 DI id 就是 wire 通道名）；<code>proxy.ts</code> 用 JS <code>Proxy</code> 把属性访问变成 <code>channel.call</code>；<code>proxyChannel.ts</code> 是 HTTP 实现；<code>channels.ts</code> 拉全量 wire 协议（<code>GET /api/v1/debug/channels</code>，无白名单）并 <code>serviceByName</code> 反向物化 proxy；<code>errors.ts</code> 的 <code>RPCError</code> 用数字 code 做跨线分支键。</li>
+<li><code>connection.tsx / servers.ts</code> — 连接与服务器发现：Vite dev server 的 <code>GET /__inspect/servers</code> 扫本机 kap-server 实例注册表（<code>~/.kimi-code/server/instances/*.json</code> + 旧版 lock，pid 存活过滤）与共享 bearer token；<code>pickDefaultServer</code> 按&quot;记住的 URL → dev-proxy 目标 → 运行最久实例&quot;选默认；探针（<code>probeDebugSurface</code>）先 <code>GET /api/v1/debug/channels</code> 验证表面存在，失败渲染阻塞错误屏。</li>
+<li>数据面：<code>sessions/api.ts</code>（v2 REST 信封 <code>{code,msg,data}</code> + 不透明游标）、<code>transcript/{api,store,ws}.ts</code>（REST 全量 + WS 增量 + seq 水位对账，store 复用 <code>@moonshot-ai/transcript</code> 的 <code>applyOperation</code> reducer）、<code>activity/</code>（第二条 WS 消费全局事件，<code>SessionActivityHub</code> 订阅/版本 store）、<code>audit/</code>（<code>AuditTrail</code> 记录 store 每一步构建历史 + 结构 diff）、<code>search/api.ts</code>（<code>POST /api/v1/search</code> 跨会话全文）。</li>
+<li>视图面：<code>App.tsx</code>（header + <code>NavRail</code> 七视图 + session resume 门控）、<code>panels.ts</code>（Service 面板手写覆盖层：descriptor 换 curated 卡片，<code>CORE_PANELS/SESSION_PANELS/AGENT_PANELS</code> 三组）、<code>components/</code>（ChatView/Sidebar/SearchView/ModelCatalogView/AppServicesView/WorkspaceServicesView/BashParserView/DiInspectionView/RightPanel/SessionPane + audit 面板 + StateCard）。</li>
+<li><code>ui.tsx</code> — 通用 UI 原语：<code>JsonView</code>（500 字符折叠）、<code>JsonTree</code>（可选路径 JSON 树）、Badge/ActionButton/relTime/errorMessage。</li>
+</ul>
+<hr>
+<h2 id="4-关键数据流-状态机-时序"><a class="anchor" href="#4-关键数据流-状态机-时序" aria-hidden="true">#</a>4. 关键数据流 / 状态机 / 时序</h2><h3 id="41-oauth设备码登录时序"><a class="anchor" href="#41-oauth设备码登录时序" aria-hidden="true">#</a>4.1 oauth：设备码登录时序</h3><pre class="hljs"><code>用户运行 /<span class="hljs-keyword">login</span>
+  │
+  ├─ KimiOAuthToolkit.<span class="hljs-keyword">login</span>()
+  │     └─ OAuthManager.<span class="hljs-keyword">login</span>(<span class="hljs-number">15</span>min 本地预算)
+  │           ┌───────────────────────────────┐
+  │           │ POST /api/oauth/device_authorization │
+  │           │   {client_id} + X-Msh-* 设备头      │
+  │           └───────────────┬───────────────┘
+  │                     user_code + device_code + <span class="hljs-type">interval</span>
+  │           onDeviceCode(auth) → TUI 显示 &quot;打开 https://… 输入 XXXX-XXXX&quot;
+  │           ┌────────────────────── 轮询循环（<span class="hljs-type">interval</span> 秒）──────────┐
+  │           │ POST /api/oauth/token {device_code, grant_type:device} │
+  │           │   authorization_pending → sleep(<span class="hljs-type">interval</span>) 继续          │
+  │           │   slow_down → <span class="hljs-type">interval</span> += <span class="hljs-number">5</span>s 继续                       │
+  │           │   expired_token → 重新请求 device_authorization（外层） │
+  │           │   access_denied → 抛错                                   │
+  │           │   成功 → TokenInfo {accessToken, refreshToken,          │
+  │           │                  expiresAt=now+expiresIn}                │
+  │           └───────────────┬───────────────┘
+  │              <span class="hljs-keyword">storage</span>.save(<span class="hljs-string">&#x27;kimi-code&#x27;</span>, token)   ← <span class="hljs-number">0600</span> 原子写
+  │
+  └─ provisionManagedKimiCodeConfig()
+        <span class="hljs-keyword">GET</span> {base}/models  (Bearer accessToken)
+        → 解析 ManagedKimiCodeModelInfo[]（context_length/supports_*/think_efforts）
+        → adapter.apply(): config.providers[<span class="hljs-string">&#x27;managed:kimi-code&#x27;</span>] = {<span class="hljs-keyword">type</span>:<span class="hljs-string">&#x27;kimi&#x27;</span>,
+            baseUrl, apiKey:<span class="hljs-string">&#x27;&#x27;</span>, oauth:{<span class="hljs-keyword">storage</span>:<span class="hljs-string">&#x27;file&#x27;</span>, key:<span class="hljs-string">&#x27;oauth/kimi-code&#x27;</span>}}
+          + config.models[<span class="hljs-string">&#x27;kimi-code/&lt;id&gt;&#x27;</span>] = <span class="hljs-keyword">alias</span>（capabilities 推导：
+            supports_thinking_type <span class="hljs-keyword">only</span>→thinking+always_thinking 等）
+          + config.defaultModel / config.thinking.enabled
+          + config.services.moonshotSearch/moonshotFetch
+        → atomicWrite config.toml（<span class="hljs-number">0600</span>）</code></pre><h3 id="42-oauthtoken-生命周期状态机与刷新协调"><a class="anchor" href="#42-oauthtoken-生命周期状态机与刷新协调" aria-hidden="true">#</a>4.2 oauth：token 生命周期状态机与刷新协调</h3><pre class="hljs"><code>                 ┌────────────────────────────────────────────┐
+                 │  FileTokenStorage(&lt;<span class="hljs-type">name</span>&gt;.json)             │
+                 │  <span class="hljs-keyword">valid</span>:   {accessToken≠&quot;&quot;, refreshToken,    │
+                 │            expiresAt, scope, tokenType}      │
+                 │  revoked: {accessToken:&quot;&quot;, refreshToken:&quot;&quot;,  │
+                 │            expiresAt:<span class="hljs-number">0</span>, scope, tokenType} ← 墓碑│
+                 │  missing: 文件不存在                          │
+                 └────────────────────────────────────────────┘
+  ensureFresh(force=<span class="hljs-keyword">false</span>):
+    <span class="hljs-keyword">load</span> → missing      → throw OAuthUnauthorizedError(&quot;Run /login&quot;)
+         → revoked      → throw OAuthUnauthorizedError(&quot;re-login required&quot;)
+         → <span class="hljs-keyword">valid</span> 且 remaining &gt; max(<span class="hljs-number">300</span>s, expiresIn*<span class="hljs-number">0.5</span>) → 直接返回 accessToken
+         → <span class="hljs-keyword">valid</span> 且需刷新 → acquireRefreshLock()  ← proper-lockfile 跨进程锁
+              │  (锁路径 {home}/oauth/{<span class="hljs-type">name</span>}.<span class="hljs-keyword">lock</span>；Windows/环境变量可禁用)
+              ├─ 锁后重读 <span class="hljs-keyword">storage</span>：
+              │    revoked → 抛 unauthorized
+              │    missing → 用锁前快照
+              │    <span class="hljs-keyword">valid</span> 且不再需刷新 → 用 peer 的 token（返回别人的结果）
+              │    <span class="hljs-keyword">valid</span> 且 force 且文件已变 → 用 peer 的 token
+              ├─ refreshAccessToken(refreshToken) → save → <span class="hljs-keyword">return</span>
+              └─ catch OAuthUnauthorizedError：
+                    sleep(<span class="hljs-number">100</span>ms) 后重读 <span class="hljs-keyword">storage</span>：
+                      peer 已轮换 refresh_token → 用 peer 的（stale-token 竞态）
+                      否则 → save(revokedTombstone)  ← 让新进程看到&quot;需重登&quot;</code></pre><p>进程内并发：<code>inFlightRefresh</code> 合并同一时刻的多个 <code>ensureFresh</code> 调用（force 语义差异化：non-force 可搭车任意结果，force 只能搭车 force）。</p>
+<h3 id="43-telemetry事件管道"><a class="anchor" href="#43-telemetry事件管道" aria-hidden="true">#</a>4.3 telemetry：事件管道</h3><pre class="hljs"><code>track(&#x27;event&#x27;, props)
+  → sanitizeProperties（仅 primitive）
+  → sink 未挂<span class="hljs-operator">?</span> → queue（≤<span class="hljs-number">1000</span> 条）┐
+  → sink 已挂 → EventSink.accept：追加 context 富化 → buffer
+        buffer ≥ <span class="hljs-number">50</span> 条 或 每 <span class="hljs-number">30</span>s → flush()
+  → AsyncTransport.send(events)
+        <span class="hljs-params">buildPayload:</span> 事件名加 &#x27;kfc_&#x27; 前缀，properties<span class="hljs-symbol">/context</span> 展平
+        POST telemetry-logs.kimi.com<span class="hljs-symbol">/v1/event</span>
+        <span class="hljs-number">401</span> → 去 Authorization 重试一次
+        <span class="hljs-number">429</span><span class="hljs-symbol">/5xx</span> → 退避 <span class="hljs-number">1</span>s<span class="hljs-symbol">/4s/16s</span> 重试
+        仍失败 <span class="hljs-symbol">/</span> 超时(<span class="hljs-number">10</span>s) <span class="hljs-symbol">/</span> <span class="hljs-built_in">abort</span> → <span class="hljs-params">saveToDisk:</span> failed_<span class="hljs-symbol">&lt;rand&gt;</span>.jsonl (<span class="hljs-number">0600</span>)
+  下次启动 → retryDiskEvents(): 逐文件补发，<span class="hljs-operator">&gt;</span><span class="hljs-number">7</span> 天删除
+  关闭   → flushSync() → saveToDisk（绝不因遥测失败退出）
+
+  <span class="hljs-params">crash:</span> uncaughtExceptionMonitor <span class="hljs-operator">+</span> unhandledRejection → track(&#x27;crash&#x27;,
+         {error_type, <span class="hljs-params">where:</span> startup|runtime|shutdown, source}) <span class="hljs-operator">+</span> flushSync</code></pre><h3 id="44-kaosexec-与-glob"><a class="anchor" href="#44-kaosexec-与-glob" aria-hidden="true">#</a>4.4 kaos：exec 与 glob</h3><pre class="hljs"><code>工具层 exec(<span class="hljs-string">&#x27;ls&#x27;</span>,<span class="hljs-string">&#x27;-la&#x27;</span>)
+  → getCurrentKaos()（AsyncLocalStorage 解析当前环境）
+  → LocalKaos.exec: spawn(<span class="hljs-keyword">command</span>, <span class="hljs-keyword">args</span>, {cwd:_cwd, <span class="hljs-keyword">en</span><span class="hljs-variable">v:merged</span>,
+        detached:!win32, stdio:pipe})
+        waitForSpawn: <span class="hljs-string">&#x27;spawn&#x27;</span>|<span class="hljs-string">&#x27;error&#x27;</span> 事件竞速（ENOENT 提前暴露）
+  → LocalProcess{stdin/stdout/stderr(经 BufferedReadable), pid}
+  → kill: POSIX → process.kill(-pid, SIGTERM) 杀进程组
+          Windows → taskkill /T /F /PID <span class="hljs-symbol">&lt;pid&gt;</span> 杀整树
+
+<span class="hljs-built_in">glob</span>(base, <span class="hljs-string">&#x27;**/*.ts&#x27;</span>):
+  _globWalk(base, parts):
+    <span class="hljs-string">&#x27;**&#x27;</span> → 先零目录匹配（remainingParts 递归 / 自身 yield），
+           再逐子目录递归（保持 <span class="hljs-string">&#x27;**&#x27;</span> 在队首，防重复计数）
+    普通段 → globPatternToRegex（Python pathlib 语义：* 不跨 <span class="hljs-string">&#x27;/&#x27;</span>, 含 dotfile）
+    visited: (dev,<span class="hljs-keyword">ino</span>) 集 → 环检测；<span class="hljs-keyword">ino</span>=<span class="hljs-number">0</span>（FAT/exFAT）→ 放弃检测</code></pre><h3 id="45-migration-legacy管线与时序"><a class="anchor" href="#45-migration-legacy管线与时序" aria-hidden="true">#</a>4.5 migration-legacy：管线与时序</h3><pre class="hljs"><code>首启检测 detectPendingMigration (apps/kimi-code)
+  → detectMigration: 扫描 ~/.kimi/（config.toml/mcp.json/<span class="hljs-keyword">user</span>-history/credentials/
+       plugins/mcp-oauth/kimi.json 反查 sessions buckets）
+  → marker 抑制检查（.migrated-<span class="hljs-keyword">to</span>-kimi-code / .skip-migration-<span class="hljs-keyword">from</span>-kimi-cli）
+  → 两层提示 → resolveMigrationScope
+  → runMigration（五步）：
+      config:   <span class="hljs-keyword">schema</span> 校验过滤 → 目标 overwrite|merge|sibling
+      mcp:      McpServerConfigSchema 过滤 → 同名 <span class="hljs-keyword">server</span> 保留目标（keptNewForConflicts）
+      userHistory: 文件复制（tmp+<span class="hljs-keyword">rename</span> 原子）
+      skills:   顶层条目递归复制（tmp+<span class="hljs-keyword">rename</span>）
+      sessions: readdir buckets → resolveBucket(<span class="hljs-keyword">local</span>|nonlocal|<span class="hljs-type">unknown</span>)
+                → classifySessionDir(placeholder|empty|malformed|<span class="hljs-type">real</span>)
+                → 按 wireMtime 降序 → migrateOneSession × N
+      → migration-report.json + migration-errors.<span class="hljs-keyword">log</span>（追加式，跨 run）
+      → marker 写入（sessionsFailed 为空时才写，允许重试）</code></pre><p><code>migrateOneSession</code> 内部：目标目录 <code>sessions/&lt;wd_xxx&gt;/ses_&lt;uuid&gt;</code>；已存在时分类 <code>imported|foreign|debris</code>（有 <code>custom.imported_from_kimi_cli</code> 标记 = 上次自己写的 → 幂等跳过；无标记 → 真冲突；state.json 缺失/损坏 → debris 删除重迁）。翻译 context.jsonl → NormalizedMessage → <code>closeDanglingToolCalls</code> → 写 <code>agents/main/wire.jsonl</code>（<code>type:&#39;context.append_message&#39;</code>）+ <code>state.json</code>；最后 <code>utimes</code> 把文件 mtime 还原成原始 <code>wire_mtime</code>——<strong>关键</strong>：SessionStore.list 按文件系统 mtime 排序，不还原就会把迁移时间戳当成会话时间，<code>--continue</code> 顺序全乱。</p>
+<h3 id="46-tree-sitter-bash解析流水线"><a class="anchor" href="#46-tree-sitter-bash解析流水线" aria-hidden="true">#</a>4.6 tree-sitter-bash：解析流水线</h3><pre class="hljs"><code>parse(<span class="hljs-keyword">source</span>, {timeoutMs, maxNodes})
+  → ParseBudget（deadline + 节点配额）
+  → <span class="hljs-keyword">new</span> Parser → parseProgram
+      Lexer 惰性 token 流（peek<span class="hljs-regexp">/next/</span>reposition + heredoc 队列）
+      parseStatementList(<span class="hljs-string">&#x27;;&#x27;</span><span class="hljs-regexp">/&#x27;&amp;&#x27;/</span>换行<span class="hljs-regexp">/注释/</span>ERROR 恢复)
+        → parseList(&amp;&amp;<span class="hljs-regexp">/||) → parsePipeline(|/</span>|&amp;) → parseStatementCore
+            → parseCommand（赋值前缀识别 ASSIGNMENT_RE）
+            → parseCompoundGuarded（<span class="hljs-keyword">if</span><span class="hljs-regexp">/while/</span><span class="hljs-keyword">for</span><span class="hljs-regexp">/case/</span>函数定义）
+            → parseSubshell / $() → parseScopedStatements（新 Parser, depth+<span class="hljs-number">1</span>）
+            → [[ ]] → ExprState + Pratt parseExpression
+            → heredoc → completeHeredocs 事后扩展祖先 end
+  → materialize（Frame → SyntaxNodeBuilder 两趟迭代，不 tick）
+  → {ok:<span class="hljs-keyword">true</span>, rootNode, hasError}   |   {ok:<span class="hljs-keyword">false</span>, reason:<span class="hljs-string">&#x27;aborted&#x27;</span>}
+  <span class="hljs-keyword">catch</span> Aborted → aborted；<span class="hljs-keyword">catch</span> 其它 → program+ERROR 降级树（仍 ok:<span class="hljs-keyword">true</span>）</code></pre><p>预算语义：<strong>封顶总工作量而非输入大小</strong>——500KB heredoc body 只有几个节点可正常解析；百万级 <code>case</code> 或数万表达式触发 50 000 节点上限被 abort。abort 是&quot;干净失败&quot;，调用方（权限分析）拒绝执行而不是误放行。</p>
+<h3 id="47-kimi-inspectRPC-消息流与-WS-对账"><a class="anchor" href="#47-kimi-inspectRPC-消息流与-WS-对账" aria-hidden="true">#</a>4.7 kimi-inspect：RPC 消息流与 WS 对账</h3><p><strong>RPC 调用（HTTP 通道）</strong></p>
+<pre class="hljs"><code>React 组件访问 svc.someMethod(args)
+  → makeProxy 的 JS Proxy 拦截（channel/proxy.ts）
+  → ProxyChannel.call(<span class="hljs-keyword">method</span>, <span class="hljs-title function_">args</span>)
+  → <span class="hljs-title function_">POST</span> <span class="hljs-comment">{base}</span>/<span class="hljs-title function_">api</span>/<span class="hljs-title function_">v1</span>/<span class="hljs-title function_">debug</span>[/<span class="hljs-title function_">session</span>/:sid[/agent/:aid]]/<span class="hljs-comment">{service}</span>/<span class="hljs-comment">{method}</span>
+      body = JSON.stringify(完整参数数组)；无参时无 body
+  → 服务器（kap-server dispatcher）：
+      scope.accessor.get(id) 取 Service 实例
+      member = service[<span class="hljs-keyword">method</span>]；非函数 → 属性读原样返回
+      函数 → <span class="hljs-title function_">member</span>.<span class="hljs-title function_">apply</span><span class="hljs-params">(service, args)</span>
+  → 响应信封 <span class="hljs-comment">{ code, msg, data, request_id }</span>
+      <span class="hljs-title function_">code</span> === 0 → 返回 <span class="hljs-title function_">data</span>
+      <span class="hljs-title function_">code</span> !== 0 → 抛 <span class="hljs-title function_">RPCError</span><span class="hljs-params">(code, msg, details)</span>（数字 <span class="hljs-title function_">code</span> 是稳定分支键）
+  → 事件：<span class="hljs-title function_">HTTP</span> 通道没有 <span class="hljs-title function_">listen</span>（<span class="hljs-title function_">v2</span> 事件 <span class="hljs-title function_">socket</span> 已移除），<span class="hljs-title function_">UI</span> 一律按需 <span class="hljs-title function_">fetch</span></code></pre><p><strong>transcript 增量对账（唯一的&quot;复杂状态&quot;）</strong></p>
+<pre class="hljs"><code>初始加载：GET /api/v1/sessions/{<span class="hljs-built_in">id</span>}/transcript?page_size=1（最新一页, 含 <span class="hljs-built_in">seq</span> 水位）
+     → store.applyPage(replace) → 翻页恢复窗口（before_turn 前翻, IntersectionObserver 哨兵）
+WS 订阅：/api/v1/ws 子协议 kimi-code.bearer.&lt;token&gt;（浏览器 WS 无法带 header）
+     client_hello{subscriptions:[sid]} → subscribe_v2{grade:{agent:<span class="hljs-string">&#x27;block&#x27;</span>},
+       transcript_since: 游标}
+     服务器 ack（回带相同 <span class="hljs-built_in">id</span>）→ 流挂载的精确时刻（重连在此刻 reconcile）
+增量：transcript.ops（block grade = 整状态帧 upsert, 丢弃逐 token append）
+     帧带 <span class="hljs-built_in">seq</span> 批次号 → store 逐条 applyOperation（@moonshot-ai/transcript L2 reducer）
+对账触发（四路）：
+     resync_required 帧 | subscribe ack(重连) | <span class="hljs-built_in">seq</span> 缺口(meta.seq &gt; lastSeq+1)
+       | store.onGap(append 无法落位) → catchUp()
+     → GET .../transcript/ops?since_seq= 点对点补齐
+     complete:<span class="hljs-literal">false</span> / legacy 无 <span class="hljs-built_in">seq</span> → 全量 reloadPages（REST replace）
+REST 刷新在飞时 WS ops 进 buffer，flush 到新页上（upsert 幂等 + append 按 offset 落位）
+
+全局事件（第二条 WS, 零订阅广播）：
+     event.session.work_changed → SessionActivityHub 更新徽章
+     event.session.created / session.meta.updated → 失效 [<span class="hljs-string">&#x27;sessions&#x27;</span>] 查询
+     event.di.unit_changed → 失效 [<span class="hljs-string">&#x27;di&#x27;</span>] 前缀（DI 视图 250ms 尾沿节流）
+     重连 → open 即 onReconnected → REST re-seed（live 帧掉线即丢, 不可靠）</code></pre><hr>
+<h2 id="5-重要实现细节"><a class="anchor" href="#5-重要实现细节" aria-hidden="true">#</a>5. 重要实现细节</h2><h3 id="51-oauth"><a class="anchor" href="#51-oauth" aria-hidden="true">#</a>5.1 oauth</h3><ol>
+<li><strong>凭据槽位哈希（<code>resolveKimiCodeOAuthKey</code>）</strong>：默认环境（oauth host=默认 且 baseUrl=默认）用固定键 <code>oauth/kimi-code</code>；任何环境覆盖（<code>KIMI_CODE_BASE_URL</code> / <code>KIMI_OAUTH_HOST</code> / 配置）都派生 <code>oauth/kimi-code-env-&lt;sha256(JSON{oauthHost,baseUrl}) 前16位&gt;</code>。登录、配置下发、运行时 provider 全部通过同一函数解析 ref——&quot;写入槽位永远等于读取槽位&quot;，防止环境切换导致凭据混用。</li>
+<li><strong>401 竞态恢复</strong>：刷新拿 401 后先 sleep(100ms) 重读存储，若 peer 进程已轮换 refresh_token 则用 peer 的新 token（把&quot;凭据真失效&quot;与&quot;并发轮换竞态&quot;区分开）；确认失效才写墓碑。</li>
+<li><strong><code>force</code> 合并语义</strong>：<code>inFlightRefresh</code> 记录在飞调用的 force 标志；non-force 可搭车任何结果，force 只能搭车 force，force 压 non-force 时会等前者 settle 后自己重刷。</li>
+<li><strong>跨进程锁（proper-lockfile）</strong>：锁目标是 <code>{configDir}/oauth/{name}</code> 哨兵文件，锁实体是兄弟 <code>.lock</code> 目录；<code>stale: 5s</code> 处理崩溃残留；Windows 与 <code>KIMI_DISABLE_OAUTH_LOCK=1</code> 禁用锁但仍保留&quot;锁后重读&quot;兜底。生产环境必须显式传 <code>configDir</code>（不传则静默禁用锁，只有 NODE_ENV=test 时回退 KIMI_CODE_HOME）。</li>
+<li><strong>墓碑设计</strong>：刷新被 401 后不是删文件而是写空 token 记录——新进程能看到&quot;曾经登录过、现在需要重登&quot;而非&quot;从未登录过&quot;；<code>classifyToken</code> 用 <code>accessToken.length===0</code> 判定。</li>
+<li><strong>token 解析严格性</strong>：<code>tokenFromResponse</code> 对 <code>access_token/refresh_token/expires_in</code> 做必填校验，缺任一即抛 <code>OAuthError</code>——拒绝把坏响应持久化。</li>
+<li><strong><code>isManagedKimiCodeBaseUrl</code></strong>：URL 按 origin+pathname 规范化严格比对，代理/网关/自托管镜像<strong>不会被自动刷新</strong>（其 /models schema 不可信）。</li>
+<li><strong>模型别名选择性合并（<code>mergeRefreshedModelAlias</code>）</strong>：上游字段集合（<code>MANAGED_KIMI_MODEL_FIELDS</code>）内的覆盖、集合外（用户手写、<code>overrides</code> 嵌套）保留；刷新时上游消失的模型删除。<code>applyCustomRegistryEntries</code> 修过一个 bug：批量导入多 provider 时&quot;内存 apply + 磁盘 RPC 混用&quot;导致 N-1 个 provider 静默丢失，现改为全内存 apply 后一次写盘。</li>
+<li><strong><code>refreshProviderModels</code> 的快照对比</strong>：刷新前后对比 <code>providerConfigSnapshot</code>（JSON 串）与模型集合，只有真实变化才触发 config 写盘；<code>preserveUserProviderAliases</code> 保护用户自建 provider 的别名。</li>
+</ol>
+<h3 id="52-telemetry"><a class="anchor" href="#52-telemetry" aria-hidden="true">#</a>5.2 telemetry</h3><ol>
+<li><strong>遥测永不致命</strong>：所有上报路径 catch 吞错；<code>flushSync</code> 兜底磁盘；<code>crash</code> 事件先 <code>flushSync</code> 再让原异常继续传播。</li>
+<li><strong>启动前事件缓冲</strong>：sink 挂接前 <code>track</code> 的事件进内存队列（≤1000），<code>attachSink</code> 时按事件自身的 contextOverrides 补填 device_id/session_id。</li>
+<li><strong>401 剥头重试</strong>：token 失效时上报仍要成功——去掉 Authorization 再发一次（遥测端点可能不需要鉴权）。</li>
+<li><strong>磁盘兜底格式</strong>：<code>failed_&lt;rand6&gt;.jsonl</code>（<code>flag:&#39;wx&#39;</code> 防覆盖），补发成功即删；7 天过期清理。</li>
+<li><strong>unhandledRejection 的双重义务</strong>：TUI 注册了 rejection 监听把崩溃变成静默 exit(1)（无遥测）→ 这里必须自己监听；但监听会抑制 Node 默认崩溃 → 若自己是唯一监听者则 rethrow 保留默认行为；<code>recordedRejections</code> Set 防止 monitor 双报。</li>
+<li><strong>数值卫生</strong>：<code>isTelemetryNumber</code> 限制 |v| ≤ MAX_SAFE_INTEGER；<code>sanitizeProperties</code> 丢弃非 primitive 属性。</li>
+<li><strong><code>normalizeRemote</code></strong> 把 git remote 归一化（scp 语法/<code>.git</code> 后缀）后再作为事件属性，防止同一仓库因 URL 写法不同产生重复属性值。</li>
+</ol>
+<h3 id="53-kaos"><a class="anchor" href="#53-kaos" aria-hidden="true">#</a>5.3 kaos</h3><ol>
+<li><strong>实例级 cwd</strong>：<code>LocalKaos</code> 从不调 <code>process.chdir()</code>；<code>withCwd/withEnv</code> 返回新实例（不可变风格），多实例并存互不污染——<code>runWithKaos</code> 切上下文时不担心全局状态。</li>
+<li><strong>进程组 kill</strong>：POSIX 用 <code>detached:true</code> + <code>process.kill(-pid)</code>；EPERM 时回退单进程 kill；pid≤0（spawn 失败）拒绝 kill 防 <code>kill(-1)</code> 误杀全组。</li>
+<li><strong><code>waitForSpawn</code> 竞速</strong>：spawn 后必须等 <code>&#39;spawn&#39;</code> 事件再返回——否则向&quot;从未存在的进程&quot;写 stdin。</li>
+<li><strong>glob 环检测</strong>：<code>(dev,ino)</code> 键；<code>ino===0</code> 的文件系统（Windows FAT/exFAT、SMB/NFS）返回 null 键放弃检测——若用共享键会让所有目录互相&quot;访问过&quot;而全部跳过。</li>
+<li><strong>UTF-8 严格校验器</strong>：手写 DFA（E0 第二字节 ≥A0、ED ≤9F、F0 ≥90、F4 ≤8F 边界），<code>readLines</code> 流式解码时保证不把多字节字符切成两半；<code>decodeTextWithErrors</code> 的 <code>&#39;ignore&#39;</code> 语义刻意与 TextDecoder 不同——跳过非法序列但<strong>保留合法的 U+FFFD</strong>（与 Python <code>errors=&quot;ignore&quot;</code> 一致）。</li>
+<li><strong>mkdir 语义</strong>：<code>{parents:true, existOk:false}</code> 时先 stat 探测（Node 的 recursive:true 静默容忍已存在）；<code>existOk</code> 只对&quot;已是目录&quot;生效，被普通文件占用时抛 <code>KaosFileExistsError</code> 而非撒谎返回。</li>
+<li><strong>登录 shell PATH</strong>：只追加当前 PATH 缺失的<strong>绝对路径</strong>项——空/<code>.</code>/相对项都是 cwd 依赖查找，追加会扩大搜索面（安全考量）；用绝对路径 <code>/usr/bin/env</code> 执行（防仓库里被植入的 <code>env</code> 可执行文件）。</li>
+<li><strong>SSH 实现</strong>：每条命令 <code>cd &lt;cwd&gt; &amp;&amp; &lt;cmd&gt;</code> 前缀模拟远程 cwd；SFTP stat 组装 <code>stMode</code>（mode_t 位）；<code>shellQuote</code> 单引号包裹防注入；进程 kill 用递归 <code>pkill -P</code>。</li>
+</ol>
+<h3 id="54-migration-legacy"><a class="anchor" href="#54-migration-legacy" aria-hidden="true">#</a>5.4 migration-legacy</h3><ol>
+<li><strong>幂等与自愈</strong>：目标目录 <code>custom.imported_from_kimi_cli</code> 标记 → 重跑直接 <code>already-migrated</code>；<code>debris</code>（state.json 缺失/损坏 = 上次跑到一半被杀）→ 删除重迁；<code>ensureSessionIndexEntry</code> 幂等追加——上次崩溃漏写的 index 行下次补上。</li>
+<li><strong>mtime 还原</strong>：<code>utimes</code> 把 wire.jsonl/state.json/目录 mtime 全还原为源会话 <code>wire_mtime</code>（见 4.5），否则 <code>SessionStore.list()</code> 排序反转。</li>
+<li><strong>OAuth 凭据刻意不迁移</strong>（<code>MigrationNotices.oauthLoginsRequiringRelogin</code>）：refresh token 服务端轮换，复制会让两个安装互相踢下线——用户必须在新产品里重新 <code>/login</code>。</li>
+<li><strong>冲突降级为兄弟文件</strong>：目标 config.toml/tui.toml/mcp.json 无法解析或用户改过时，迁移结果写到 <code>*.migrated-from-kimi-cli.*</code> 兄弟文件并提示手动合并，绝不覆盖用户数据。</li>
+<li><strong>schema 白名单跟随上游</strong>：<code>SUPPORTED_TOP_LEVEL_KEYS</code> 从 <code>KimiConfigSchema.shape</code> 动态推导（camelToSnake），上游加键自动跟；未知键、schema 拒绝的值逐键删除（循环 safeParse 直到通过，归因失败的键停手防死循环）。</li>
+<li><strong>悬空 tool call 合成占位</strong>：kimi-core 的 context 模块在 tool 交换未闭合时<strong>延迟后续所有消息</strong>——被中断的 kimi-cli 会话直接迁移会导致后续消息全被吞。<code>closeDanglingToolCalls</code> 为每个未满足的 toolCallId 插入 <code>[tool result unavailable — session imported from kimi-cli]</code> 占位结果，保持消息顺序。</li>
+<li><strong>分类严格性</strong>：<code>analyzeContextContent</code> 区分 <code>empty</code>（只有标记角色）与 <code>corrupt</code>（每行都解析失败）——corrupt 是数据问题，必须进 <code>sessionsFailed</code> 与 <code>migration-errors.log</code>（带 role 直方图诊断），不能混进 skip 计数。</li>
+<li><strong>旧格式字段白名单</strong>：<code>OldSessionStateSchema</code> 用 <code>.passthrough()</code> 容忍新版本 kimi-cli 的额外字段；<code>OldKimiJsonSchema</code> 反查 workdir。</li>
+<li><strong>marker 多目标支持</strong>：<code>target_paths</code> 数组记录所有迁移过的目标家目录，换 <code>KIMI_CODE_HOME</code> 重跑不重复提示。</li>
+</ol>
+<h3 id="55-tree-sitter-bash"><a class="anchor" href="#55-tree-sitter-bash" aria-hidden="true">#</a>5.5 tree-sitter-bash</h3><ol>
+<li><strong>确定性预算优先</strong>：<code>tick</code> 只挂在 <code>frame()</code>（一帧=一节点），<code>progress</code> 挂在所有长扫描循环（每 2048 字符）——病态单 token（几百 KB 未终止引号）也能按时撞线且不虚增节点。fuzz 测试断言 400KB 节点炸弹 &lt;100ms abort。</li>
+<li><strong>永不抛异常的退出契约</strong>：abort 走 <code>Aborted</code> 控制流异常；解析器 bug 被兜底成 <code>program + 全源 ERROR</code> 降级树（ok:true + hasError）——权限分析下游需要&quot;能用的树&quot;继续工作，且不能因为解析器故障卡死代理。</li>
+<li><strong>heredoc 两阶段</strong>：body 要到行尾才能扫，所以中间树用可变 <code>Frame</code>（parent 指针 + 可变 end），<code>completeHeredocs</code> 沿 parent 链事后扩展 <code>end</code>，<code>materialize</code> 再转不可变 <code>SyntaxNode</code>。</li>
+<li><strong>case 歧义双保险</strong>：lexer 层 <code>scanBalancedStatements</code> 维护 <code>caseDepths[]</code> 栈（case item 的 <code>)</code> 是 pattern 闭合符，naive 计数会提前闭合）；parser 层 <code>scanCasePatternEnd</code> 逐字符扫 pattern（extglob 组括号在 token 流中不可表示）+ <code>lexer.reposition</code> 回卷。</li>
+<li><strong>多深度上限防爆栈</strong>：<code>MAX_PARSE_DEPTH=500</code>（复合命令局部降级）、<code>MAX_SUBSTITUTION_DEPTH=150</code>（每次 <code>$()</code> 新 Parser 约 13 栈帧/层，实测 380-500 层爆栈，150 留 2.5 倍余量）、lexer <code>MAX_SCAN_DEPTH=1024</code>。</li>
+<li><strong>差异被 fixture 钉住</strong>：80 处 <code>@known-diff</code> 对照官方 wasm 的双向校验（dump 漂移或意外匹配参考都算失败）；<code>&lt;&gt;</code> 操作符官方 0.25.0 解析失败这里支持；<code>((a++)</code> 形态、<code>[[ $n == -0.5 ]]</code> extglob 分类等行为对齐 scanner.c。</li>
+<li><strong>测试方法论</strong>：devDependencies 的 tree-sitter-bash wasm + web-tree-sitter 只用于差分测试——同一 source 两边解析，按含匿名节点的前序 dump 字节级对比（web-tree-sitter 对字符串输入报 UTF-16 偏移，可直接比较）；官方 corpus 全量导入 + 自建 fixtures + 固定种子 fuzz（token soup/字节变异/嵌套炸弹）。</li>
+</ol>
+<h3 id="56-kimi-inspect"><a class="anchor" href="#56-kimi-inspect" aria-hidden="true">#</a>5.6 kimi-inspect</h3><ol>
+<li><strong>RPC 无重试、业务错误走信封 code</strong>：HTTP 状态码只反映传输层（401 等），业务结果全在 <code>code</code>；<code>RPCError</code> 的数字 code 是跨线稳定分支键（不靠 instanceof）；HTTP 通道 <code>listen</code> 直接抛错——v2 事件 socket 已移除，UI 全部按需 fetch/轮询。</li>
+<li><strong>WS 握手与 ack 时刻</strong>：浏览器 WebSocket 无法自定义 header，token 通过 <code>kimi-code.bearer.&lt;token&gt;</code> 子协议在升级时呈现；客户端每个控制帧带自增 id，服务器 <code>ack</code> 回带同 id——<strong>ack 是流挂载的精确时刻</strong>，重连后在此刻而非 <code>open</code> 触发 reconcile。</li>
+<li><strong>transcript 可靠性</strong>：WS 帧是 volatile 的（从不入 durable journal），可靠性靠 op-batch seq——断线错过的批次由 <code>transcript_since</code> 游标 / <code>ops?since_seq=</code> 点对点补齐，<code>complete:false</code> 则全量 REST 刷新；四路触发（resync/ack/seq 缺口/append gap）都汇入同一 catchUp。</li>
+<li><strong>audit diff 的引用相等快速路径</strong>：<code>diffValue</code> 先做引用相等比较——copy-on-write reducer 下未动子树共享引用，直接判 <code>unchanged</code> 免遍历；数组元素按 ID 字段优先级匹配（<code>frameId → stepId → interactionId → turnId → taskId</code>），避免中间 upsert 引发级联假修改；Map/Set 序列化时排序以保住引用共享。</li>
+<li><strong>虚拟化零依赖</strong>：<code>content-visibility: auto</code> + <code>contain-intrinsic-size</code>，浏览器原生虚拟化超长会话（无 windowing 库）；顶部 IntersectionObserver 哨兵自动翻旧页。</li>
+<li><strong>服务器发现</strong>：Vite 中间件扫 <code>~/.kimi-code/server/instances</code> 实例注册表 + 家目录共享 token，浏览器 10s 轮询发现列表，选中服务器只记住 URL 不持久化完整配置（刷新后重新发现回选）。</li>
+<li><strong>方法参数解析（methodArgs.ts，与 DI 无关）</strong>：服务器把 <code>Function#toString</code> 的形参文本放进 channels 描述符，前端 <code>parseParamFields</code> 切出可编辑字段——具名参数单输入框、解构对象参数每键一框、rest/数组回落裸 JSON 输入；DI 单元的 trigger 是固定的 <code>(scopePath, token)</code> 三元组，不是反射出来的。</li>
+<li><strong>已知注释漂移</strong>：<code>ChatView.tsx:10</code> 头注释写 <code>delta</code> grade，实际发送的是 <code>&#39;block&#39;</code>（ws.ts:177）——陈旧注释，代码为准。</li>
+</ol>
+<hr>
+<h2 id="6-关键代码位置索引"><a class="anchor" href="#6-关键代码位置索引" aria-hidden="true">#</a>6. 关键代码位置索引</h2><h3 id="oauth"><a class="anchor" href="#oauth" aria-hidden="true">#</a>oauth</h3><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>packages/oauth/src/oauth.ts:119</code></td>
+<td><code>requestDeviceAuthorization</code>（RFC 8628 §3.2 请求）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/oauth.ts:168</code></td>
+<td><code>pollDeviceToken</code>（pending/expired/denied 判别）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/oauth.ts:226</code></td>
+<td><code>refreshAccessToken</code>（退避重试 + 401/403 快速失败）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/oauth-manager.ts:254</code></td>
+<td><code>ensureFresh</code>（惰性刷新 + in-flight 合并）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/oauth-manager.ts:284</code></td>
+<td><code>doEnsureFresh</code>（锁后重读 + 401 竞态恢复 + 墓碑写入）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/oauth-manager.ts:406</code></td>
+<td><code>login</code>（15min 预算 + slow_down 步进）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/oauth-manager.ts:195</code></td>
+<td><code>acquireRefreshLock</code>（proper-lockfile 跨进程锁）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/storage.ts:41</code></td>
+<td><code>FileTokenStorage</code>（0600 + tmp/fsync/rename）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/token-state.ts:28</code></td>
+<td><code>classifyToken</code> 三态判定</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/managed-kimi-code.ts:319</code></td>
+<td><code>resolveKimiCodeOAuthKey</code>（凭据槽位哈希）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/managed-kimi-code.ts:487</code></td>
+<td><code>fetchManagedKimiCodeModels</code></td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/managed-kimi-code.ts:563</code></td>
+<td><code>applyManagedKimiCodeConfig</code>（配置下发）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/managed-kimi-code.ts:530</code></td>
+<td><code>toManagedModelAlias</code>（能力推导 + betaApi）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/toolkit.ts:110</code></td>
+<td><code>KimiOAuthToolkit</code> 门面</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/toolkit.ts:472</code></td>
+<td><code>resolveKimiTokenStorageName</code>（storage 名安全映射）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/refreshProviderModels.ts:377</code></td>
+<td><code>refreshProviderModels</code> 编排</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/custom-registry.ts:416</code></td>
+<td><code>applyCustomRegistryEntries</code>（批量导入 bug 修复）</td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/identity.ts:53</code></td>
+<td><code>createKimiDeviceId</code></td>
+</tr>
+<tr>
+<td><code>packages/oauth/src/managed-usage.ts:156</code></td>
+<td><code>parseManagedUsagePayload</code>（金额/窗口归一化）</td>
+</tr>
+</tbody></table>
+<h3 id="telemetry"><a class="anchor" href="#telemetry" aria-hidden="true">#</a>telemetry</h3><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>packages/telemetry/src/bootstrap.ts:36</code></td>
+<td><code>initializeTelemetry</code>（组装 client+sink+transport+metrics）</td>
+</tr>
+<tr>
+<td><code>packages/telemetry/src/client.ts:29</code></td>
+<td><code>TelemetryClient</code>（队列/Scoped/disable）</td>
+</tr>
+<tr>
+<td><code>packages/telemetry/src/client.ts:88</code></td>
+<td><code>trackWithContext</code>（sanitize + 缓冲）</td>
+</tr>
+<tr>
+<td><code>packages/telemetry/src/sink.ts:32</code></td>
+<td><code>EventSink</code>（context 富化 + 阈值/定时 flush）</td>
+</tr>
+<tr>
+<td><code>packages/telemetry/src/transport.ts:64</code></td>
+<td><code>send</code>（重试 + 磁盘兜底）</td>
+</tr>
+<tr>
+<td><code>packages/telemetry/src/transport.ts:171</code></td>
+<td><code>sendHttp</code>（401 剥头重试）</td>
+</tr>
+<tr>
+<td><code>packages/telemetry/src/transport.ts:124</code></td>
+<td><code>retryDiskEvents</code></td>
+</tr>
+<tr>
+<td><code>packages/telemetry/src/transport.ts:243</code></td>
+<td><code>applyServerPrefix</code>（kfc_ 前缀）</td>
+</tr>
+<tr>
+<td><code>packages/telemetry/src/crash.ts:20</code></td>
+<td><code>installCrashHandlersForClient</code></td>
+</tr>
+<tr>
+<td><code>packages/telemetry/src/systemMetrics.ts:19</code></td>
+<td><code>SystemMetricsCollector</code></td>
+</tr>
+</tbody></table>
+<h3 id="kaos"><a class="anchor" href="#kaos" aria-hidden="true">#</a>kaos</h3><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>packages/kaos/src/kaos.ts:12</code></td>
+<td><code>Kaos</code> 接口定义</td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/process.ts:10</code></td>
+<td><code>KaosProcess</code></td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/local.ts:188</code></td>
+<td><code>LocalKaos</code>（实例级 cwd）</td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/local.ts:71</code></td>
+<td><code>LocalProcess</code>（进程组 kill）</td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/local.ts:299</code></td>
+<td><code>glob</code>（** 展开 + 环检测）</td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/local.ts:593</code></td>
+<td><code>_readUtf8Lines</code>（流式分行解码）</td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/local.ts:495</code></td>
+<td><code>scanTextFile</code>（UTF-8 校验 + 行尾探测）</td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/environment.ts:75</code></td>
+<td><code>detectEnvironment</code>（Git Bash 定位）</td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/login-shell-path.ts:47</code></td>
+<td><code>probeLoginShellPath</code></td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/current.ts:8</code></td>
+<td>AsyncLocalStorage 绑定</td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/ssh.ts:435</code></td>
+<td><code>SSHKaos</code></td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/internal.ts:135</code></td>
+<td><code>decodeTextWithErrors</code>（Python errors= 语义）</td>
+</tr>
+<tr>
+<td><code>packages/kaos/src/internal.ts:245</code></td>
+<td><code>BufferedReadable</code></td>
+</tr>
+</tbody></table>
+<h3 id="migration-legacy"><a class="anchor" href="#migration-legacy" aria-hidden="true">#</a>migration-legacy</h3><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>packages/migration-legacy/src/detect.ts:32</code></td>
+<td><code>detectMigration</code>（kimi.json 反查 workdir）</td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/run-migration.ts:34</code></td>
+<td><code>runMigration</code> 五步编排</td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/steps/config.ts:193</code></td>
+<td><code>migrateConfigStep</code>（schema 过滤 + 三模式写入）</td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/steps/config.ts:165</code></td>
+<td><code>mergeConfig</code>（目标优先 + 冲突记录）</td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/sessions/index.ts:33</code></td>
+<td><code>migrateSessionsStep</code>（排序/计数/幂等）</td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/sessions/migrate-one.ts:32</code></td>
+<td><code>migrateOneSession</code>（目标分类 + 写盘 + mtime 还原）</td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/sessions/translator.ts:73</code></td>
+<td><code>translateContextLines</code></td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/sessions/close-tool-calls.ts:20</code></td>
+<td><code>closeDanglingToolCalls</code></td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/sessions/state-writer.ts:14</code></td>
+<td><code>writeSessionState</code>（imported 标记）</td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/sessions/tool-call-display.ts:13</code></td>
+<td><code>extractToolCallDisplays</code>（wire.jsonl 富化）</td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/marker.ts:37</code></td>
+<td><code>shouldSuppressMigration</code></td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/prompt.ts:32</code></td>
+<td><code>resolveMigrationScope</code></td>
+</tr>
+<tr>
+<td><code>packages/migration-legacy/src/session-index.ts:29</code></td>
+<td><code>ensureSessionIndexEntry</code>（幂等）</td>
+</tr>
+</tbody></table>
+<h3 id="tree-sitter-bash"><a class="anchor" href="#tree-sitter-bash" aria-hidden="true">#</a>tree-sitter-bash</h3><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>packages/tree-sitter-bash/src/parse.ts:31</code></td>
+<td><code>parse</code> 入口 + 退出契约</td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/budget.ts:29</code></td>
+<td><code>ParseBudget</code>（tick/progress）</td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/lexer.ts:445</code></td>
+<td><code>scanToken</code> 分发</td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/lexer.ts:497</code></td>
+<td>heredoc 队列 + <code>scanBoundary</code></td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/lexer.ts:258</code></td>
+<td><code>scanBalancedStatements</code>（case 感知）</td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/parser.ts:293</code></td>
+<td><code>parseProgram</code></td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/parser.ts:1438</code></td>
+<td><code>parseCommand</code>（赋值前缀消歧）</td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/parser.ts:1366</code></td>
+<td><code>isFunctionDefinitionAhead</code></td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/parser.ts:969</code></td>
+<td><code>parseCaseItem</code> + <code>scanCasePatternEnd</code></td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/parser.ts:2808</code></td>
+<td><code>parseExpression</code>（Pratt 引擎）</td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/parser.ts:1882</code></td>
+<td><code>completeHeredocs</code>（事后扩展 end）</td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/parser.ts:3759</code></td>
+<td><code>materialize</code>（Frame→SyntaxNode）</td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/grammar.ts:55</code></td>
+<td><code>EXPRESSION_PRECEDENCE</code></td>
+</tr>
+<tr>
+<td><code>packages/tree-sitter-bash/src/node.ts:19</code></td>
+<td><code>SyntaxNode</code></td>
+</tr>
+</tbody></table>
+<h3 id="kimi-inspect"><a class="anchor" href="#kimi-inspect" aria-hidden="true">#</a>kimi-inspect</h3><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>apps/kimi-inspect/src/connection.tsx:74</code></td>
+<td><code>resolveBaseUrl</code>（同源代理/尾斜杠归一）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/connection.tsx:157</code></td>
+<td>探针成功后才 <code>createInspectClient</code></td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/connection.tsx:239</code></td>
+<td><code>DebugSurfaceError</code> 阻塞屏</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/servers.ts:29</code></td>
+<td><code>fetchServerDiscovery</code> + 10s 轮询</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/servers.ts:59</code></td>
+<td><code>pickDefaultServer</code> 优先级</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/channel/channel.ts:24</code></td>
+<td><code>IChannel {call, listen}</code> 契约</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/channel/channel.ts:39</code></td>
+<td><code>ServiceProxy&lt;T&gt;</code> 映射类型</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/channel/client.ts:54</code></td>
+<td><code>InspectClient</code> 四级作用域 URL 拼接</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/channel/proxy.ts</code></td>
+<td>JS Proxy → channel.call</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/channel/proxyChannel.ts:47</code></td>
+<td>HTTP 调用 + <code>{code,msg,data}</code> 信封</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/channel/channels.ts:25</code></td>
+<td>channels 描述符（methods/params）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/channel/errors.ts:7</code></td>
+<td><code>RPCError</code> 数字 code 分支键</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/sessions/api.ts:140</code></td>
+<td>v2 sessions 查询参数 + 游标</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/sessions/views.ts:23</code></td>
+<td><code>SESSION_VIEWS</code> 预设视图</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/transcript/api.ts:60</code></td>
+<td>transcript REST（page_size=1 + seq 水位）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/transcript/api.ts:134</code></td>
+<td><code>fetchTranscriptOps</code>（since_seq 补齐）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/transcript/api.ts:203</code></td>
+<td><code>fetchTranscriptPlan</code>（plan 回放）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/transcript/store.ts:21</code></td>
+<td>薄封装 <code>applyOperation</code> reducer</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/transcript/store.ts:81</code></td>
+<td><code>createCoalescedRunner</code>（合并并发刷新）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/transcript/ws.ts:172</code></td>
+<td><code>subscribe_v2</code>（block grade + 游标）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/transcript/ws.ts:234</code></td>
+<td><code>catchUp</code> 四路触发点对点补齐</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/activity/ws.ts:88</code></td>
+<td><code>GlobalEventsWs</code>（零订阅广播）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/activity/store.ts:40</code></td>
+<td><code>applyWorkChanged</code> 四字段去重</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/activity/di.ts:23</code></td>
+<td><code>useDiQueryInvalidation</code>（250ms 节流）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/audit/trail.ts:75</code></td>
+<td><code>AuditTrail</code>（5000 条上限）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/audit/diff.ts:35</code></td>
+<td>数组 ID 字段优先级匹配</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/audit/diff.ts:114</code></td>
+<td>引用相等快速路径</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/components/ChatView.tsx:123</code></td>
+<td>对账管线（seq 水位/buffer/catchUp）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/components/DiInspectionView.tsx:139</code></td>
+<td><code>useDiTrigger</code>（unprovide/update/dispose）</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/components/ModelCatalogView.tsx:584</code></td>
+<td><code>findSource</code> 逐值 provenance</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/components/methodArgs.ts:115</code></td>
+<td><code>parseParamFields</code> 参数表单</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/components/StateCard.tsx:40</code></td>
+<td>1s 轮询活 diff 树</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/components/panels.ts:75</code></td>
+<td>CORE/SESSION/AGENT_PANELS 覆盖层</td>
+</tr>
+<tr>
+<td><code>apps/kimi-inspect/src/components/BashParserView.tsx:134</code></td>
+<td><code>IBashParserService.parse</code> 调试视图</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="7-与其它子系统的接口"><a class="anchor" href="#7-与其它子系统的接口" aria-hidden="true">#</a>7. 与其它子系统的接口</h2><h3 id="71-oauth-被四个包-一个应用依赖"><a class="anchor" href="#71-oauth-被四个包-一个应用依赖" aria-hidden="true">#</a>7.1 oauth —— 被四个包 + 一个应用依赖</h3><ul>
+<li>暴露：<code>OAuthManager</code>、<code>KimiOAuthToolkit</code>、<code>FileTokenStorage</code>、<code>refreshProviderModels</code>、<code>applyManagedKimiCodeConfig</code> 系列、<code>fetchManagedUsage/UserInfo/Feedback</code> 系列、<code>createKimiDeviceId/Headers</code> 系列。</li>
+<li>调用方：<ul>
+<li><code>agent-core/src/services/auth/managedAuth.ts</code> — <code>KimiOAuthToolkit</code> 实例化，会话认证门面；</li>
+<li><code>agent-core/src/services/oauth/oauthService.ts</code>、<code>authSummaryService.ts</code>、<code>modelCatalogService.ts</code>、<code>environment.ts</code>、<code>session/provider-manager.ts</code> — 登录状态、用量摘要、模型目录；</li>
+<li><code>kap-server/src/routes/sessionExport.ts</code> — 导出会话时鉴权；</li>
+<li><code>apps/kimi-code</code> — <code>/login</code> 命令、telemetry 的 <code>getAccessToken</code>。</li>
+</ul>
+</li>
+</ul>
+<h3 id="72-telemetry-被-CLI-与-web-服务器共用"><a class="anchor" href="#72-telemetry-被-CLI-与-web-服务器共用" aria-hidden="true">#</a>7.2 telemetry —— 被 CLI 与 web 服务器共用</h3><ul>
+<li>暴露：<code>initializeTelemetry</code>、<code>track</code>、<code>setTelemetryContext</code>、<code>withTelemetryContext</code>、<code>flushTelemetrySync</code>、<code>shutdownTelemetry</code>、<code>installCrashHandlers</code>。</li>
+<li>调用方：<code>apps/kimi-code/src/cli/telemetry.ts</code>（CLI 与 web 双 bootstrap，<code>KimiAuthFacade</code> 提供 token）；agent-core 经 <code>coreProcessOptions.telemetry</code> 接收同一 client，内部事件汇入同一管道。</li>
+</ul>
+<h3 id="73-kaos-agent-core-工具层的执行后端"><a class="anchor" href="#73-kaos-agent-core-工具层的执行后端" aria-hidden="true">#</a>7.3 kaos —— agent-core 工具层的执行后端</h3><ul>
+<li>暴露：<code>Kaos</code> 接口、<code>LocalKaos</code>、<code>SSHKaos</code>（<code>/ssh</code> 子路径）、<code>detectEnvironment</code>、AsyncLocalStorage 便捷函数。</li>
+<li>调用方：<code>agent-core/src/tools/builtin/file/*</code>（read/write/edit/grep/glob/read-media）、<code>tools/support/*</code>（run-rg/git-worktree/list-directory）、<code>tools/policies/path-access.ts</code>、<code>acp-adapter</code>、<code>node-sdk</code>。</li>
+</ul>
+<h3 id="74-migration-legacy-应用层一次性调用"><a class="anchor" href="#74-migration-legacy-应用层一次性调用" aria-hidden="true">#</a>7.4 migration-legacy —— 应用层一次性调用</h3><ul>
+<li>暴露：<code>detectMigration</code>、<code>runMigration</code>、<code>resolveMigrationScope</code>、<code>shouldSuppressMigration</code>。</li>
+<li>调用方：<code>apps/kimi-code/src/migration/{detect-pending,migration-screen,index,badge}.ts</code>、<code>apps/kimi-code/src/tui/kimi-tui.ts</code>（TUI 迁移屏）、<code>apps/vscode/src/migration/legacy-migration.manager.ts</code>。</li>
+</ul>
+<h3 id="75-tree-sitter-bash-agent-core-v2-的命令安全分析"><a class="anchor" href="#75-tree-sitter-bash-agent-core-v2-的命令安全分析" aria-hidden="true">#</a>7.5 tree-sitter-bash —— agent-core-v2 的命令安全分析</h3><ul>
+<li>暴露：<code>parse(source, opts)</code> 单函数。</li>
+<li>调用方：<code>agent-core-v2/src/app/bashParser/bashParser.ts</code> + <code>bashParserService.ts</code>（DI Service，执行前解析命令，权限策略消费 <code>hasError</code> 决定降级）。</li>
+</ul>
+<h3 id="76-kimi-inspect-kap-server-debug-面的官方客户端"><a class="anchor" href="#76-kimi-inspect-kap-server-debug-面的官方客户端" aria-hidden="true">#</a>7.6 kimi-inspect —— kap-server debug 面的官方客户端</h3><ul>
+<li>消费（REST）：<code>/api/v1/debug/channels</code>（协议自描述）、<code>/api/v1/debug[/session/:sid[/agent/:aid]]/:service/:method</code>（RPC）、<code>/api/v2/sessions</code>、<code>/api/v1/search</code>、<code>/api/v1/sessions/{id}/transcript*</code>（transcript/ops/plan）；消费（WS）：<code>/api/v1/ws</code>（transcript.ops/reset + 全局事件帧），鉴权走 <code>kimi-code.bearer.&lt;token&gt;</code> 子协议。</li>
+<li>复用：<code>@moonshot-ai/transcript</code> 的 contract zod schema 与 L2 <code>applyOperation</code> reducer（本地零重实现）；<code>agent-core-v2</code> 的 <code>createDecorator</code> ServiceIdentifier（decorator id 即 wire 通道名）与 Service 接口类型。</li>
+<li>不消费：<code>/api/v2/ws</code>（服务器端已移除，无降级数据源——debug 表面不可用即阻塞错误屏）。</li>
+</ul>
+<hr>
+
+    </article>
+    <footer class="page-footer">
+      <a class="nav-prev" href="research-07.html">← 任务 7/8：minidb —— 嵌入式 KV/文档数据库研究报告</a>
+      <span class="nav-next disabled"></span>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

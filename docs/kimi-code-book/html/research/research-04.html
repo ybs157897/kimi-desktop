@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>04. kap-server + kosong：Kimi Code 的服务端外壳与 LLM 抽象层 · Kimi Code 实现详解</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" href="../index.html">
+      <span class="brand-name">Kimi Code 实现详解</span>
+      <span class="brand-sub">从终端到 DI 引擎 · 源码解读</span>
+    </a>
+    <nav class="side-nav"><div class="group">本书</div><a href="../index.html">Kimi Code 源码解读：从终端到 DI 引擎</a>
+      <div class="group">正文</div><a href="../ch01.html">第 1 章 总览与架构</a>
+      <a href="../ch02.html">第 2 章 CLI 应用外壳：启动、更新与 SEA 打包</a>
+      <a href="../ch03.html">第 3 章 v2 引擎：DI × Scope 新架构</a>
+      <a href="../ch04.html">第 4 章 v1 引擎：上一代内核</a>
+      <a href="../ch05.html">第 5 章 KAP 服务器与 kosong：服务端外壳与 LLM 抽象</a>
+      <a href="../ch06.html">第 6 章 TUI 与 VSCode 集成：两个平行前端</a>
+      <a href="../ch07.html">第 7 章 协议层：线协议、客户端 SDK 与 ACP 桥</a>
+      <a href="../ch08.html">第 8 章 minidb：自研嵌入式数据库</a>
+      <a href="../ch09.html">第 9 章 基础设施：认证、遥测、执行环境与调试</a>
+      <div class="group">研究附录</div><a href="research-01.html">01 · apps/kimi-code —— CLI 主应用研究报告</a>
+      <a href="research-02.html">02 · agent-core-v2：DI × Scope 新架构 agent 引擎</a>
+      <a href="research-03.html">03 · agent-core（旧架构 agent 核心）研究报告</a>
+      <a href="research-04.html" class="active">04. kap-server + kosong：Kimi Code 的服务端外壳与 LLM 抽象层</a>
+      <a href="research-05.html">05 · pi-tui 与 VSCode 扩展（apps/vscode）</a>
+      <a href="research-06.html">06 · 协议层（protocol / klient / node-sdk / transcript / acp）研究报告</a>
+      <a href="research-07.html">任务 7/8：minidb —— 嵌入式 KV/文档数据库研究报告</a>
+      <a href="research-08.html">任务 8/8：基础设施层研究报告</a></nav>
+  </aside>
+  <main class="content">
+    <header class="page-header">
+      <div class="crumbs"><a href="../index.html">Kimi Code 实现详解</a> / <span>研究附录</span></div>
+      <h1 class="page-title">04. kap-server + kosong：Kimi Code 的服务端外壳与 LLM 抽象层</h1>
+    </header>
+    <nav class="page-toc"><div class="toc-title">本章目录</div><ol><li class="toc-2"><a href="#1-子系统定位与职责">1. 子系统定位与职责</a></li><li class="toc-3"><a href="#11-kap-serverKimi-Code-的-HTTPWS-服务端外壳">1.1 kap-server：Kimi Code 的 HTTP/WS 服务端外壳</a></li><li class="toc-3"><a href="#12-kosong统一的-LLM-provider-抽象层">1.2 kosong：统一的 LLM provider 抽象层</a></li><li class="toc-2"><a href="#2-包目录清单与依赖关系">2. 包/目录清单与依赖关系</a></li><li class="toc-3"><a href="#21-依赖关系总览workspace-内部">2.1 依赖关系总览（workspace 内部）</a></li><li class="toc-3"><a href="#22-kap-server-目录清单">2.2 kap-server 目录清单</a></li><li class="toc-3"><a href="#23-kosong-目录清单">2.3 kosong 目录清单</a></li><li class="toc-2"><a href="#3-模块结构与核心类型">3. 模块结构与核心类型</a></li><li class="toc-3"><a href="#31-kap-server-核心类型">3.1 kap-server 核心类型</a></li><li class="toc-3"><a href="#32-kosong-核心类型">3.2 kosong 核心类型</a></li><li class="toc-2"><a href="#4-关键数据流-状态机-时序">4. 关键数据流 / 状态机 / 时序</a></li><li class="toc-3"><a href="#41-服务器启动时序startts">4.1 服务器启动时序（start.ts）</a></li><li class="toc-3"><a href="#42-WS-事件流核心数据路径">4.2 WS 事件流（核心数据路径）</a></li><li class="toc-3"><a href="#43-Transcript-双通道REST-历史-WS-实时-ops">4.3 Transcript 双通道（REST 历史 + WS 实时 ops）</a></li><li class="toc-3"><a href="#44-会话生命周期数据流REST">4.4 会话生命周期数据流（REST）</a></li><li class="toc-3"><a href="#45-RPC-反射面数据流">4.5 RPC 反射面数据流</a></li><li class="toc-3"><a href="#46-kosong-生成数据流">4.6 kosong 生成数据流</a></li><li class="toc-3"><a href="#47-文件监视数据流WS-旁路">4.7 文件监视数据流（WS 旁路）</a></li><li class="toc-2"><a href="#5-重要实现细节">5. 重要实现细节</a></li><li class="toc-3"><a href="#51-安全模型按绑定暴露等级渐进加固">5.1 安全模型：按绑定暴露等级渐进加固</a></li><li class="toc-3"><a href="#52-事件流的三个一致性机制">5.2 事件流的三个一致性机制</a></li><li class="toc-3"><a href="#53-日志的持久性与崩溃容错">5.3 日志的持久性与崩溃容错</a></li><li class="toc-3"><a href="#54-出站背压与合并">5.4 出站背压与合并</a></li><li class="toc-3"><a href="#55-transcript-的活数据优先哲学">5.5 transcript 的&quot;活数据优先&quot;哲学</a></li><li class="toc-3"><a href="#56-搜索的generation-发布模型">5.6 搜索的&quot;generation 发布&quot;模型</a></li><li class="toc-3"><a href="#57-kosong-的流式组装细节">5.7 kosong 的流式组装细节</a></li><li class="toc-3"><a href="#58-kosong-的-provider-适配差异">5.8 kosong 的 provider 适配差异</a></li><li class="toc-3"><a href="#59-action-URL-约定与路由分发">5.9 :action URL 约定与路由分发</a></li><li class="toc-3"><a href="#510-文件监视的共享订阅模型">5.10 文件监视的共享订阅模型</a></li><li class="toc-3"><a href="#511-kosong-的协议错误分类与-Anthropic-适配">5.11 kosong 的协议错误分类与 Anthropic 适配</a></li><li class="toc-2"><a href="#6-关键代码位置索引">6. 关键代码位置索引</a></li><li class="toc-3"><a href="#61-kap-server">6.1 kap-server</a></li><li class="toc-3"><a href="#62-kosong">6.2 kosong</a></li><li class="toc-2"><a href="#7-与其它子系统的接口">7. 与其它子系统的接口</a></li><li class="toc-3"><a href="#71-kap-server-对外暴露">7.1 kap-server 对外暴露</a></li><li class="toc-3"><a href="#72-kosong-对外暴露">7.2 kosong 对外暴露</a></li><li class="toc-3"><a href="#73-关键边界与已知取舍">7.3 关键边界与已知取舍</a></li></ol></nav>
+    <article class="markdown-body">
+<h1 id="04-kap-server-kosongKimi-Code-的服务端外壳与-LLM-抽象层">04. kap-server + kosong：Kimi Code 的服务端外壳与 LLM 抽象层</h1><blockquote>
+<p>本文基于 <code>/Users/yin/Documents/ybs/code/proxy/kimiwork/kimi-code</code> 的 <code>packages/kap-server</code>（约 2.9 万行 TS）与 <code>packages/kosong</code>（约 9.2 千行 TS）源码分析。
+报告日期：2026-08-06。行号引用均以本仓库当前 HEAD 为准。</p>
+</blockquote>
+<h2 id="1-子系统定位与职责"><a class="anchor" href="#1-子系统定位与职责" aria-hidden="true">#</a>1. 子系统定位与职责</h2><h3 id="11-kap-serverKimi-Code-的-HTTPWS-服务端外壳"><a class="anchor" href="#11-kap-serverKimi-Code-的-HTTPWS-服务端外壳" aria-hidden="true">#</a>1.1 kap-server：Kimi Code 的 HTTP/WS 服务端外壳</h3><p>kap-server（<code>@moonshot-ai/kap-server</code>，v0.2.1，private）是 Kimi Code 的<strong>网络服务端形态</strong>：它把 <code>agent-core-v2</code>（DI × Scope 引擎）整体暴露为一套 REST + WebSocket 接口，供浏览器 Web UI、IDE 集成、远程开发场景（<code>kimi web</code>）与调试工具（kimi-inspect）使用。包描述自述为 &quot;Kimi Code server backed by the DI × Scope agent engine (agent-core-v2)&quot;。</p>
+<p>关键事实：</p>
+<ul>
+<li><strong>它不是协议规范库，而是可嵌入的服务器组合根</strong>。对外暴露的是 <code>startServer(opts)</code> 一个入口，返回 <code>{ app, core, connectionRegistry, authTokenService, host, port, close }</code>。宿主进程（<code>apps/kimi-code</code> 的 <code>kimi web</code> 命令）负责传 <code>hostIdentity</code>（产品名/版本/平台）、<code>webAssetsDir</code>（编译好的 Web UI）、<code>debugEndpoints</code> 等选项。</li>
+<li><strong>KAP 的含义</strong>：包名 <code>kap-server</code> = &quot;Kimi Agent Protocol&quot; server。但代码中并没有一个独立命名的 &quot;KAP&quot; 协议文件——实际协议就是 <code>/api/v1</code> REST（携带 <code>{ code, msg, data, request_id }</code> 信封）加 <code>/api/v1/ws</code> WebSocket（<code>server_hello</code>/<code>subscribe</code>/<code>ack</code>/事件流）与 <code>/api/v2</code> 实验面。KAP 是这整组线协议的对外统称；同一套协议也被 v1 的 <code>packages/server</code> 实现过（注释中大量 &quot;mirrors v1&quot;、&quot;port of v1&quot; 可证）。</li>
+<li><strong>与 agent-core-v2 的关系</strong>：kap-server 是 agent-core-v2 的<strong>传输适配层</strong>。它不实现任何 agent 逻辑——会话生命周期、prompt 提交、工具执行、审批/提问内核全部在 agent-core-v2 的 Service 里；kap-server 只是把 <code>IWorkspaceLifecycleService.handlerFor</code> → <code>ISessionLifecycleService</code> 的 scope 组合映射成 URL，把 v2 的 <code>DomainEvent</code>/<code>IEventBus</code> 事件流投影成 v1 兼容的 WS 事件帧，把 v2 的 <code>Error2</code> 错误码翻译成信封 <code>code</code>。</li>
+<li><strong>与 agent-core（v1 引擎）的关系</strong>：kap-server 是 v2 引擎对外的&quot;同一套 <code>/api/v1</code> 接口&quot;的宿主。v1 时代这套协议由 <code>packages/server</code> 承载（<code>WsBroadcastService</code>、<code>SessionEventJournal</code>、<code>wsGatewayService</code> 等），v2 时代 kap-server 逐模块移植并保持<strong>线上字节级兼容</strong>（如 <code>agent.status.updated</code> 的 phase 语义、<code>background.task.*</code> 别名、空 <code>agent_config:{model:&#39;&#39;}</code> 占位）。</li>
+<li><strong>与 klient / node-sdk 的关系</strong>：klient 是面向 agent-core-v2 进程内/内存的客户端 SDK，kap-server 是面向网络的服务器；两者共享 agent-core-v2 作为服务源。node-sdk 则面向 v1 协议。</li>
+</ul>
+<h3 id="12-kosong统一的-LLM-provider-抽象层"><a class="anchor" href="#12-kosong统一的-LLM-provider-抽象层" aria-hidden="true">#</a>1.2 kosong：统一的 LLM provider 抽象层</h3><p>kosong（<code>@moonshot-ai/kosong</code>，v0.5.5，private，license MIT）自述为 &quot;The LLM abstraction layer for modern AI agent applications&quot;。名字 &quot;kosong&quot; 是马来语/印尼语的&quot;空&quot;——呼应其设计哲学：它只提供<strong>一个尽可能薄而中立的对话生成抽象</strong>（统一消息模型 + 统一流式接口 + 归一化 finish reason + 能力矩阵 + 错误体系），把重试策略、并发、预算管理、循环控制全部留给上层（agent-core 的 turn 循环）。</p>
+<ul>
+<li><strong>被谁依赖</strong>：<code>packages/agent-core</code>（49 个源文件直接 import，核心消费点是 <code>src/agent/turn/kosong-llm.ts</code>——把 kosong 的 <code>generate()</code> 桥接成 loop 的 <code>LLM</code> 接口）、<code>packages/node-sdk</code>、<code>apps/vis/server</code>。</li>
+<li><strong>与 agent-core-v2 / kap-server 的关系</strong>：kosong 位于依赖链最底层（只依赖各家官方 SDK + zod）。agent-core 在 turn 循环里用 <code>createProvider</code> 构造 <code>ChatProvider</code>，用 <code>kosongGenerate</code> 流式生成，用 <code>isRetryableGenerateError</code> 决定重试；kap-server 本身不直接依赖 kosong（它把 provider 配置解析交给 agent-core-v2 的 <code>IProviderDiscoveryService</code>/<code>IConfigService</code>）。kap-server 侧唯一的 kosong 痕迹是 <code>/api/v1/modelCatalog</code> 路由消费的 <code>@moonshot-ai/kosong</code> catalog 类型（<code>catalog.ts</code> 的 models.dev 风格目录解析，被 agent-core-v2 的 provider 配置模块复用）。</li>
+</ul>
+<h2 id="2-包目录清单与依赖关系"><a class="anchor" href="#2-包目录清单与依赖关系" aria-hidden="true">#</a>2. 包/目录清单与依赖关系</h2><h3 id="21-依赖关系总览workspace-内部"><a class="anchor" href="#21-依赖关系总览workspace-内部" aria-hidden="true">#</a>2.1 依赖关系总览（workspace 内部）</h3><pre class="hljs"><code>apps<span class="hljs-symbol">/kimi-code</span> ──<span class="hljs-operator">&gt;</span> @moonshot-ai<span class="hljs-operator">/</span>kap-server（startServer，`kimi web`<span class="hljs-symbol">/tui</span> web 命令）
+apps<span class="hljs-symbol">/kimi-inspect</span> ──<span class="hljs-operator">&gt;</span> kap-server 的 <span class="hljs-symbol">/api/v1/debug</span> RPC 面（运行时，非 npm 依赖）
+kap-server ──<span class="hljs-operator">&gt;</span> agent-core-v2 (workspace:^)   <span class="hljs-comment"># 引擎：Scope/Service/事件/会话</span>
+kap-server ──<span class="hljs-operator">&gt;</span> transcript (workspace:^)      <span class="hljs-comment"># transcript 契约与 grade 过滤</span>
+kap-server ──<span class="hljs-operator">&gt;</span> minidb (workspace:<span class="hljs-operator">*</span>)          <span class="hljs-comment"># 全局搜索索引</span>
+kap-server ──<span class="hljs-operator">&gt;</span> kimi-code-oauth (workspace:^) <span class="hljs-comment"># 宿主身份头、OAuth 设备流</span>
+kap-server ──<span class="hljs-operator">&gt;</span> fastify <span class="hljs-symbol">/</span> @fastify<span class="hljs-symbol">/swagger</span> <span class="hljs-symbol">/</span> @fastify<span class="hljs-symbol">/multipart</span> <span class="hljs-symbol">/</span> ws <span class="hljs-symbol">/</span> zod <span class="hljs-symbol">/</span> pino <span class="hljs-symbol">/</span> smol-toml <span class="hljs-symbol">/</span> bcryptjs <span class="hljs-symbol">/</span> ulid
+
+agent-core ──<span class="hljs-operator">&gt;</span> kosong (workspace:^)          <span class="hljs-comment"># 49 个文件的 provider 消费</span>
+node-sdk   ──<span class="hljs-operator">&gt;</span> kosong                        <span class="hljs-comment"># SDK 侧 provider 直用</span>
+apps<span class="hljs-symbol">/vis/server</span> ──<span class="hljs-operator">&gt;</span> kosong
+
+kosong ──<span class="hljs-operator">&gt;</span> @anthropic-ai<span class="hljs-symbol">/sdk</span> <span class="hljs-symbol">/</span> @google<span class="hljs-symbol">/genai</span> <span class="hljs-symbol">/</span> openai <span class="hljs-symbol">/</span> zod <span class="hljs-symbol">/</span> zod-to-json-schema</code></pre><p><code>kap-server</code> 的 <code>exports</code> 有两个子路径：<code>.</code>（<code>startServer</code> 等）与 <code>./contract</code>（RPC channel 描述符类型，供工具/测试用）。<code>kosong</code> 的 <code>exports</code> 有 <code>.</code>（根 barrel）与 <code>./providers/*</code>（各 adapter 子路径）——根 barrel 刻意不导出具体 provider 类，避免 SDK 类型图污染下游声明包；<code>KimiChatProvider</code> 是唯一例外（调用方需要 <code>instanceof</code> 收窄）。</p>
+<h3 id="22-kap-server-目录清单"><a class="anchor" href="#22-kap-server-目录清单" aria-hidden="true">#</a>2.2 kap-server 目录清单</h3><table>
+<thead>
+<tr>
+<th>目录/文件</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/start.ts</code></td>
+<td>组合根：<code>bootstrap()</code> 建 Core Scope、装 Fastify、注册 hook/路由/WS、端口重试、实例注册表</td>
+</tr>
+<tr>
+<td><code>src/contract.ts</code></td>
+<td>公共 RPC 线契约（= 整个 scoped DI 注册表，无白名单）</td>
+</tr>
+<tr>
+<td><code>src/envelope.ts</code></td>
+<td>信封 <code>okEnvelope</code>/<code>errEnvelope</code> 重导出 shim（实现在 <code>protocol/envelope.ts</code>）</td>
+</tr>
+<tr>
+<td><code>src/protocol/</code></td>
+<td>线协议目录：信封、错误码表、REST 各域 zod schema（session/message/prompt/fs/approval/question/task/tool/terminal/…）、WS 控制帧、pagination、asyncapi 文档</td>
+</tr>
+<tr>
+<td><code>src/transport/</code></td>
+<td>WS 传输层（<code>ws/v1/</code>）、RPC 反射面（channel/dispatcher/debug routes）、连接注册表、bearer 协议</td>
+</tr>
+<tr>
+<td><code>src/routes/</code></td>
+<td><code>/api/v1</code> 全部路由 + <code>/api/v2/sessions</code></td>
+</tr>
+<tr>
+<td><code>src/services/</code></td>
+<td>transcript 服务、消息投影/历史、auth（token/password/credentials）、guiStore、legacyStatus、modelCatalog 刷新调度、telemetry、pino logger</td>
+</tr>
+<tr>
+<td><code>src/middleware/</code></td>
+<td>auth hook、host 检查、origin/CORS、安全头、限流、<code>defineRoute</code>（单点声明 + 校验 + OpenAPI）</td>
+</tr>
+<tr>
+<td><code>src/security/</code></td>
+<td><code>bindClassify</code>（loopback/lan/public 绑定分级）</td>
+</tr>
+<tr>
+<td><code>src/openapi/</code></td>
+<td>swagger 文档后处理 transform</td>
+</tr>
+<tr>
+<td><code>src/search/</code></td>
+<td><code>IGlobalSearchService</code>（minidb 全文检索 + live transcript 检索）</td>
+</tr>
+<tr>
+<td><code>src/instanceRegistry.ts</code></td>
+<td>多实例发现：<code>&lt;home&gt;/server/instances/&lt;id&gt;.json</code> + 心跳</td>
+</tr>
+</tbody></table>
+<h3 id="23-kosong-目录清单"><a class="anchor" href="#23-kosong-目录清单" aria-hidden="true">#</a>2.3 kosong 目录清单</h3><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/message.ts</code></td>
+<td>统一消息模型：<code>Message</code>/<code>ContentPart</code>/<code>ToolCall</code>/<code>StreamedMessagePart</code> + 原地合并 <code>mergeInPlace</code></td>
+</tr>
+<tr>
+<td><code>src/provider.ts</code></td>
+<td><code>ChatProvider</code> 接口、<code>StreamedMessage</code>、<code>FinishReason</code>、<code>GenerateOptions</code>、解码统计</td>
+</tr>
+<tr>
+<td><code>src/generate.ts</code></td>
+<td>流式组装循环：part 合并、并行工具调用路由、abort、空响应判定</td>
+</tr>
+<tr>
+<td><code>src/tool.ts</code></td>
+<td>统一工具定义（<code>deferred</code> 标记）</td>
+</tr>
+<tr>
+<td><code>src/capability.ts</code></td>
+<td><code>ModelCapability</code> 能力矩阵 + <code>UNKNOWN_CAPABILITY</code> 哨兵</td>
+</tr>
+<tr>
+<td><code>src/catalog.ts</code></td>
+<td>models.dev 风格目录：provider/model 元数据 → 能力 + 思考档位解析</td>
+</tr>
+<tr>
+<td><code>src/errors.ts</code></td>
+<td>错误体系：<code>ChatProviderError</code> → 连接/超时/状态/上下文溢出/配额/限流… + 可重试判定</td>
+</tr>
+<tr>
+<td><code>src/usage.ts</code></td>
+<td>token 用量聚合</td>
+</tr>
+<tr>
+<td><code>src/providers/</code></td>
+<td>五个 adapter：<code>kimi.ts</code>、<code>openai-legacy.ts</code>、<code>openai-responses.ts</code>、<code>anthropic.ts</code>、<code>google-genai.ts</code>（含 vertexai），加共享工具（<code>openai-common</code>、<code>chat-completions-stream</code>、<code>capability-registry</code>、<code>request-auth</code>、<code>kimi-schema</code>、<code>tool-call-id</code>、<code>reasoning-key</code>、<code>merge-user-messages</code>、<code>kimi-files</code>、<code>kimi-errors</code>、<code>anthropic-profile</code>）</td>
+</tr>
+</tbody></table>
+<h2 id="3-模块结构与核心类型"><a class="anchor" href="#3-模块结构与核心类型" aria-hidden="true">#</a>3. 模块结构与核心类型</h2><h3 id="31-kap-server-核心类型"><a class="anchor" href="#31-kap-server-核心类型" aria-hidden="true">#</a>3.1 kap-server 核心类型</h3><p><strong>组合根（<code>start.ts</code>）</strong></p>
+<ul>
+<li><code>ServerStartOptions</code>：<code>host</code>/<code>port</code>（默认 <code>127.0.0.1:58627</code>）、<code>homeDir</code>、<code>configPath</code>、<code>logLevel</code>、<code>debugEndpoints</code>、<code>bindClass</code>、<code>allowedHosts</code>、<code>corsOrigins</code>、<code>insecureNoTls</code>、<code>allowRemoteShutdown</code>/<code>allowRemoteTerminals</code>、<code>authTokenService</code>（可注入，测试用）、<code>disableAuth</code>、<code>rpcToken</code>（RPC 面附加凭证）、<code>seeds</code>（额外 ScopeSeed）、<code>hostIdentity</code>（必填：产品名/版本/平台/displayName/replyStyleGuide）、<code>skillDirs</code>、<code>webAssetsDir</code>、<code>serverVersion</code>、<code>telemetry</code>。</li>
+<li><code>RunningServer</code>：<code>{ app: FastifyInstance, core: Scope, connectionRegistry, authTokenService, host, port, close() }</code>。</li>
+<li>安全推导链：<code>classify(host, { bindClass })</code> → 非 loopback 无 TLS 直接拒绝启动（<code>insecureNoTls</code> 可豁免）→ <code>enableShutdown</code>/<code>enableTerminals</code>/<code>debugEndpoints</code> 各自按暴露等级收紧 → 非 loopback 才挂认证失败限流与安全头。</li>
+</ul>
+<p><strong>信封（<code>protocol/envelope.ts</code>）</strong></p>
+<ul>
+<li><code>Envelope&lt;T&gt; = { code, msg, data: T|null, request_id, details?, stack? }</code>。<code>okEnvelope</code> → <code>code: 0</code>；<code>errEnvelope(code, msg, requestId, stack?)</code>。HTTP 状态几乎恒为 200，业务结果全在 <code>code</code>——这是整条协议线（v1 与 v2 共用）的基石。</li>
+<li><code>ErrorCode</code> 命名空间：<code>0</code> 成功；<code>4xxxx</code> 客户端错误（<code>40001</code> 校验失败带 <code>details</code> 路径列表、<code>40110-40113</code> 认证供给、<code>40401-40417</code> 各类 not_found、<code>40901-40922</code> 冲突/状态、<code>41001-41003</code> 过期、<code>41301-41305</code> 过大/超限、<code>42902</code> watch 超限）；<code>5xxxx</code> 服务端（<code>50001</code> 兜底、<code>50003</code> 持久化、<code>50004</code> 目录不可用）；<code>6xxxx</code> 工具运行时；<code>7xxxx</code>/<code>8xxxx</code> 为 provider/MCP 透传（msg 保留上游原文）。核心 <code>Error2</code> 字符串码到数字码的映射在 <code>transport/errors.ts</code> 的 <code>KIMI_TO_PROTOCOL</code>。</li>
+</ul>
+<p><strong>WS v1（<code>transport/ws/v1/</code>）</strong></p>
+<ul>
+<li><code>WsConnectionV1</code>（实现 <code>BroadcastTarget</code>）：单连接对象。持有 <code>subscriptions: Map&lt;sessionId, { agentFilter?, transcriptGrades? }&gt;</code>；<code>controlQueue</code> 串行化全部控制帧（<code>client_hello</code>/<code>subscribe</code>/<code>subscribe_v2</code>/<code>unsubscribe</code>/<code>unsubscribe_v2</code>/<code>watch_fs_add|remove</code>）；出站缓冲 + 16ms 合并窗口 + 64 帧批量 + 1 MiB 高水位背压 + <code>coalesceFrames</code> 相邻 volatile delta 合并；<strong>服务端从不主动断连</strong>（无 ping/pong）。</li>
+<li><code>SessionEventBroadcaster</code>：每会话单扇出点。订阅每 agent 的 <code>IEventBus</code> + 会话的 <code>ISessionInteractionService</code> + 核心 <code>ISessionActivityView</code>；durable 事件 → <code>journal.nextSeq()</code> + 写盘 + 内存 tail + 扇出；volatile 事件 → 以当前 watermark 为 <code>seq</code> 打 <code>volatile:true</code> 直接扇出。全局事件（<code>event.session.*</code>/<code>event.workspace.*</code>/<code>event.config.*</code>/<code>event.di.*</code>/<code>session.meta.updated</code>）扇给 <code>globalTargets</code> 并集所有订阅目标；<code>event.di.*</code> 只发给 <code>addDiEventTarget</code> 选入的连接（<code>client_hello.client_id === &#39;kimi-inspect&#39;</code>）。transcript 帧走独立通道，按 grade 过滤、绕过 agent filter。</li>
+<li><code>SessionEventJournal</code>：每会话 <code>&lt;eventsDir&gt;/&lt;sessionId&gt;.jsonl</code>，首行 <code>journal_header</code>（<code>epoch: &quot;ep_&lt;ulid&gt;&quot;</code>），后续 <code>{&quot;kind&quot;:&quot;event&quot;,&quot;seq&quot;:N,&quot;envelope&quot;:{...}}</code>。<code>seq</code> 跨重启单调（open 时扫盘恢复）；<code>epoch</code> 在文件损坏时轮换（旧游标收到 <code>resync_required(epoch_changed)</code>）。写路径同步入队、微任务批量落盘；<code>readSince</code> 先 flush。</li>
+<li><code>InFlightTurnTracker</code> / <code>SubagentRosterTracker</code>：快照路由用的增量状态（in-flight turn 的 <code>offset</code> 注解、子 agent 名单）。</li>
+<li><code>protocol.ts</code>：<code>server_hello</code>（带 <code>ws_connection_id</code>/<code>protocol_version=2</code>/能力声明）、<code>ack</code>（<code>{id, code, msg, payload}</code>）、<code>resync_required</code>（<code>buffer_overflow</code>/<code>session_recreated</code>/<code>epoch_changed</code>）。</li>
+</ul>
+<p><strong>RPC 反射面（<code>transport/</code>）</strong></p>
+<ul>
+<li><code>IChannel</code>：<code>call&lt;T&gt;(command, arg?)</code> / <code>listen(event, arg?)</code>。</li>
+<li><code>ChannelDescriptor</code>：<code>{ name, scope: &#39;app&#39;|&#39;workspace&#39;|&#39;session&#39;|&#39;agent&#39;, domain, methods }</code>；<code>describeMethods</code> 沿原型链（止于 <code>Disposable.prototype</code>）枚举公开方法，<code>Function#toString</code> 提取参数名做 UI 提示。</li>
+<li><code>dispatch()</code>：<code>resolveScope</code>（core/workspace/session/agent 四级，<code>getLiveSessionById</code> + <code>IWorkspaceLifecycleService.handlerFor</code> + <code>IAgentLifecycleService</code>）→ <code>resolveService</code>（名字 → <code>ServiceIdentifier</code>，<code>accessor.get</code>）→ 反射调用方法或读属性；<code>GOAL_UNSUPPORTED_AGENT</code> 只拦非主 agent 访问 <code>IAgentGoalService</code>；<code>assertSerializable</code> 保证 JSON 可回传；30s <code>withTimeout</code>。</li>
+<li>路由形态：<code>GET|POST /debug/:service/:method</code>、<code>/debug/workspace/:workspace_id/...</code>、<code>/debug/session/:session_id/...</code>、<code>/debug/session/:session_id/agent/:agent_id/...</code> + <code>GET /debug/channels</code>（自省）。</li>
+</ul>
+<p><strong>路由层（<code>routes/</code>）</strong></p>
+<ul>
+<li><code>defineRoute</code>（<code>middleware/defineRoute.ts</code>）：单对象声明 runtime Zod 校验（preHandler）+ Swagger schema；200 响应自动展开为 <code>oneOf</code>（成功信封 + 各错误码信封）；OpenAPI <code>{param}</code> 语法自动转 Fastify <code>:param</code>。</li>
+<li><code>registerApiV1Routes</code>：注册 healthz、debug（条件）、meta、auth、oauth、config、modelCatalog、sessions、sessionExport、skills、messages、search、tasks、approvals、questions、prompts、workspaces、workspaceFs、files、fs、guiStore、tools、terminals（条件）、connections、snapshot、transcript、shutdown（条件），全部挂在 <code>{ prefix: &#39;/api/v1&#39; }</code>。</li>
+<li><code>sessions.ts</code>：<code>POST /sessions</code>（workspace 注册 → <code>handlerFor</code> → <code>ISessionLifecycleService.create</code>）、<code>GET /sessions</code>（keyset 分页 + 边缘过滤）、<code>GET /sessions/{id}</code>、<code>POST /sessions/{tail}</code> 动作分发器（<code>parseActionSuffix</code> 解析 <code>{id}:{action}</code> 尾部，支持 fork/compact/undo/abort/btw/archive/restore）、children、profile、status、goal、warnings。<code>toWireSession</code> 只投影 index/metadata 字段，重型字段用占位符（<code>agent_config:{model:&#39;&#39;}</code>、<code>usage</code> 全零、<code>message_count:0</code>）——与 v1 的 <code>toProtocolSession</code> 字节级对齐；<code>busy</code>/<code>last_turn_reason</code> 由 <code>resolveSessionFacts</code>（核心 <code>ISessionActivityView</code>）投影为真实值。</li>
+<li><code>v2/sessions.ts</code>：<code>GET /api/v2/sessions</code>，域分组（workspace/meta/activity 恒有，git 走 <code>include=git</code> + 60s TTL 缓存）；<code>page_token</code> = base64url JSON（版本 + sha256 查询条件指纹 + keyset 位置），条件翻转 → <code>40922</code>；三种排序共享一个比较器 + 游标编码。</li>
+<li><code>fs.ts</code>：会话文件系统路由，<code>POST /sessions/{id}/fs:read</code> 等一组 <code>fs:&lt;action&gt;</code> 动作，直接派发到 Workspace-scope 的 <code>IWorkspaceFsService</code>（&quot;session → handler → workspace fs&quot;链，chdir 已废除，handler root 即唯一 fs root）；线 schema 复用引擎的 <code>workspaceFs</code> 域契约。两个会话外变体：draft-session 回退（无 session id 时把 workspace 引用塞进 <code>{session_id}</code> 槽，仅 <code>fs:search</code> 服务，让新建会话草稿的 <code>@</code> 文件提及可用）与一等公民 <code>POST /workspace/fs:search</code>（workspace 引用走 body，kimi-web 的 <code>@</code> 提及用它）。<code>fs:read</code> 支持 HTTP Range 头断点读（<code>lib/httpRange.ts</code>），<code>fs:open</code>/<code>fs:open_in</code>/<code>fs:reveal</code> 通过 <code>lib/fileLaunch.ts</code> 做平台化文件打开（macOS <code>open</code> 等）。</li>
+<li><code>transport/mainAgent.ts</code>：主 agent <strong>惰性实体化</strong>——会话创建时不建 main agent，首个请求定位到 <code>main</code> 时才 <code>ensureMainAgent</code>；主 agent 出生即&quot;未绑定&quot;（无 Profile/Model），由 <code>profile:setModel</code>、prompt 的 <code>body.model</code> 覆盖或恢复 wire log 时绑定模型才可运行。有意不内置默认模型。</li>
+<li><code>transport/ws/v1/fsWatchBridge.ts</code>：WS 文件监视桥。客户端 <code>watch_fs_add/remove</code> 控制帧 ↔ <code>event.fs.changed</code> 帧（volatile，直写 socket，不进 journal）；核心 <code>IWorkspaceFsWatchService</code> 是 Workspace-scope 的（每 handler 一个 OS watcher，同 workspace 会话共享），桥每会话持<strong>一个</strong>订阅（各连接路径的并集驱动），出站按连接路径再过滤——避免一个 workspace 挂多个 OS watcher；每连接上限 100 条路径（<code>42902</code>）。</li>
+<li><code>transport/ws/v1/inFlightTurnTracker.ts</code>：增量跟踪当前 turn 的易失流状态（assistant/thinking 文本、运行中工具），供快照路由重建 mid-turn UI（delta 不落盘不可重放）。<strong>step 相对</strong>：<code>assistantText</code>/<code>thinkingText</code> 在 <code>turn.step.started</code> 时重置（已完成 step 已进快照 transcript），delta 的 <code>offset</code> 是当前 step 内的前置偏移；只跟踪主 agent（子 agent delta 共享 session id 但属于另一条流，会污染累加）。</li>
+<li><code>routes/action-suffix.ts</code>：<code>:action</code> URL 约定（REST.md §1.6）。Fastify 路径语法无法在同一前缀区分 <code>:resource_id</code> 与 <code>:resource_id:action</code>，故路由注册 <code>/.../:tail</code> 再由 <code>parseActionSuffix</code> 解析：<code>lastIndexOf(&#39;:&#39;)</code> 取最后一段冒号（资源 id 本身可含冒号，如 <code>mcp:lark:search</code>）；返回 <code>bare</code>/<code>action</code>/<code>invalid</code> 三态，<code>bare</code> 仅在 <code>defaultAction</code> 声明时允许。</li>
+<li><code>protocol/</code> 域 schema 清单：<code>rest-session</code>（会话生命周期）、<code>rest-message</code>、<code>rest-prompt</code>（提交/中止）、<code>rest-fs</code>、<code>rest-terminal</code>、<code>rest-approval</code>/<code>approval</code>、<code>rest-question</code>/<code>question</code>、<code>rest-task</code>/<code>task</code>、<code>rest-tool</code>/<code>tool</code>、<code>rest-skill</code>/<code>skill</code>、<code>rest-config</code>、<code>rest-oauth</code>、<code>rest-snapshot</code>（快照：in_flight_turn + pending 交互）、<code>rest-meta</code>、<code>rest-modelCatalog</code>、<code>rest-search</code>、<code>rest-guiStore</code>、<code>rest-file</code>、<code>rest-connection</code>、<code>goal</code>、<code>display</code>、<code>message</code>、<code>session</code>、<code>workspace</code>、<code>pagination</code>、<code>events-zod</code>（事件帧 schema）、<code>ws-control</code>（WS 控制帧 schema）、<code>error-codes</code>、<code>asyncapi</code>（WS 的 AsyncAPI 文档生成器）。</li>
+</ul>
+<p><strong>服务层（<code>services/</code>）</strong></p>
+<ul>
+<li><code>TranscriptService</code>：见 §4.3。</li>
+<li><code>auth/</code>：<code>AuthTokenService</code>（持久化 token 校验）、<code>persistentToken</code>（<code>rotateServerToken</code>/<code>serverTokenPath</code>）、<code>credentials</code>（统一 <code>validateCredential</code> = token + 可选 rpcToken + 密码）、<code>password</code>（bcryptjs 密码哈希）、<code>tokenStore</code>（token 落盘）。</li>
+<li><code>messages/messageHistory.ts</code> + <code>messageProjection.ts</code>：历史消息读取与 v1 协议投影。</li>
+<li><code>legacyStatus/legacyStatus.ts</code>：把 v2 的 <code>AgentActivityState</code> 折叠成 v1 的 <code>agent.status.updated</code> phase 切片。</li>
+<li><code>modelCatalog/modelCatalogRefreshScheduler.ts</code>：定时刷新 provider 模型目录。</li>
+<li><code>guiStore/</code>：GUI 状态存储服务。</li>
+<li><code>pinoLoggerService.ts</code>、<code>telemetry.ts</code>：日志与云遥测 appender。</li>
+</ul>
+<p><strong>安全/中间件（<code>middleware/</code> + <code>security/</code>）</strong></p>
+<ul>
+<li><code>auth.ts</code>：全局 Bearer hook。<code>defaultIsBypassed</code> 放行 OPTIONS、<code>GET /api/v1/healthz</code>、非 <code>/api/</code> 静态资源；<code>/openapi.json</code> 与 <code>/asyncapi.json</code> <strong>不放行</strong>（防泄露 API 形状）。解码路径后再判断（防 <code>/%61pi/</code> 编码绕过），无法解码 fail-closed。校验失败回 401 + 记 <code>recordFailure</code>，通过后把 <code>Authorization</code> 头替换为 <code>[redacted]</code>（防日志泄漏）。</li>
+<li><code>hostnames.ts</code>/<code>origin.ts</code>：Host 白名单 + CORS Origin 校验。</li>
+<li><code>rateLimit.ts</code>：每源（IP）滑动窗口失败计数 → 10 次/60s 封禁 60s，封禁期一律 429（即使带有效 token）。</li>
+<li><code>securityHeaders.ts</code>：非 loopback 时追加安全头。</li>
+<li><code>bindClassify.ts</code>：<code>classify(host)</code> 把绑定地址分级为 loopback/lan/public（IPv4 CIDR 手算 + IPv6 <code>::</code> 展开 + link-local <code>fe80::/10</code>）；通配符绑定默认按 public 处理。</li>
+</ul>
+<p><strong>搜索（<code>search/</code>）</strong></p>
+<ul>
+<li><code>IGlobalSearchService</code>（App scope，模块副作用注册）：minidb 库 <code>&lt;homeDir&gt;/search-index</code>；<code>terms</code>（倒排词项 AND）与 <code>literal</code>（2/3-gram 候选 + <code>includes</code> 确认，零误报）双模式；&quot;请求服务已发布 generation、永不等待同步&quot; + 单飞/防抖后台协调器；<code>page_token</code> 绑定 generation；<code>index_state.stale/degraded/building</code> 上报；live 会话走内存 transcript 检索（<code>source: &#39;live&#39; | &#39;index&#39;</code>）。预算：max terms、postings 访问上限、候选上限、确认文本量、match 截止时间，超额页标 <code>incomplete</code>。</li>
+</ul>
+<p><strong>其它</strong></p>
+<ul>
+<li><code>instanceRegistry.ts</code>：<code>&lt;home&gt;/server/instances/&lt;serverId&gt;.json</code>（snake_case 磁盘格式 + camelCase 内存格式），15s 心跳，<code>kill(pid,0)</code> 探测清僵尸；<code>register</code>/<code>listLive</code>/<code>getLiveServerInstance</code>。</li>
+<li><code>error-handler.ts</code>：catch-all 把未处理异常折成 <code>50001</code> 信封。</li>
+<li><code>request-id.ts</code> / <code>requestLogging.ts</code>：<code>X-Request-Id</code> 解析与每请求日志（禁用 Fastify 默认访问日志，自己打一行，因为 HTTP 恒 200 无信息量）。</li>
+</ul>
+<h3 id="32-kosong-核心类型"><a class="anchor" href="#32-kosong-核心类型" aria-hidden="true">#</a>3.2 kosong 核心类型</h3><ul>
+<li><code>Message</code>：<code>{ role: &#39;system&#39;|&#39;user&#39;|&#39;assistant&#39;|&#39;tool&#39;, content: ContentPart[], toolCalls: ToolCall[], toolCallId?, partial?, tools? }</code>。<code>tools</code> 只在 system 消息上有意义——<strong>消息级工具声明</strong>（<code>messages[].tools</code>）是动态加载工具的原语：顶层 <code>tools[]</code> 必须字节稳定以保 prompt cache，新工具用一条只含 <code>tools</code> 的 system 消息注入；<code>isToolDeclarationOnlyMessage</code> 让其它 provider 跳过这类消息。</li>
+<li><code>ContentPart</code>：<code>text</code>/<code>think</code>（带 <code>encrypted</code> 推理签名）/<code>image_url</code>/<code>audio_url</code>/<code>video_url</code>。</li>
+<li><code>StreamedMessagePart = ContentPart | ToolCall | ToolCallPart</code>；<code>ToolCallPart</code> 带 <code>index</code>（provider 流式索引）与 <code>_streamIndex</code>（内部路由字段，落库前剥离）。</li>
+<li><code>ChatProvider</code>：<code>generate(systemPrompt, tools, history, options) → Promise&lt;StreamedMessage&gt;</code>；<code>withThinking(effort)</code>（浅拷贝换思考档位）；<code>withMaxCompletionTokens?</code>（浅拷贝 + 钳制，<strong>不得替换 HTTP 客户端</strong>，共享传输状态）；<code>uploadVideo?</code>；只读字段 <code>name</code>/<code>modelName</code>/<code>thinkingEffort</code>/<code>maxCompletionTokens</code>。</li>
+<li><code>StreamedMessage</code>：<code>[Symbol.asyncIterator]()</code> + 流结束后才填充的 <code>id</code>/<code>usage</code>/<code>finishReason</code>/<code>rawFinishReason</code>/<code>traceId</code>（<code>x-trace-id</code> 头，Kimi/KFC 专用，头一到就可用——断流也能归因）。</li>
+<li><code>FinishReason</code> 归一化：<code>completed</code>/<code>tool_calls</code>/<code>truncated</code>/<code>filtered</code>/<code>paused</code>/<code>other</code>（<code>rawFinishReason</code> 保留原文作逃生舱）。</li>
+<li><code>ModelCapability</code>：<code>image_in/video_in/audio_in/thinking/tool_use/max_context_tokens/max_input_tokens?/dynamically_loaded_tools?</code>；<code>UNKNOWN_CAPABILITY</code> 是冻结哨兵，<code>isUnknownCapability</code> 兜底判空。</li>
+<li><code>GenerateResult</code>：组装好的 assistant 消息 + usage + finishReason + traceId。</li>
+<li>错误体系：<code>ChatProviderError</code> 基类 → <code>APIConnectionError</code>/<code>APITimeoutError</code>/<code>APIStatusError</code>（<code>statusCode</code>/<code>requestId</code>/<code>retryAfterMs</code>/<code>traceId</code>）→ <code>APIContextOverflowError</code>/<code>APIRequestTooLargeError</code>/<code>APIProviderQuotaExhaustedError</code>/<code>APIProviderRateLimitError</code>/<code>APIEmptyResponseError</code> 等；<code>isRetryableGenerateError</code>/<code>isContextOverflowStatusError</code>/<code>isProviderRateLimitError</code> 供上层重试决策。</li>
+</ul>
+<h2 id="4-关键数据流-状态机-时序"><a class="anchor" href="#4-关键数据流-状态机-时序" aria-hidden="true">#</a>4. 关键数据流 / 状态机 / 时序</h2><h3 id="41-服务器启动时序startts"><a class="anchor" href="#41-服务器启动时序startts" aria-hidden="true">#</a>4.1 服务器启动时序（start.ts）</h3><pre class="hljs"><code>startServer(opts)
+  ├─ 实例注册：<span class="hljs-variable">&lt;home&gt;</span>/server/instances/<span class="hljs-variable">&lt;id&gt;</span>.json（先注册，失败即释放）
+  ├─ classify(host) ──非 loopback 且 !insecureNoTls → 拒绝启动
+  ├─ auth 装配：tokenStore + passwordHash → AuthTokenService → validateCredential(token|password|rpcToken)
+  ├─ bootstrap({homeDir, configPath, clientIdentity, args}) → Core Scope
+  │     （注册 IFileSystemStorageService 根在 homeDir；<span class="hljs-keyword">log</span>Seed 保证 Session scope 可建）
+  ├─ （opt）telemetry appender（必须在首个 session 创建前）
+  ├─ workspace 目录一次性同步（v1 TUI 会话 → workspace）
+  ├─ ISessionIndex.prepare()（flag 门控的读模型预热，失败降级为按需读）
+  ├─ Fastify 实例：disableRequestLogging + genReqId=resolveRequestId
+  │     + <span class="hljs-built_in">set</span>ValidatorCompiler/SerializerCompiler 全透传（校验全在 defineRoute 的 Zod）
+  ├─ hooks：hostCheck.<span class="hljs-keyword">on</span>Request → originHook → authHook（可 disable，附危险警告）
+  │     非 loopback 再挂 securityHeaders（<span class="hljs-keyword">on</span>Send）
+  ├─ 注册 @fastify/swagger（transformObject → transformOpenApiDocument）— 必须在路由前
+  ├─ registerApiV1Routes / registerApiV2Routes / registerWsV1
+  ├─ app.server.<span class="hljs-keyword">on</span>(&#x27;upgrade&#x27;)：手动 host/origin 检查 → bearer 校验（<span class="hljs-number">401</span>）→ wss.handleUpgrade
+  ├─ （opt）webAssets 注册在最后（/* SPA fallback 兜底）
+  └─ listenWithPortRetry：EADDRINUSE → <span class="hljs-keyword">port</span>+<span class="hljs-number">1</span>（上限 <span class="hljs-number">100</span>，<span class="hljs-keyword">port</span> <span class="hljs-number">0</span> 不重试）
+        └─ 成功后再 update({<span class="hljs-keyword">port</span>}) 修正实例注册表；失败则 close() 全部回滚</code></pre><p>设计要点：<strong>没有单实例锁</strong>——多进程共享 homeDir 时 <code>port+1</code> 步进本身就是共存机制；实例注册表是唯一发现手段（CLI <code>server ps/kill</code>、kimi-inspect 靠它）。</p>
+<h3 id="42-WS-事件流核心数据路径"><a class="anchor" href="#42-WS-事件流核心数据路径" aria-hidden="true">#</a>4.2 WS 事件流（核心数据路径）</h3><pre class="hljs"><code>agent-core-v2 内部                          kap-<span class="hljs-keyword">server</span> 传输层                     客户端
+───────────────                          ──────────────────                     ─────
+per-agent IEventBus
+  │  DomainEvent（turn.*/assistant.delta/…）
+  ▼
+SessionEventBroadcaster.attachAgent
+  ├─ agent.status.updated → readLegacyStatus 折叠 phase 切片（丢弃核心的 phase 事件，防重复）
+  ├─ task.* → 额外派发 legacy 别名 background.task.*（v1 兼容，同 volatility）
+  ▼
+onAgentEvent → state.queue（per-<span class="hljs-keyword">session</span> 串行派发链）
+  ▼
+dispatch(state, event, <span class="hljs-keyword">volatile</span>)
+  ├─ <span class="hljs-keyword">volatile</span>（assistant.delta/thinking.delta/tool.<span class="hljs-keyword">call</span>.delta/tool.progress/shell.*/agent.status.updated）
+  │     seq = journal.seq（当前 watermark，不推进），<span class="hljs-keyword">volatile</span>:<span class="hljs-keyword">true</span>，[<span class="hljs-keyword">offset</span> 注解]
+  │     不写盘、不入 tail、不可重放
+  └─ durable（其余全部）
+        seq = journal.nextSeq() → journal.append()（异步批量落盘）→ tail.push（上限 <span class="hljs-number">1000</span>）
+  ▼
+扇出
+  ├─ isGlobalEvent（<span class="hljs-keyword">session</span>.meta.updated / event.<span class="hljs-keyword">session</span>.* / event.workspace.* / event.config.* / event.di.*）
+  │     → globalTargets ∪ 所有 subscribed targets；event.di.* 仅 diEventTargets
+  │     （<span class="hljs-keyword">session</span>.meta.updated/event.<span class="hljs-keyword">session</span>.created 走 dispatchSessionEvent，
+  │       借真实 <span class="hljs-keyword">session</span> 的 watermark 让信封带真实 session_id，而非 __global__）
+  └─ 会话事件 → targets（该会话订阅者）
+        → matchesAgentFilter（agent 白名单，<span class="hljs-keyword">global</span>/生命周期事件恒过）
+        → suppressedByTranscript（transcript grade 非 <span class="hljs-keyword">off</span> 且类型在投影表 → 抑制去重）
+  ▼
+target.send(envelope, <span class="hljs-string">&#x27;subscription&#x27;</span>|<span class="hljs-string">&#x27;immediate&#x27;</span>)
+  └─ WsConnectionV1：入 outbound FIFO → <span class="hljs-number">16</span>ms 定时 flush / 满 <span class="hljs-number">64</span> 帧即刷
+        ├─ bufferedAmount &gt; <span class="hljs-number">1</span>MiB → 背压重试（<span class="hljs-number">5</span>ms），超 <span class="hljs-number">100</span>ms 强制刷
+        └─ coalesceFrames：相邻同 <span class="hljs-keyword">session</span>/agent/turn 的 <span class="hljs-keyword">volatile</span> 文本 delta 合并（保留首个 seq/<span class="hljs-keyword">offset</span>）</code></pre><p>连接生命周期（<code>WsConnectionV1</code>）：</p>
+<pre class="hljs"><code>upgrade（<span class="hljs-number">401</span> 把关）→ server_hello
+  → client_hello（present-<span class="hljs-keyword">only</span> token 复查；client_id===<span class="hljs-string">&#x27;kimi-inspect&#x27;</span> 加入 diEventTargets）
+  → subscribe{subsession_ids, cursors, agent_filter} / subscribe_v2{session_id, transcript, transcript_since}
+      └─ attachSession：broadcaster.subscribe（激活会话=建 journal+挂订阅）
+           ├─ 有 <span class="hljs-keyword">cursor</span> → getBufferedSince 重放（tail 或盘上）
+           │     ├─ 可覆盖 → 事件帧逐条发（<span class="hljs-keyword">filter</span> 裁剪），transcript seed 延后到重放后
+           │     └─ 不可覆盖 → resync_required（buffer_overflow / epoch_changed / session_recreated）
+           └─ 无 <span class="hljs-keyword">cursor</span> → 返回当前 {seq, epoch}
+  → ack{accepted, not_found, resync_required, cursors}
+  → 持续事件帧；unsubscribe/unsubscribe_v2 解除订阅（v2 按 agent 粒度降级）
+  → <span class="hljs-keyword">close</span>：flush(<span class="hljs-keyword">true</span>) 推尾 → socket.<span class="hljs-keyword">close</span>（服务端从不主动断）</code></pre><p><strong>快照/游标一致性</strong>：<code>getSnapshotState</code>/<code>getCursor</code>/<code>getBufferedSince</code> 都先 <code>await state.queue</code>，保证读到的 watermark、in-flight turn、roster 是派发链上的原子快照；<code>InFlightTurnTracker</code> 为每个 delta 注解累计字符 <code>offset</code>，客户端用 <code>snapshot.in_flight_turn.*_text.length</code> 对齐（<code>offset &lt; local</code> 跳过、<code>offset &gt; local</code> 说明丢帧需重快照）。</p>
+<h3 id="43-Transcript-双通道REST-历史-WS-实时-ops"><a class="anchor" href="#43-Transcript-双通道REST-历史-WS-实时-ops" aria-hidden="true">#</a>4.3 Transcript 双通道（REST 历史 + WS 实时 ops）</h3><pre class="hljs"><code>TranscriptService（每 live 会话一个 store）
+  ├─ 首次访问：forSessionLive → 建 TranscriptStore + bindSessionTranscript（投影 agent 事件→<span class="hljs-built_in">op</span>）
+  │     └─ ready = backfillMain：readColdSnapshot(wire.jsonl) → snapshotToOps（全部 upsert，永不 <span class="hljs-built_in">reset</span>）
+  │           → store.<span class="hljs-built_in">apply</span> + dispatchOps（按 per-agent seq 入 journal，容量 <span class="hljs-number">2000</span>）
+  ├─ 每批 <span class="hljs-built_in">op</span>：journalOps（seq 递增，watermark = nextSeq-<span class="hljs-number">1</span>）→ 扇给 onSessionOps 监听者（broadcaster）
+  ├─ 终端 turn（turn.upsert + state∈{completed,failed,cancelled}）：250ms 防抖 → healEndedTurns
+  │     └─ 重新读盘 → healTurnOps 保守合并（live 状态优先，仅补长文本/丢帧/丢 tool.result）
+  └─ 会话 <span class="hljs-built_in">close</span>/archive → dropSession（store+binding 一起销毁）
+
+WS 侧（broadcaster.subscribeTranscript）
+  ├─ grade 非 off 的 agent → ensureAgentHistory → 每个新 agent 发 transcript.<span class="hljs-built_in">reset</span>（items 空快照 + watermark）
+  ├─ transcript_since 游标 → journal 覆盖则回放批次（complete:<span class="hljs-literal">false</span> 则退化为 <span class="hljs-built_in">reset</span>）
+  └─ 后续 <span class="hljs-built_in">op</span> 批 → transcript.ops（volatile，seq=watermark，按 grade 过滤）
+        └─ 同一连接收到 transcript 的事件类型不再发 session_event（suppressedByTranscript）</code></pre><p>transcript 与 durable 事件流<strong>完全正交</strong>：transcript 帧永不推进 seq、永不落 journal；丢帧通过普通背压 → <code>resync_required</code> → REST 分页补历史的路径自然恢复。</p>
+<h3 id="44-会话生命周期数据流REST"><a class="anchor" href="#44-会话生命周期数据流REST" aria-hidden="true">#</a>4.4 会话生命周期数据流（REST）</h3><pre class="hljs"><code><span class="hljs-title class_">POST</span> /api/v1/sessions{workspace_id | metadata.cwd}
+  → <span class="hljs-title class_">IWorkspaceService</span>.createOrTouch(workDir)（注册/刷新 workspace）
+  → <span class="hljs-title class_">IWorkspaceLifecycleService</span>.handlerFor({root}) → handler.accessor.get(<span class="hljs-title class_">ISessionLifecycleService</span>).create
+  → <span class="hljs-title class_">ISessionMetadata</span>.setTitle/read → toWireSession(meta, cwd, facts)
+  → <span class="hljs-title class_">IEventService</span>.publish(event.session.created) → broadcaster 扇给所有连接
+<span class="hljs-title class_">GET</span> /api/v1/sessions → <span class="hljs-title class_">ISessionIndex</span>.listRecent（keyset）→ 边缘过滤（cwd 可恢复性/exclude_empty/busy）→ 投影
+<span class="hljs-title class_">POST</span> /sessions/{id}<span class="hljs-symbol">:fork|compact|undo|abort|btw|archive|restore</span>
+  ├─ fork/archive/restore/children → handlerForSession → <span class="hljs-title class_">ISessionLifecycleService</span>.*
+  ├─ compact → ensureMainAgent → <span class="hljs-title class_">IAgentFullCompactionService</span>.begin
+  ├─ undo → <span class="hljs-title class_">IAgentConversationUndoService</span>.undo → 重读历史投影消息页
+  ├─ abort → <span class="hljs-title class_">IAgentRPCService</span>.cancel
+  └─ btw → resumeSessionById → <span class="hljs-title class_">ISessionBtwService</span>.start</code></pre><p>注意：<strong>不存在 App 级会话生命周期门面</strong>——所有会话操作都从 <code>ISessionIndex</code>（或 session_id）→ <code>handlerForSession</code> → Workspace handler 组合而来；冷会话由 <code>resumeSessionById</code> 惰性实体化。</p>
+<h3 id="45-RPC-反射面数据流"><a class="anchor" href="#45-RPC-反射面数据流" aria-hidden="true">#</a>4.5 RPC 反射面数据流</h3><pre class="hljs"><code>GET/POST /api/v1/debug[/workspace/:wid|/session/:sid[/agent/:aid]]/:service/:<span class="hljs-keyword">method</span>
+  → 全局 <span class="hljs-title function_">bearer</span> <span class="hljs-title function_">hook</span> 已把关（与所有 /<span class="hljs-title function_">api</span>/* 同门）
+  → <span class="hljs-title function_">GET</span> ?<span class="hljs-title function_">arg</span>=&lt;<span class="hljs-title function_">json</span>&gt; / <span class="hljs-title function_">POST</span> <span class="hljs-title function_">body</span> → <span class="hljs-title function_">dispatch</span><span class="hljs-params">(core, scopeKind, <span class="hljs-keyword">params</span>, service, <span class="hljs-keyword">method</span>, arg)</span>
+      ├─ <span class="hljs-title function_">resolveScope</span>：<span class="hljs-title function_">core</span> / <span class="hljs-title function_">handlerFor</span><span class="hljs-params">({workspaceId})</span> / <span class="hljs-title function_">getLiveSessionById</span> / <span class="hljs-title function_">IAgentLifecycleService</span>.<span class="hljs-title function_">get</span>
+      ├─ <span class="hljs-title function_">resolveService</span>：<span class="hljs-title function_">channelRegistry</span>（全 <span class="hljs-title function_">scoped</span> <span class="hljs-title function_">DI</span> 注册表，名字→<span class="hljs-title function_">ServiceIdentifier</span>）
+      │     └─ 特例：非主 <span class="hljs-title function_">agent</span> 访问 <span class="hljs-title function_">goal</span> <span class="hljs-title function_">service</span> → 40920
+      ├─ 反射调用：属性直读 / 方法 <span class="hljs-title function_">apply</span>（数组 <span class="hljs-title function_">arg</span> 展开）
+      └─ <span class="hljs-title function_">assertSerializable</span> → <span class="hljs-title function_">okEnvelope</span>；<span class="hljs-title function_">Error2</span> → <span class="hljs-title function_">KIMI_TO_PROTOCOL</span> 映射；超时/未知 → 50001</code></pre><h3 id="46-kosong-生成数据流"><a class="anchor" href="#46-kosong-生成数据流" aria-hidden="true">#</a>4.6 kosong 生成数据流</h3><pre class="hljs"><code>createProvider(config) → ChatProvider（kimi/openai/anthropic/google-genai/openai_responses/vertexai）
+agent-core turn 循环
+  → kosongGenerate(provider, system, wireTools, history, {signal, <span class="hljs-keyword">on</span>MessagePart, <span class="hljs-keyword">on</span>ToolC<span class="hljs-literal">all</span>})
+      ├─ 预检 signal.aborted → AbortError（不发请求）
+      ├─ 剥离 deferred tools（顶层 tools[] 保字节稳定 → prompt cache）
+      ├─ provider.generate() → StreamedMessage（adapter 把统一 Message/Tool 转成各厂商线格式）
+      ├─ <span class="hljs-keyword">for</span> await part：
+      │     ├─ 解码统计：等待下一 part = serverDecodeMs；处理 part = clientConsumeMs
+      │     ├─ <span class="hljs-keyword">on</span>MessagePart(structuredClone)（宿主转发给 UI delta 回调）
+      │     ├─ 并行工具路由：ToolC<span class="hljs-literal">all</span>Part.index → toolC<span class="hljs-literal">all</span>IndexMap → 直接追加到目标 call
+      │     └─ 顺序合并兜底：mergeInPlace（Text+Text / Think+Think / ToolC<span class="hljs-literal">all</span>+ToolC<span class="hljs-literal">all</span>Part）
+      │          无法合并 → <span class="hljs-keyword">flush</span>Part 收编 pending（ToolC<span class="hljs-literal">all</span> 入 message.toolCalls，剥 _streamIndex）
+      ├─ 流尾：抛空响应（无 content 无 tool calls / 只有 think）→ APIEmptyResponseError
+      └─ <span class="hljs-keyword">on</span>ToolC<span class="hljs-literal">all</span> 逐个回调（全部收齐后才触发，防并行参数交错导致半解析）
+  → GenerateResult{id, message, usage, finishReason, rawFinishReason, traceId?}
+  → 上层按 finishReason/错误类型决策（重试/截断处理/上下文溢出压缩）</code></pre><h3 id="47-文件监视数据流WS-旁路"><a class="anchor" href="#47-文件监视数据流WS-旁路" aria-hidden="true">#</a>4.7 文件监视数据流（WS 旁路）</h3><pre class="hljs"><code><span class="language-xml">客户端                          FsWatchBridge                      核心（Workspace scope）
+│ watch_fs_add</span><span class="hljs-template-variable">{paths}</span><span class="language-xml"> (≤100/连接) │                                    │
+├───────────────────────────────►│                                    │
+│                                ├─ 校验路径（越界→41304；超限→42902）  │
+│                                ├─ 并集进会话订阅路径集               │
+│                                ├─ 建/更新 IWorkspaceFsWatchSubscription（每会话恰一个）
+│                                │───────────────────────────────────►│
+│                                │                                    ├─ OS 级 fs.watch（每 handler 一个）
+│                                │◄─── FsChangeEvent ─────────────────┤
+│                                ├─ 按本连接路径集过滤                  │
+│                                ├─ 打 per-session 单调 seq（不进 journal，volatile）
+│ ack</span><span class="hljs-template-variable">{watched_paths,current_count}</span><span class="language-xml">│                                    │
+│◄───────────────────────────────┤                                    │
+│ event.fs.changed</span><span class="hljs-template-variable">{seq,payload}</span><span class="language-xml">   │                                    │
+│◄───────────────────────────────┤                                    │
+│ watch_fs_remove</span><span class="hljs-template-variable">{paths}</span><span class="language-xml"> → 订阅路径集收缩；空则释放订阅（watcher 仍在，属 handler）</span></code></pre><p>两条旁路与主事件流的关系：fs 帧<strong>不经过</strong> broadcaster 的 seq/journal（<code>InFlightTurnTracker</code>/<code>SubagentRosterTracker</code> 也只在会话状态里，与 fs 无关），因此溢出时客户端通过帧内 <code>truncated</code> 标记自愈，无需 <code>resync_required</code> 机制。</p>
+<h2 id="5-重要实现细节"><a class="anchor" href="#5-重要实现细节" aria-hidden="true">#</a>5. 重要实现细节</h2><h3 id="51-安全模型按绑定暴露等级渐进加固"><a class="anchor" href="#51-安全模型按绑定暴露等级渐进加固" aria-hidden="true">#</a>5.1 安全模型：按绑定暴露等级渐进加固</h3><p>kap-server 的安全设计不是&quot;一套开关&quot;，而是<strong>按 <code>classify(host)</code> 推导出的暴露等级分层</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>机制</th>
+<th>loopback</th>
+<th>lan</th>
+<th>public</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>bearer token（全局，含 WS upgrade 与 debug RPC）</td>
+<td>是</td>
+<td>是</td>
+<td>是</td>
+</tr>
+<tr>
+<td>无 TLS 启动</td>
+<td>允许</td>
+<td>拒绝（<code>--insecure-no-tls</code> 可豁免）</td>
+<td>拒绝</td>
+</tr>
+<tr>
+<td>auth 失败限流（10 次/60s 封 60s）</td>
+<td>否</td>
+<td>是</td>
+<td>是</td>
+</tr>
+<tr>
+<td>security headers</td>
+<td>否</td>
+<td>是</td>
+<td>是</td>
+</tr>
+<tr>
+<td>shutdown/terminals 端点</td>
+<td>开</td>
+<td>关（<code>--allow-remote-*</code> 可开）</td>
+<td>关</td>
+</tr>
+<tr>
+<td>debug RPC（<code>/api/v1/debug</code>）</td>
+<td>开（<code>--debug-endpoints</code>）</td>
+<td>关</td>
+<td>关</td>
+</tr>
+</tbody></table>
+<p>细节：WS <code>upgrade</code> 事件绕过 Fastify hooks，所以 host/origin/auth 检查在 <code>handleUpgrade</code> 里<strong>手工复刻</strong>（顺序：host → origin → credential），且要写在 token 校验之前；<code>sec-websocket-protocol</code> 是浏览器 WebSocket 无法自定义 header 时携带 bearer 的通道（<code>extractWsBearerToken</code>/<code>selectWsBearerProtocol</code>）。<code>client_hello</code> 里的 token 只做 <strong>present-only</strong> 复查（升级时已认证，握手 token 缺失也放行——生产 Web 客户端就是这么做的），这是防御纵深而非主门。</p>
+<h3 id="52-事件流的三个一致性机制"><a class="anchor" href="#52-事件流的三个一致性机制" aria-hidden="true">#</a>5.2 事件流的三个一致性机制</h3><ol>
+<li><strong>per-session 派发链（<code>state.queue</code>）</strong>：所有事件（agent 事件、交互合成事件、work_changed、core 全局事件）都通过 <code>state.queue = state.queue.then(dispatch)</code> 串行化。这保证 seq 单调、journal 顺序与扇出顺序一致、快照读取原子。volatile 与 durable 在<strong>同一把锁</strong>里——volatile 帧的 <code>seq</code>（watermark）永远不超前于其前一个 durable 帧。</li>
+<li><strong>会话激活的单飞（<code>pendingStates</code>）</strong>：WS subscribe 与 REST snapshot 并发激活同一会话时会各建一份 SessionState；注释明确记录了曾出现的 <code>AABBCC</code> 双倍 delta bug——单飞保证一个会话只有一个 journal writer 与一组总线订阅。</li>
+<li><strong><code>turn_ended</code> 帧序</strong>：<code>ISessionActivityView</code> 的 full-stream 订阅者先于 per-type 订阅者触发，所以 <code>busy:false</code> 的 work_changed 必须缓冲到微任务里，等 <code>turn.ended</code> 帧已入队后再发——微任务必然落在同一同步发布之后。</li>
+</ol>
+<h3 id="53-日志的持久性与崩溃容错"><a class="anchor" href="#53-日志的持久性与崩溃容错" aria-hidden="true">#</a>5.3 日志的持久性与崩溃容错</h3><p><code>SessionEventJournal</code>：<code>append()</code> 同步入队（调用方要立刻拿到 seq 用于扇出），写盘是<strong>微任务调度的一次异步批量 appendFile</strong>；<code>readSince</code> 先 <code>flush()</code> 再读，保证重放不丢排队行；崩溃产生的 torn 尾行在 open 时静默跳过；整个文件不可读 → 新 epoch 轮换（旧游标统一 <code>epoch_changed</code>，避免逐条错位）。写失败降级为&quot;本轮 live-only&quot;，不阻塞事件流。</p>
+<h3 id="54-出站背压与合并"><a class="anchor" href="#54-出站背压与合并" aria-hidden="true">#</a>5.4 出站背压与合并</h3><p>WS 出站是&quot;合并窗口 + 批量 + 高水位&quot;三级：订阅帧进 FIFO，16ms 定时刷或满 64 帧即刷；<code>socket.bufferedAmount &gt; 1 MiB</code> 时延后重试（5ms，上限 100ms 后强制刷，防饿死）。<code>coalesceFrames</code> 把相邻且同 (type, session, agent, turn) 的 volatile 文本 delta 合并成一条（保留首帧 seq/offset/timestamp，payload.delta 拼接）——客户端 offset 对齐仍正确，因为 per-session 派发链保证同 turn 的 delta offset 连续。合并永不跨越不可合并帧，整体顺序不变。</p>
+<h3 id="55-transcript-的活数据优先哲学"><a class="anchor" href="#55-transcript-的活数据优先哲学" aria-hidden="true">#</a>5.5 transcript 的"活数据优先"哲学</h3><p><code>backfill</code> 与 <code>heal</code> 全部用 <strong>idempotent upsert op</strong> 而非 <code>reset</code>：重放历史时并发到达的 live op 不会被覆盖；<code>healTurnOps</code> 的合并规则精心保守——header 以 snapshot 为准补 <code>prompt</code>（mid-turn 附加的投影器没看到用户消息），但 state/时间戳以 live 为准；text/thinking 帧仅在持久化版本<strong>更长</strong>时才重发（防 lagging flush 回退）；tool 帧在 live 缺 outcome 时补发（attach 竞态丢的 <code>tool.result</code> 只能靠这个救回），且保留 live 的 display/agentRefs/approvalId 附加字段；interactions 永不重放（全局实体，live 内核桥更全）。<code>liveTurnOverlay</code> 还在 backfill 后把 loop 实际 running 的 turn 头重新断言为 running（冷分组只能看到 completed）。ops journal 是<strong>有界内存</strong>（2000 批），<code>transcript_since</code> 覆盖不了就诚实报告 <code>complete:false</code> 让客户端全量刷新——绝不撒谎。</p>
+<h3 id="56-搜索的generation-发布模型"><a class="anchor" href="#56-搜索的generation-发布模型" aria-hidden="true">#</a>5.6 搜索的"generation 发布"模型</h3><p><code>searchService.ts</code> 的核心权衡是<strong>请求永不等待</strong>：请求读当前已发布的 index generation（内存视图），后台协调器（单飞 + 防抖 + 一个排队跟进）检测 wire.jsonl 变化增量投影；读多进程通过 WAL 指纹（<code>db.wal</code>/<code>db.snapshot</code>/<code>db.textindexes.json</code>）判断是否要 <code>catchUpFromWal</code> 或换库（换库失败继续服务旧 generation 并报 degraded）。增量锚点是 <code>\0meta\file\&lt;sessionId&gt;\&lt;pathHash&gt;</code> 键（记录字节偏移 + size/mtime/inode），只重读新增字节区间；pre-v2 的 hash-only 键由一次性后台迁移。terms 模式用 minidb 倒排（ASCII 词 + CJK 单/双字、term 级 AND、无位置）；literal 模式用 2/3-gram 候选 + 逐条 <code>includes</code> 确认（零误报）。所有查询都带预算，超预算页标记 <code>incomplete</code> 而非假报完整。</p>
+<h3 id="57-kosong-的流式组装细节"><a class="anchor" href="#57-kosong-的流式组装细节" aria-hidden="true">#</a>5.7 kosong 的流式组装细节</h3><ul>
+<li><strong>并行工具调用的防串扰</strong>：OpenAI 系流式多工具时参数 delta 跨调用交错（tc0-header → tc1-header → tc0-args → tc1-args）。<code>generate()</code> 用 <code>ToolCallPart.index</code>（Chat 的 <code>index</code> / Responses 的 <code>item_id</code>）经 <code>toolCallIndexMap</code> 直接路由到已收编的 ToolCall，顺序合并只作 fallback；<code>_streamIndex</code> 在收编时剥掉，绝不落库。</li>
+<li><strong><code>onToolCall</code> 延迟到流尾</strong>：中途触发会把半解析参数交给工具调度器 → <code>toolParseError</code>。</li>
+<li><strong>空响应语义</strong>：无 content 无 toolCalls → 抛错；<strong>只有 think 没有 text/tool</strong> 也抛错（通常是流中断或推理时 token 预算耗尽）——错误消息里带 finishReason 提示便于归因。</li>
+<li><strong>abort 三处检查</strong>：请求前（不发网络请求）、<code>provider.generate()</code> 返回后（不 drain）、每 part 间（<code>cancelStream</code> 尽力取消后抛 <code>AbortError</code>）。</li>
+<li><strong>prompt cache 保全</strong>：<code>deferred</code> 工具从顶层 <code>tools[]</code> 剥离（generate 是唯一剥离点，注释明确这是字节稳定防线）；消息级 <code>tools</code> 声明是动态加载工具的另一个通道（仅 Kimi 线支持）。</li>
+<li><strong>解码统计</strong>：<code>serverDecodeMs</code>/<code>clientConsumeMs</code> 分离等待与处理耗时——<code>clientConsumeMs</code> 占比大是宿主每 part 处理（deep copy、回调）拖慢解码的无歧义信号。</li>
+</ul>
+<h3 id="58-kosong-的-provider-适配差异"><a class="anchor" href="#58-kosong-的-provider-适配差异" aria-hidden="true">#</a>5.8 kosong 的 provider 适配差异</h3><ul>
+<li><code>kimi.ts</code>：基于 OpenAI SDK，<code>max_tokens</code>/<code>max_completion_tokens</code> 归一化（推理模型两者共享预算，小 <code>max_tokens</code> 会拿到 200 空响应，故只发 <code>max_completion_tokens</code>）；<code>reasoning_content</code> 双向转换（think part ↔ wire 字段）；<code>extra_body.thinking</code>（effort/keep）；tool call id 长度策略（64 上限消毒）；<code>x-trace-id</code> 解析。</li>
+<li><code>openai-legacy</code>（Chat Completions）与 <code>openai-responses</code>（Responses API）是两个独立 adapter；<code>google-genai</code> 兼 vertexai（同一构造器）。</li>
+<li><code>capability-registry</code>：<strong>静态前缀表</strong>能力判定（Claude 按能力组而非版本族分组——Fable 与 Opus/Sonnet/Haiku 4 同组），Kimi wire 恒返回 <code>UNKNOWN_CAPABILITY</code>（能力来自宿主 catalog/配置而非模型名）。</li>
+<li><code>catalog.ts</code>：models.dev 风格目录解析——<code>reasoning_options</code> 里只有 <code>{type:&#39;effort&#39;, values}</code> 能映射出思考档位（<code>toggle</code>/<code>budget_tokens</code> 不行），<code>&#39;none&#39;</code> 值映射为 <code>offEffort</code>，有档位无开关的模型标 <code>alwaysThinking</code>；<code>status:&#39;deprecated&#39;</code> 导入时丢弃；gateway provider 的 <code>provider.npm/api</code> 覆盖映射为 <code>protocol:&#39;anthropic&#39;</code> + baseUrl。</li>
+</ul>
+<h3 id="59-action-URL-约定与路由分发"><a class="anchor" href="#59-action-URL-约定与路由分发" aria-hidden="true">#</a>5.9 :action URL 约定与路由分发</h3><p>v1 时代 <code>/sessions/{id}/prompts</code> 这类&quot;资源 + 动作&quot;形态在 REST 上表现为 <code>POST /sessions/{id}:compact</code> 等<strong>冒号动作后缀</strong>。Fastify 的 <code>find-my-way</code> 无法在同路径前缀上同时匹配 <code>:resource_id</code> 与 <code>:resource_id:action</code>，所以所有动作路由统一注册为 <code>/.../:tail</code>，<code>parseActionSuffix</code> 负责切分。要点：用 <code>lastIndexOf(&#39;:&#39;)</code> 而非 <code>indexOf</code>——资源 id 本身可以含冒号（如 MCP 工具限定名 <code>mcp:lark:search</code> 出现在路径位置时），只有<strong>最后一个</strong>冒号是动作分隔符；<code>bare</code> 形态（无后缀）只有当路由声明 <code>defaultAction</code> 时才合法（如 question 默认 resolve、approval 默认 respond），否则报 <code>unsupported action</code>；空 id 报 <code>invalid &lt;resource&gt;_id in path</code>。该 helper 从 v1 逐字移植，<code>{tail}</code> 动作在 sessions、approvals、questions、prompts、tasks、terminals、skills 等多组路由共用。</p>
+<h3 id="510-文件监视的共享订阅模型"><a class="anchor" href="#510-文件监视的共享订阅模型" aria-hidden="true">#</a>5.10 文件监视的共享订阅模型</h3><p><code>FsWatchBridge</code> 解决的是&quot;OS watcher 数量&quot;与&quot;每连接路径过滤&quot;的张力：核心 <code>IWorkspaceFsWatchService</code> 是 Workspace-scope，一个 handler 挂一个 OS watcher 并服务于该 workspace 的所有会话；桥为<strong>每个会话</strong>持有恰好一个 <code>IWorkspaceFsWatchSubscription</code>，其路径集是连接到该会话的所有连接路径的并集；出站时再按各连接的路径集过滤。这样两个会话共享同一 handler 的 watch 而不新增 watcher，连接增减只改订阅路径集。每连接路径上限 100（<code>42902 FS_WATCH_LIMIT_EXCEEDED</code>），路径越界报 <code>41304</code>。<code>event.fs.changed</code> 帧是 <strong>volatile</strong>（直写 socket，不进 broadcaster/journal），溢出时客户端看到 <code>truncated</code> 标记自行重同步——文件监视对丢帧有天然的自愈性（下个事件就是完整快照语义）。</p>
+<h3 id="511-kosong-的协议错误分类与-Anthropic-适配"><a class="anchor" href="#511-kosong-的协议错误分类与-Anthropic-适配" aria-hidden="true">#</a>5.11 kosong 的协议错误分类与 Anthropic 适配</h3><ul>
+<li><strong>错误分类是&quot;协议知识&quot;</strong>：<code>openai-common.ts</code> 里 <code>insufficient_quota</code> 是 OpenAI 线自己的 429 语义（<code>error.type</code> 与 <code>error.code</code> 都写该值）——配额耗尽在充值前是确定性失败，<strong>不能</strong>归类为可重试的限流，必须映射成 <code>APIProviderQuotaExhaustedError</code>；<code>Retry-After</code> 头被解析为 <code>retryAfterMs</code> 供上层重试循环优先遵循（服务端指令覆盖本地指数退避）。<code>normalizeAPIStatusError</code>/<code>classifyBaseApiError</code>/<code>parseRetryAfterMs</code> 是全部 adapter 共享的归一化入口。</li>
+<li><strong>Anthropic adapter</strong>（1334 行，最复杂的适配）：<code>stop_reason</code> → 统一 <code>FinishReason</code> 的映射表（<code>end_turn</code>/<code>stop_sequence</code> → <code>completed</code>、<code>max_tokens</code> → <code>truncated</code>、<code>pause_turn</code> → <code>paused</code>、<code>refusal</code> → <code>filtered</code> 等）；<code>anthropic-profile.ts</code> 从模型名推断 <code>AnthropicModelProfile</code>（版本解析 + 能力画像），支持 <code>BUDGET_THINKING_EFFORTS</code>（预算思考档位）；思考块用 <code>ThinkingBlockParam</code> 映射 think part（含签名/密文）；工具结果块做 <code>tool_use_id</code> 回链；连续 user 消息用 <code>mergeConsecutiveUserMessages</code> 合并（Anthropic 线不允许多条 user 连续出现）；<code>max_tokens</code> 是 Anthropic 的必填字段，由 <code>withMaxCompletionTokens</code> 或构造默认值保证。</li>
+<li><strong>工具 ID 卫生</strong>：<code>tool-call-id.ts</code> 为每家 provider 定义 <code>ToolCallIdPolicy</code>（Kimi 64 上限消毒、Anthropic/OpenAI 各自限制），<code>normalizeToolCallIdsForProvider</code> 在请求构造时统一处理——因为各家对 tool_call_id 的字符集/长度约束不同，而同一个 id 会在用户消息里往返。</li>
+</ul>
+<h2 id="6-关键代码位置索引"><a class="anchor" href="#6-关键代码位置索引" aria-hidden="true">#</a>6. 关键代码位置索引</h2><h3 id="61-kap-server"><a class="anchor" href="#61-kap-server" aria-hidden="true">#</a>6.1 kap-server</h3><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/start.ts:186</code></td>
+<td><code>startServer</code> 组合根：安全分级、auth 装配、Core bootstrap、hook、路由、WS、端口重试</td>
+</tr>
+<tr>
+<td><code>src/start.ts:714</code></td>
+<td><code>listenWithPortRetry</code>：EADDRINUSE → port+1 步进（多实例共存机制）</td>
+</tr>
+<tr>
+<td><code>src/start.ts:522</code></td>
+<td><code>handleUpgrade</code>：手工复刻 host/origin/bearer 检查（upgrade 绕过 Fastify hooks）</td>
+</tr>
+<tr>
+<td><code>src/security/bindClassify.ts:90</code></td>
+<td><code>classify</code>：绑定地址分级（IPv4 CIDR 手算 + IPv6 展开 + fe80::/10）</td>
+</tr>
+<tr>
+<td><code>src/protocol/envelope.ts:9</code></td>
+<td>信封 schema 工厂（所有响应的统一形状）</td>
+</tr>
+<tr>
+<td><code>src/protocol/error-codes.ts:17</code></td>
+<td>完整数字错误码表（4xxxx/5xxxx/6xxxx/7xxxx/8xxxx）</td>
+</tr>
+<tr>
+<td><code>src/middleware/auth.ts:64</code></td>
+<td>全局 bearer hook + 解码路径防编码绕过 + fail-closed + 头脱敏</td>
+</tr>
+<tr>
+<td><code>src/middleware/rateLimit.ts:55</code></td>
+<td>认证失败滑动窗口封禁（非 loopback 启用）</td>
+</tr>
+<tr>
+<td><code>src/middleware/defineRoute.ts:233</code></td>
+<td>单点路由声明：Zod 校验 + OpenAPI oneOf 响应展开</td>
+</tr>
+<tr>
+<td><code>src/routes/registerApiV1Routes.ts:87</code></td>
+<td><code>/api/v1</code> 全部路由注册（含条件挂载 debug/terminals/shutdown）</td>
+</tr>
+<tr>
+<td><code>src/routes/sessions.ts:257</code></td>
+<td>会话 CRUD + <code>{tail}</code> 动作分发器</td>
+</tr>
+<tr>
+<td><code>src/routes/sessions.ts:1114</code></td>
+<td><code>toWireSession</code>：v1 字节级占位投影（heavy 字段占位 + 真实 busy/last_turn_reason）</td>
+</tr>
+<tr>
+<td><code>src/routes/v2/sessions.ts:1</code></td>
+<td>v2 域分组列表 + page_token（版本+指纹+keyset，40922）</td>
+</tr>
+<tr>
+<td><code>src/transport/ws/v1/wsConnectionV1.ts:101</code></td>
+<td>连接对象：控制帧串行队列、出站缓冲/背压/合并、重放</td>
+</tr>
+<tr>
+<td><code>src/transport/ws/v1/wsConnectionV1.ts:706</code></td>
+<td><code>coalesceFrames</code>：相邻 volatile delta 合并</td>
+</tr>
+<tr>
+<td><code>src/transport/ws/v1/sessionEventBroadcaster.ts:218</code></td>
+<td>每会话单扇出点：durable/volatile 分类、seq、global 扇出、transcript 通道</td>
+</tr>
+<tr>
+<td><code>src/transport/ws/v1/sessionEventBroadcaster.ts:1252</code></td>
+<td><code>dispatch</code>：核心派发（journal/tail/扇出/抑制）</td>
+</tr>
+<tr>
+<td><code>src/transport/ws/v1/sessionEventBroadcaster.ts:1439</code></td>
+<td><code>TRANSCRIPT_PROJECTED_EVENT_TYPES</code>：transcript 已投影事件表（去重依据）</td>
+</tr>
+<tr>
+<td><code>src/transport/ws/v1/sessionEventJournal.ts:75</code></td>
+<td>JSONL 日志：epoch 恢复、seq 跨重启单调、异步批量落盘</td>
+</tr>
+<tr>
+<td><code>src/transport/ws/v1/registerWsV1.ts:37</code></td>
+<td>WS 服务器装配（noServer + 协议协商）</td>
+</tr>
+<tr>
+<td><code>src/transport/channelRegistry.ts:145</code></td>
+<td><code>describeAllChannels</code>：全注册表自省（原型链 + toString 参数名）</td>
+</tr>
+<tr>
+<td><code>src/transport/dispatcher.ts:124</code></td>
+<td>反射派发：scope 解析 → 服务解析 → 调用</td>
+</tr>
+<tr>
+<td><code>src/transport/serviceDispatcherRoutes.ts:70</code></td>
+<td>RPC 路由注册（四级 scope 路径 + channels 自省）</td>
+</tr>
+<tr>
+<td><code>src/transport/errors.ts:66</code></td>
+<td><code>mapError</code>：Error2 码 → 信封码映射表</td>
+</tr>
+<tr>
+<td><code>src/services/transcript/transcriptService.ts:126</code></td>
+<td>transcript 所有者：backfill/ops journal/heal/cold rebuild</td>
+</tr>
+<tr>
+<td><code>src/services/transcript/transcriptService.ts:701</code></td>
+<td><code>healTurnOps</code>：持久化与 live 的保守合并规则</td>
+</tr>
+<tr>
+<td><code>src/services/legacyStatus/legacyStatus.ts</code></td>
+<td>v2 活动状态 → v1 phase 折叠</td>
+</tr>
+<tr>
+<td><code>src/services/messages/messageProjection.ts</code></td>
+<td>历史消息 → v1 协议消息投影</td>
+</tr>
+<tr>
+<td><code>src/search/searchService.ts:1</code></td>
+<td>全局搜索：generation 发布 + 双模式 + 预算 + live 检索</td>
+</tr>
+<tr>
+<td><code>src/openapi/transforms.ts:118</code></td>
+<td>swagger 后处理（{tail} 分发、multipart、binary）</td>
+</tr>
+<tr>
+<td><code>src/instanceRegistry.ts:1</code></td>
+<td>实例注册表（心跳 + pid 探活 + 僵尸清扫）</td>
+</tr>
+<tr>
+<td><code>src/error-handler.ts</code></td>
+<td>catch-all → 50001 信封</td>
+</tr>
+<tr>
+<td><code>src/routes/fs.ts:1</code></td>
+<td>会话文件系统动作路由（draft-session 回退 + workspace fs:search + Range 下载）</td>
+</tr>
+<tr>
+<td><code>src/routes/action-suffix.ts:44</code></td>
+<td><code>parseActionSuffix</code>：<code>:action</code> URL 切分（lastIndexOf 容错冒号 id）</td>
+</tr>
+<tr>
+<td><code>src/transport/mainAgent.ts:1</code></td>
+<td>主 agent 惰性实体化（<code>ensureMainAgent</code> 重导出）</td>
+</tr>
+<tr>
+<td><code>src/transport/ws/v1/fsWatchBridge.ts:1</code></td>
+<td>文件监视桥：共享订阅 + 每连接过滤 + volatile 帧</td>
+</tr>
+<tr>
+<td><code>src/transport/ws/v1/inFlightTurnTracker.ts:24</code></td>
+<td>当前 turn 易失状态累加（step 相对 offset）</td>
+</tr>
+<tr>
+<td><code>src/protocol/ws-control.ts:1</code></td>
+<td>WS 控制帧 schema（协议版本 2：{seq,epoch} 游标 + volatile）</td>
+</tr>
+</tbody></table>
+<h3 id="62-kosong"><a class="anchor" href="#62-kosong" aria-hidden="true">#</a>6.2 kosong</h3><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/provider.ts:220</code></td>
+<td><code>ChatProvider</code> 接口（生成/思考档位/预算钳制/视频上传）</td>
+</tr>
+<tr>
+<td><code>src/provider.ts:93</code></td>
+<td><code>StreamedMessage</code>（异步迭代 + 流后元数据 + traceId）</td>
+</tr>
+<tr>
+<td><code>src/generate.ts:87</code></td>
+<td>流式组装主循环（合并/路由/abort/空响应）</td>
+</tr>
+<tr>
+<td><code>src/generate.ts:317</code></td>
+<td><code>flushPart</code>：part 收编 + <code>_streamIndex</code> 剥离</td>
+</tr>
+<tr>
+<td><code>src/message.ts:171</code></td>
+<td><code>mergeInPlace</code>：原地合并规则</td>
+</tr>
+<tr>
+<td><code>src/message.ts:134</code></td>
+<td><code>isToolDeclarationOnlyMessage</code>：消息级工具声明判定</td>
+</tr>
+<tr>
+<td><code>src/capability.ts:43</code></td>
+<td><code>UNKNOWN_CAPABILITY</code> 冻结哨兵 + 兜底判定</td>
+</tr>
+<tr>
+<td><code>src/catalog.ts:68</code></td>
+<td><code>CatalogModel</code>：目录条目 → 能力 + 思考档位（offEffort/alwaysThinking）</td>
+</tr>
+<tr>
+<td><code>src/errors.ts:6</code></td>
+<td>错误体系与可重试判定</td>
+</tr>
+<tr>
+<td><code>src/providers/kimi.ts:46</code></td>
+<td>Kimi adapter（kwargs 归一化、thinking、消息级 tools、reasoning_content）</td>
+</tr>
+<tr>
+<td><code>src/providers/openai-legacy.ts</code> / <code>openai-responses.ts</code></td>
+<td>Chat Completions 与 Responses 双 adapter</td>
+</tr>
+<tr>
+<td><code>src/providers/anthropic.ts</code></td>
+<td>Anthropic adapter（最大 1334 行，最复杂的适配）</td>
+</tr>
+<tr>
+<td><code>src/providers/capability-registry.ts:1</code></td>
+<td>静态能力前缀表</td>
+</tr>
+<tr>
+<td><code>src/providers/chat-completions-stream.ts</code></td>
+<td>Chat 流式工具调用缓冲</td>
+</tr>
+<tr>
+<td><code>src/providers/tool-call-id.ts</code></td>
+<td>工具调用 ID 消毒策略</td>
+</tr>
+</tbody></table>
+<h2 id="7-与其它子系统的接口"><a class="anchor" href="#7-与其它子系统的接口" aria-hidden="true">#</a>7. 与其它子系统的接口</h2><h3 id="71-kap-server-对外暴露"><a class="anchor" href="#71-kap-server-对外暴露" aria-hidden="true">#</a>7.1 kap-server 对外暴露</h3><p><strong>npm 导出（<code>packages/kap-server/package.json</code>）</strong></p>
+<ul>
+<li><code>.</code>：<code>startServer</code>、<code>ServerHostIdentity</code>/<code>ServerStartOptions</code>/<code>RunningServer</code>、<code>okEnvelope</code>/<code>errEnvelope</code>/<code>Envelope</code>、<code>classify</code>/<code>BindClass</code>、<code>rotateServerToken</code>/<code>serverTokenPath</code>、<code>createServerLogger</code>、实例注册表全套（<code>createInstanceRegistry</code>/<code>listLiveServerInstances</code>/<code>getLiveServerInstance</code>/…）。</li>
+<li><code>./contract</code>：<code>ChannelDescriptor</code>/<code>ChannelMethodDescriptor</code>/<code>IChannel</code>/<code>ScopeKind</code>——RPC 契约类型（仅工具/测试消费）。</li>
+</ul>
+<p><strong>调用方</strong></p>
+<ul>
+<li><code>apps/kimi-code</code>：<code>kimi web</code>（<code>src/cli/sub/web/run.ts:275</code>）与 TUI 的 web 命令调用 <code>startServer</code>，传 <code>hostIdentity</code>、<code>webAssetsDir</code>、<code>debugEndpoints</code> 等；CLI 的 <code>server ps/kill</code> 通过实例注册表发现进程；<code>server rotate-token</code> 用 <code>rotateServerToken</code>。</li>
+<li><code>apps/kimi-inspect</code>：运行时消费 <code>/api/v1/debug/*</code>（WS 事件面 + REST RPC 面），WS <code>client_hello</code> 带 <code>client_id:&#39;kimi-inspect&#39;</code> 解锁 <code>event.di.*</code> 调试流。</li>
+<li>Web UI（<code>apps/kimi-code/dist-web</code>）：消费 <code>/api/v1</code> REST（信封协议）+ <code>/api/v1/ws</code>（v1 WS 协议，subscribe_v2 订阅 transcript）。</li>
+<li>v1 协议客户端（TUI/<code>kimi -p</code>/node-sdk）：经 <code>background.task.*</code> 别名、phase 折叠、占位字段保持兼容。</li>
+</ul>
+<p><strong>kap-server 消费的外部服务</strong>：agent-core-v2（引擎一切）、transcript（契约 + grade）、minidb（搜索索引）、kimi-code-oauth（默认请求头 + OAuth 路由）。搜索服务通过 <code>setLiveTranscriptSource(transcriptService)</code> 把 live 会话检索接到 transcript 存储上。</p>
+<h3 id="72-kosong-对外暴露"><a class="anchor" href="#72-kosong-对外暴露" aria-hidden="true">#</a>7.2 kosong 对外暴露</h3><ul>
+<li>根 barrel：<code>Message</code>/<code>ContentPart</code>/<code>ToolCall</code>/<code>mergeInPlace</code>、<code>ChatProvider</code>/<code>StreamedMessage</code>/<code>FinishReason</code>、<code>createProvider</code>/<code>getModelCapability</code>、<code>generate</code>/<code>GenerateCallbacks</code>/<code>GenerateResult</code>、<code>KimiChatProvider</code>（唯一收进 barrel 的具体类）、<code>classifyKimiQuotaError</code>、<code>ModelCapability</code>/<code>UNKNOWN_CAPABILITY</code>、catalog 全套解析函数、<code>Tool</code>、<code>TokenUsage</code>、全部错误类与判定函数。</li>
+<li>子路径：<code>@moonshot-ai/kosong/providers/{kimi,openai-legacy,openai-responses,anthropic,google-genai,index}</code>。</li>
+<li><strong>主要消费方</strong>：agent-core 的 turn 循环（<code>src/agent/turn/kosong-llm.ts</code>——把 kosong 的 per-part 回调转发为 loop 的 delta 回调，块级回调等流排空后再发；<code>isRetryableGenerateError</code> 供重试决策；<code>applyCompletionBudget</code> + <code>ModelCapability</code> 做上下文预算）；agent-core 的工具/媒体工具（video/image 上传）；<code>node-sdk</code> 与 <code>apps/vis/server</code> 直接使用 provider。</li>
+</ul>
+<h3 id="73-关键边界与已知取舍"><a class="anchor" href="#73-关键边界与已知取舍" aria-hidden="true">#</a>7.3 关键边界与已知取舍</h3><ul>
+<li>kap-server 的 <code>/api/v1/debug</code> 是<strong>有意无白名单</strong>的反射面——安全靠部署形状（loopback + <code>--debug-endpoints</code> + 全局 bearer）而非接口枚举；代码注释反复强调这一设计并给出 kimi-inspect 之外的接入警示。</li>
+<li>transcript 流仅覆盖<strong>本进程内 live 会话</strong>；冷会话只有 REST 分页。WS <code>subscribe_v2</code> 的 <code>transcript_since</code> 回放依赖有界内存 journal，覆盖不了就诚实降级为全量 reset。</li>
+<li>事件日志（<code>SessionEventJournal</code>）是 best-effort 持久化：写盘失败时事件仍 live 扇出，但不可重放——客户端只能靠 <code>resync_required</code> 路径兜底。</li>
+<li><strong>多实例共享 homeDir 是显式支持的拓扑</strong>（<code>port+1</code> 步进 + 实例注册表），但 WS 连接与 journal 是进程本地的——客户端不能假设跨进程的订阅连续性，<code>epoch_changed</code>/冷 watermark 路径就是为这种漂移准备的。</li>
+<li><strong>auth 的 loopback 默认</strong>：localhost 绑定下无限流、无安全头、token 是唯一门；<code>--dangerous-bypass-auth</code> 会把 <code>/api/v1/meta</code> 里的 <code>dangerous_bypass_auth</code> 置真并打印醒目警告（供无 token 的 Web UI 连接），这是操作员显式选择的降级，不是默认路径。</li>
+<li><strong><code>openapi.json</code> 与 <code>/asyncapi.json</code> 刻意在 auth 之外</strong>（即使 loopback 也是&quot;静态资源放行、meta 文档把关&quot;的例外）：API 形状属于敏感面，与 <code>/api/</code> 一样要 token。</li>
+<li>kosong 刻意不含重试/循环/预算逻辑（那属于 agent-core），<code>FinishReason</code> 与错误码是两层之间的唯一控制面；<code>max_context_tokens: 0</code> 表示&quot;未知&quot;，调用方不得据此硬性裁剪。</li>
+<li>kosong 的 <code>UNKNOWN_CAPABILITY</code> 设计是&quot;非致命降级&quot;：未入目录的模型默认无视觉/思考/工具能力声明，宿主可以照常发请求让上游拒绝，而不是本地硬拦——能力表是提示不是强制。</li>
+</ul>
+
+    </article>
+    <footer class="page-footer">
+      <a class="nav-prev" href="research-03.html">← 03 · agent-core（旧架构 agent 核心）研究报告</a>
+      <a class="nav-next" href="research-05.html">05 · pi-tui 与 VSCode 扩展（apps/vscode） →</a>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

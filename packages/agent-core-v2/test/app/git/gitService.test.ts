@@ -95,6 +95,20 @@ describe('GitService', () => {
       expect(result.entries).toEqual({ 'a.txt': 'modified' });
     });
 
+    it('reports paths relative to a nested workspace and excludes changes outside it', async () => {
+      const workspace = join(repo, 'packages', 'example');
+      mkdirSync(workspace, { recursive: true });
+      writeFileSync(join(repo, 'root.txt'), 'root\n');
+      writeFileSync(join(workspace, 'nested.txt'), 'nested\n');
+      commitAll('init');
+      writeFileSync(join(repo, 'root.txt'), 'changed root\n');
+      writeFileSync(join(workspace, 'nested.txt'), 'changed nested\n');
+
+      const result = await service.status(workspace);
+
+      expect(result.entries).toEqual({ 'nested.txt': 'modified' });
+    });
+
     it('throws FS_GIT_UNAVAILABLE when not a repo', async () => {
       const notRepo = mkdtempSync(join(tmpdir(), 'not-repo-'));
       try {
