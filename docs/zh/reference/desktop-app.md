@@ -320,7 +320,7 @@ Desktop 支持两种运行模式，默认内嵌：
 2. **transcript socket**：服务当前会话，`subscribe_v2` grade 默认 `block`（要逐 token 打字机效果时切 `delta`），配合 `transcript_since` 与 `/transcript/ops` 补洞。
 3. **REST 基线**：会话列表用 `GET /api/v2/sessions`；打开会话先 `GET .../snapshot`（或 transcript 最新页），向上滚动用 `before_turn` 翻页。
 
-渲染管线：`transcript.ops` → L2 reducer（直接用 `@moonshot-ai/transcript` 的实现）→ store → view registry 按 key 分发到 React 组件 → 正文 frame 进 marked 管线。交互（审批 / 提问）以 transcript 的 `interactions` 为准渲染卡片，应答走 REST；重连后用 `GET .../approvals?status=pending` 兜底。
+渲染管线：`transcript.ops` → L2 reducer（直接用 `@moonshot-ai/transcript` 的实现）→ store → view registry 按 key 分发到 React 组件 → 正文 frame 进 marked 管线。会话级交互（审批 / 提问）从待处理 REST 列表进入 Composer；这些列表聚合主 Agent 与子 Agent 的请求，以 `agent_id` 标识来源，应答仍走 REST。各 Agent transcript 的 `interactions` 继续提供行内上下文和首次加载时的兼容回退，但不是会话待处理交互的真相源。activity socket 在收到 `event.session.work_changed` 后使列表失效，重连与定时刷新负责兜底。
 
 ### 界面映射
 
@@ -334,7 +334,7 @@ Codex 时间线条目与 kimi-code 协议对象的对应关系（desktop 组件�
 | `exec` | `tool` frame（`Bash` 等）/ `task`（`kind: 'shell'`） | 命令卡片 + 状态 footer |
 | `patch` / `turn-diff` | `tool` frame（`Edit` / `Write` 等）+ `fs:diff` | 文件 diff 区块、turn 聚合 |
 | `web-search` | `tool` frame（`WebSearch`） | 单行摘要 + 动画点 |
-| `permission-request` | `interactions`（`approval`）+ `ApprovalRequest` | 审批卡片（Allow once / Always / Deny） |
+| `permission-request` | 会话待处理交互 + `ApprovalRequest` | 审批卡片（Allow once / Always / Deny），包含子 Agent 请求 |
 | `todo-list` | 全局态 `todos` | 任务清单 |
 | `proposed-plan` | plan 交互（`display.kind: 'plan_review'`）+ `GET .../transcript/plan` | 计划卡片（Accept / Revise） |
 | `mcp-tool-call` | `tool` frame（MCP 工具） | 带 MCP server 标识 |
@@ -357,7 +357,7 @@ Codex 有而 kimi-code 暂无对应物的条目（如 `realtime-transcript`、`a
 1. **M0 脚手架与连接**：Electron 工程（electron-vite）、内嵌 `startServer`、token 管理、`GET /api/v1/meta` 校验、activity socket 连通。验收：窗口打开、侧栏显示后端版本。
 2. **M1 会话列表**：`GET /api/v2/sessions` 分页列表、activity 徽章、新建 / 归档 / 搜索（`POST /api/v1/search`）、工作区选择器（`fs::browse`）。验收：完整管理会话。
 3. **M2 聊天渲染**：transcript REST 分页 + `subscribe_v2`（block）+ L2 reducer + view registry；marked 正文管线（GFM + breaks + directive 容错 + Shiki + KaTeX + 文件引用 chip）；tool / thinking / notice 组件。验收：历史与流式渲染正确、断线重连无缝恢复。
-4. **M3 Composer 与交互**：Slate 输入、`@` / `$` / `/` 提及、附件上传（`POST /files`）、发送 / 排队 / steer / 停止；审批卡片、提问卡片、plan 评审；权限模式与 effort 下拉（写回 `POST .../prompts` 与 profile）。验收：完成一轮含审批的完整任务。
+4. **M3 Composer 与交互**：Slate 输入、`@` / `$` / `/` 提及、附件上传（`POST /files`）、发送 / 排队 / steer / 停止；审批卡片、提问卡片、plan 评审；权限模式与 effort 下拉（写回 `POST .../prompts` 与 profile）。验收：完成一轮由主 Agent 或子 Agent 发起审批的完整任务，并确认应答后任务继续执行。
 5. **M4 面板系统**：右侧 diff（`fs:diff` / `fs:git_status`）、文件树（`fs:list` / `fs:read`）、底部终端（terminals REST + 独立 PTY 通道）、`open-in` 外部打开。验收：实现 Codex 的面板体验。
 6. **M5 打磨**：设计 token 全量落地（亮暗主题）、快捷键、多窗口（附着模式共享后端）、导出（`POST .../export`，`desktop: true` 打包桌面日志）。
 

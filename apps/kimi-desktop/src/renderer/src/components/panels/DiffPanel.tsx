@@ -7,11 +7,13 @@
  * git status; "Open" reveals a path in the file manager.
  */
 
+import { CaretDown, CaretRight } from '@phosphor-icons/react';
 import type { FsGitStatusResponse } from '@moonshot-ai/protocol';
 import { useMemo, useState } from 'react';
 
 import { useFsDiff, useFsGitStatus, useFsOpen } from '#/lib/queries';
 import { countChanges, diffLineTone, diffPrefix, parseUnifiedDiff } from '#/lib/diffRender';
+import { buildChangeTree, type ChangeTreeNode } from '#/lib/changeTree';
 
 export interface DiffPanelProps {
   readonly sessionId: string;
@@ -35,6 +37,7 @@ export function DiffPanel({ sessionId }: DiffPanelProps) {
   const open = useFsOpen(sessionId);
 
   const entries = useMemo(() => sortedEntries(git.data), [git.data]);
+  const tree = useMemo(() => buildChangeTree(entries), [entries]);
 
   if (git.isError) {
     return (
@@ -81,30 +84,13 @@ export function DiffPanel({ sessionId }: DiffPanelProps) {
 
       <div className="flex min-h-0 flex-1">
         {/* changed-files list */}
-        <div className="min-h-0 w-[44%] min-w-[140px] shrink-0 overflow-y-auto border-r border-[var(--color-border-light)] px-1.5 py-2">
+        <div className="min-h-0 w-[62%] min-w-[220px] max-w-[320px] shrink-0 overflow-y-auto border-r border-[var(--color-border-light)] px-1.5 py-2">
           {git.isLoading ? (
             <div className="px-3 py-2 text-[11px] text-[var(--gray-500)]">加载中…</div>
           ) : entries.length === 0 ? (
             <div className="px-3 py-2 text-[11px] text-[var(--gray-500)]">无变更</div>
           ) : (
-            entries.map(([path, status]) => (
-              <button
-                key={path}
-                type="button"
-                title={path}
-                onClick={() => setSelected(path)}
-                className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[11.5px] ${
-                  selected === path ? 'bg-[var(--color-list-active)]' : 'hover:bg-[var(--color-list-hover)]'
-                }`}
-              >
-                <span className={`shrink-0 font-mono ${STATUS_TONE[status] ?? ''}`}>
-                  {statusAbbrev(status)}
-                </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[var(--color-text-foreground)]">
-                  {basename(path)}
-                </span>
-              </button>
-            ))
+            <ChangeTree nodes={tree} selected={selected} onSelect={setSelected} />
           )}
         </div>
 
@@ -112,10 +98,10 @@ export function DiffPanel({ sessionId }: DiffPanelProps) {
         <div className="min-h-0 flex-1 overflow-auto">
           {selected === null ? (
             <div className="flex h-full items-center justify-center px-4 text-center text-[11px] text-[var(--gray-500)]">
-              选择一个文件查看 diff
+              选择一个文件查看差异
             </div>
           ) : diff.isLoading ? (
-            <div className="px-4 py-3 text-[11px] text-[var(--gray-500)]">加载 diff…</div>
+            <div className="px-4 py-3 text-[11px] text-[var(--gray-500)]">加载差异…</div>
           ) : diff.isError ? (
             <div className="m-3 rounded-xl bg-[var(--color-background-button-secondary)] px-3 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
               {friendlyDiffError(diff.error)}
@@ -131,6 +117,117 @@ export function DiffPanel({ sessionId }: DiffPanelProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ChangeTree({
+  nodes,
+  selected,
+  onSelect,
+}: {
+  readonly nodes: readonly ChangeTreeNode[];
+  readonly selected: string | null;
+  readonly onSelect: (path: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+
+  const toggleDirectory = (path: string): void => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  return (
+    <div role="tree" aria-label="变更目录">
+      {nodes.map((node) => (
+        <ChangeTreeItem
+          key={`${node.kind}:${node.path}`}
+          node={node}
+          depth={0}
+          selected={selected}
+          collapsed={collapsed}
+          onSelect={onSelect}
+          onToggleDirectory={toggleDirectory}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ChangeTreeItem({
+  node,
+  depth,
+  selected,
+  collapsed,
+  onSelect,
+  onToggleDirectory,
+}: {
+  readonly node: ChangeTreeNode;
+  readonly depth: number;
+  readonly selected: string | null;
+  readonly collapsed: ReadonlySet<string>;
+  readonly onSelect: (path: string) => void;
+  readonly onToggleDirectory: (path: string) => void;
+}) {
+  const paddingLeft = 6 + depth * 14;
+  if (node.kind === 'directory') {
+    const isCollapsed = collapsed.has(node.path);
+    return (
+      <div role="none">
+        <button
+          type="button"
+          role="treeitem"
+          aria-expanded={!isCollapsed}
+          title={node.path}
+          onClick={() => onToggleDirectory(node.path)}
+          style={{ paddingLeft }}
+          className="flex min-h-7 w-full items-center gap-1 rounded-md pr-2 text-left text-[11.5px] font-medium text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)]"
+        >
+          {isCollapsed ? (
+            <CaretRight size={12} weight="bold" className="shrink-0 text-[var(--color-text-tertiary)]" aria-hidden />
+          ) : (
+            <CaretDown size={12} weight="bold" className="shrink-0 text-[var(--color-text-tertiary)]" aria-hidden />
+          )}
+          <span className="min-w-0 flex-1 truncate">{node.name}</span>
+        </button>
+        {isCollapsed ? null : (
+          <div role="group">
+            {node.children.map((child) => (
+              <ChangeTreeItem
+                key={`${child.kind}:${child.path}`}
+                node={child}
+                depth={depth + 1}
+                selected={selected}
+                collapsed={collapsed}
+                onSelect={onSelect}
+                onToggleDirectory={onToggleDirectory}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      role="treeitem"
+      title={node.path}
+      onClick={() => onSelect(node.path)}
+      style={{ paddingLeft: paddingLeft + 14 }}
+      className={`flex min-h-7 w-full items-center gap-1.5 rounded-md pr-2 text-left text-[11.5px] ${
+        selected === node.path ? 'bg-[var(--color-list-active)]' : 'hover:bg-[var(--color-list-hover)]'
+      }`}
+    >
+      <span className={`w-3.5 shrink-0 text-center font-mono text-[10.5px] font-semibold ${STATUS_TONE[node.status] ?? ''}`}>
+        {statusAbbrev(node.status)}
+      </span>
+      <span className="min-w-0 flex-1 truncate font-mono text-[var(--color-text-foreground)]">{node.name}</span>
+    </button>
   );
 }
 
@@ -190,7 +287,7 @@ function DiffViewer({
       </pre>
       {truncated ? (
         <div className="shrink-0 border-t border-[var(--color-border-light)] px-3 py-1 text-[10px] text-[var(--orange-400)]">
-          diff 已截断
+          差异内容已截断
         </div>
       ) : null}
     </div>
@@ -218,11 +315,6 @@ function statusAbbrev(status: string): string {
               : status === 'ignored'
                 ? '!'
                 : status.slice(0, 1).toUpperCase();
-}
-
-function basename(path: string): string {
-  const parts = path.split('/');
-  return parts.at(-1) ?? path;
 }
 
 function friendlyDiffError(error: unknown): string {

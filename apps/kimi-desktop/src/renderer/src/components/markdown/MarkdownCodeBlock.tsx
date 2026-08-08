@@ -11,7 +11,8 @@
  * github-light, anything else → github-dark); the shell owns the attribute.
  */
 
-import { useEffect, useState } from 'react';
+import { Check, Copy } from '@phosphor-icons/react';
+import { useEffect, useRef, useState } from 'react';
 import type { HighlighterCore } from 'shiki/core';
 import type { LanguageRegistration, ThemeRegistrationRaw } from 'shiki/types';
 
@@ -143,6 +144,64 @@ async function highlightCode(code: string, lang: string, importer: () => Promise
 
 // ----------------------------------------------------------------- component
 
+/** Best-effort clipboard write; degrades to the legacy textarea trick. */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Fall back for environments without the async clipboard API.
+  }
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand('copy');
+    textarea.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Copy button — floats over the code block header, revealed on hover/focus. */
+function CodeCopyButton({ code }: { readonly code: string }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+    };
+  }, []);
+
+  const handleCopy = (): void => {
+    void copyToClipboard(code).then((ok) => {
+      if (!ok) return;
+      setCopied(true);
+      if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+      resetTimer.current = window.setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const label = copied ? '已复制' : '复制代码';
+  return (
+    <button
+      type="button"
+      className={`markdown-code-copy${copied ? ' is-copied' : ''}`}
+      aria-label={label}
+      title={label}
+      onClick={handleCopy}
+    >
+      {copied ? <Check size={12} weight="bold" /> : <Copy size={12} />}
+      <span>{copied ? '已复制' : '复制'}</span>
+    </button>
+  );
+}
+
 export function MarkdownCodeBlock({ code, language }: MarkdownCodeBlockProps) {
   const normalized = normalizeLanguage(language);
   const importer = normalized !== null ? LANGUAGE_IMPORTERS[normalized] : undefined;
@@ -165,18 +224,20 @@ export function MarkdownCodeBlock({ code, language }: MarkdownCodeBlockProps) {
     };
   }, [code, importer, normalized]);
 
-  if (highlighted !== null) {
-    return (
-      <div
-        className="markdown-shiki"
-        data-lang={normalized ?? undefined}
-        dangerouslySetInnerHTML={{ __html: highlighted }}
-      />
+  const header = normalized !== null ? <div className="markdown-code-lang">{normalized}</div> : null;
+  const body =
+    highlighted !== null ? (
+      <div className="markdown-shiki" dangerouslySetInnerHTML={{ __html: highlighted }} />
+    ) : (
+      <pre className="markdown-code-block">
+        <code>{code}</code>
+      </pre>
     );
-  }
   return (
-    <pre className="markdown-code-block" data-lang={normalized ?? undefined}>
-      <code>{code}</code>
-    </pre>
+    <div className="markdown-code-shell" data-lang={normalized ?? undefined}>
+      {header}
+      {body}
+      <CodeCopyButton code={code} />
+    </div>
   );
 }

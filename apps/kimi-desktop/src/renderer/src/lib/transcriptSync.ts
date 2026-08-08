@@ -202,6 +202,7 @@ export class TranscriptSync {
   /** Begin the sync: REST baseline load + WS subscription. Idempotent. */
   start(): void {
     if (this.#ws !== undefined) return;
+    this.#stopped = false;
     const handlers = {
       onOps: (agentId: string, ops: readonly TranscriptOperation[], meta?: TranscriptFrameMeta) => {
         if (agentId !== this.#agentId) return;
@@ -256,7 +257,7 @@ export class TranscriptSync {
     this.#refresh();
   }
 
-  /** Tear the sync down permanently (unsubscribe + stop buffering). */
+  /** Tear the current subscription down. A later `start` resumes this sync. */
   stop(): void {
     this.#stopped = true;
     this.#ws?.close();

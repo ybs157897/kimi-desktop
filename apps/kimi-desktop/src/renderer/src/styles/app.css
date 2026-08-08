@@ -15,10 +15,13 @@ body {
   background-color: var(--color-background-surface);
   color: var(--color-text-foreground);
   font-family: var(--font-sans);
-  /* Chat font size (13px); chrome components opt into their own sizes. */
   font-size: var(--codex-chat-font-size);
-  letter-spacing: -0.006em;
+  font-optical-sizing: auto;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-chat);
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   user-select: none;
 }
 
@@ -32,6 +35,268 @@ body {
 }
 .app-no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* Shared interaction primitives. Motion is deliberately limited to feedback
+   and occasional anchored surfaces; session switches and shortcuts stay
+   instant because they are high-frequency actions. */
+.ui-pressable {
+  transition:
+    transform var(--duration-press) var(--ease-out),
+    background-color var(--duration-hover) ease,
+    border-color var(--duration-hover) ease,
+    color var(--duration-hover) ease,
+    opacity var(--duration-hover) ease,
+    box-shadow var(--duration-hover) ease;
+}
+
+.ui-pressable:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Section labels: small caps tracking without shouting. */
+.ui-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  line-height: var(--leading-ui);
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+/* Soft material fill used by floating composer / panels. */
+.ui-glass {
+  background-color: var(--color-background-editor-opaque);
+}
+
+/* Skeleton placeholders (chat loading state): a surface-under block with a
+   soft highlight sweep. The sweep color derives from the foreground token so
+   it reads in both themes; motion is disabled under reduced-motion. */
+.skeleton-block {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--color-background-surface-under);
+}
+
+.skeleton-block::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-text-foreground) 7%, transparent),
+    transparent
+  );
+  animation: skeleton-sweep 1.6s var(--ease-in-out) infinite;
+}
+
+@keyframes skeleton-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Codex-style ghost menus inside the composer toolbar. */
+.composer-menu {
+  position: relative;
+  display: inline-flex;
+  max-width: 12rem;
+  height: 32px;
+  align-items: center;
+  gap: 5px;
+  border-radius: 8px;
+  padding: 0 7px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--duration-hover) ease, color var(--duration-hover) ease;
+}
+
+.composer-menu-select {
+  min-width: 0;
+  flex: 1 1 auto;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1;
+  color: inherit;
+  outline: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.composer-menu:hover {
+  color: var(--color-text-foreground);
+}
+
+.composer-menu:focus-within {
+  color: var(--color-text-foreground);
+  background: var(--color-list-hover);
+}
+
+/* Slate editor resets. Keep overflow off clipping the absolute CJK
+   placeholder; force a single-line resting height (no hollow card). */
+.composer-editor {
+  position: relative;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 24px !important;
+  padding-block: 1px;
+  margin-block: -1px;
+}
+
+.composer-editor,
+.composer-editor [data-slate-editor] {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.composer-editor [data-slate-node='element'] {
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  line-height: 1.5;
+  border: none !important;
+}
+
+.composer-editor [data-slate-placeholder] {
+  position: absolute !important;
+  top: 1px !important;
+  left: 0 !important;
+  right: 0;
+  max-width: 100%;
+  color: var(--color-text-tertiary) !important;
+  opacity: 1 !important;
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ui-popover {
+  transform: scale(1);
+  transform-origin: top left;
+  opacity: 1;
+  transition:
+    transform var(--duration-popover) var(--ease-out),
+    opacity var(--duration-popover) var(--ease-out);
+
+  @starting-style {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+}
+
+/* -------------------------- motion feedback primitives --------------------------
+   Web-parity feedback motion (mirrors the web app's CSS bundle):
+   - `.ui-breathe`       — breathing opacity for live labels (web `think-breathe`, 1.6s)
+   - `.ui-dot-pulse`     — expanding halo on live status dots (web `kw-dot-pulse`, 1.4s)
+   - `.ui-shimmer`       — sweeping highlight over busy pills (web shimmer gradients)
+   - `.ui-card-enter`    — soft rise + fade for newly mounted chat cards (web `kimi-card-in`)
+   All of them are disabled under `prefers-reduced-motion` below. */
+
+.ui-breathe {
+  animation: ui-breathe 1.6s var(--ease-in-out) infinite;
+}
+
+@keyframes ui-breathe {
+  0%,
+  to {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Halo color follows the dot's `currentColor` (e.g. `text-[var(--orange-400)]`). */
+.ui-dot-pulse {
+  border-radius: var(--radius-full);
+  animation: ui-dot-pulse 1.4s var(--ease-out) infinite;
+}
+
+@keyframes ui-dot-pulse {
+  0% {
+    box-shadow: 0 0 color-mix(in srgb, currentColor 40%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+/* Sweeping highlight; sits above a tinted pill background (absolute inset-0). */
+.ui-shimmer {
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 30%,
+    var(--color-shimmer-highlight) 50%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  animation: ui-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes ui-shimmer {
+  0% {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+.ui-card-enter {
+  animation: ui-card-enter var(--duration-slow) var(--ease-out);
+}
+
+@keyframes ui-card-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-pressable {
+    transition:
+      background-color var(--duration-press) ease,
+      border-color var(--duration-press) ease,
+      color var(--duration-press) ease,
+      opacity var(--duration-press) ease;
+  }
+
+  .ui-pressable:active:not(:disabled),
+  .ui-popover {
+    transform: none;
+  }
+
+  .ui-popover {
+    transition: opacity var(--duration-popover) ease;
+  }
+
+  .skeleton-block::after,
+  .ui-breathe,
+  .ui-dot-pulse,
+  .ui-shimmer,
+  .ui-card-enter {
+    animation: none;
+  }
 }
 
 /* Slim themed scrollbars. */

@@ -6,10 +6,11 @@
  * + backdrop click + three-part layout.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { useUpdateSessionProfile } from '#/lib/queries';
 import { agentConfigPatch } from '#/lib/sessionModes';
+import { useModalDialog } from '#/lib/useModalDialog';
 
 export interface GoalDialogProps {
   readonly sessionId: string;
@@ -21,19 +22,8 @@ export function GoalDialog({ sessionId, onClose }: GoalDialogProps) {
   const updateProfile = useUpdateSessionProfile(sessionId);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Focus the input once mounted so typing works immediately.
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  // Esc closes the dialog (the backdrop handles outside clicks separately).
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalDialog(dialogRef, onClose, { initialFocusRef: inputRef });
 
   const trimmed = objective.trim();
   const canSubmit = trimmed !== '' && !updateProfile.isPending;
@@ -46,10 +36,18 @@ export function GoalDialog({ sessionId, onClose }: GoalDialogProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label="设定目标"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
         className="flex w-[520px] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
       >

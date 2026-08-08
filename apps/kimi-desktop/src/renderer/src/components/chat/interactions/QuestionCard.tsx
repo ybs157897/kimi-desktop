@@ -1,11 +1,13 @@
-import {
-  questionRequestSchema,
-  type QuestionAnswer,
-  type QuestionItem,
-  type QuestionResponse,
-} from '@moonshot-ai/protocol';
+import type { QuestionResponse } from '@moonshot-ai/protocol';
 import type { TranscriptInteraction } from '@moonshot-ai/transcript';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+
+import {
+  buildQuestionResponse,
+  buildSkippedQuestionResponse,
+  isRecommendedOption,
+  questionInteractionPresentation,
+} from '#/lib/questionInteraction';
 
 export interface QuestionCardProps {
   /** The pending question interaction; `request` is the engine QuestionRequest payload. */
@@ -19,9 +21,17 @@ export interface QuestionCardProps {
 
 /** AskUserQuestion card: option list (single / multi select), free-text
  *  "other" input, skip-all and dismiss actions. Shimmers while an answer is
- *  in flight; renders the settled result once no longer pending. */
+ *  in flight; renders the settled result once no longer pending.
+ *
+ *  The interaction's `request` may arrive in the in-process camelCase shape
+ *  (the transcript default) or the wire snake_case shape; both are normalized
+ *  via `questionInteractionPresentation`, which also synthesizes the wire
+ *  ids (`q_<idx>` / `opt_<q>_<o>`) the answer endpoint reverses server-side. */
 export function QuestionCard({ interaction, onAnswer, onDismiss, busy = false }: QuestionCardProps) {
-  const request = questionRequestSchema.safeParse(interaction.request);
+  const presentation = useMemo(
+    () => questionInteractionPresentation(interaction),
+    [interaction],
+  );
   const [inFlight, setInFlight] = useState(false);
   const [selected, setSelected] = useState<Readonly<Record<string, readonly string[]>>>({});
   const [others, setOthers] = useState<Readonly<Record<string, string>>>({});
@@ -42,45 +52,49 @@ export function QuestionCard({ interaction, onAnswer, onDismiss, busy = false }:
     );
   }
 
-  const questions = request.success ? request.data.questions : [];
-  const toggleOption = (question: QuestionItem, optionId: string): void => {
+  const questions = presentation.questions;
+  const toggleOption = (questionId: string, optionId: string): void => {
     setSelected((prev) => {
-      const current = prev[question.id] ?? [];
+      const current = prev[questionId] ?? [];
+      // Single-select questions keep only one; the first hit toggles off.
+      const question = questions.find((q) => q.id === questionId);
       const next =
-        question.multi_select === true
+        question?.multiSelect === true
           ? current.includes(optionId)
             ? current.filter((id) => id !== optionId)
             : [...current, optionId]
           : current.includes(optionId)
             ? []
             : [optionId];
-      return { ...prev, [question.id]: next };
+      return { ...prev, [questionId]: next };
     });
   };
   const setOther = (questionId: string, text: string): void => {
     setOthers((prev) => ({ ...prev, [questionId]: text }));
   };
-  const hasAnswer = questions.some((q) => (selected[q.id] ?? []).length > 0 || (others[q.id] ?? '').trim() !== '');
+  const hasAnswer = questions.some(
+    (q) => (selected[q.id] ?? []).length > 0 || (others[q.id] ?? '').trim() !== '',
+  );
   const run = (fn: () => void | Promise<void>): void => {
     if (isBusy) return;
     setInFlight(true);
-    Promise.resolve()
+    void Promise.resolve()
       .then(fn)
       .finally(() => setInFlight(false));
   };
   const answer = (): void => {
     if (!hasAnswer || isBusy) return;
-    run(() => onAnswer({ answers: buildAnswers(questions, selected, others), method: 'click' }));
+    run(() => onAnswer(buildQuestionResponse(questions, selected, others)));
   };
   const skip = (): void => {
     if (isBusy) return;
-    run(() => onAnswer({ answers: skipAnswers(questions) }));
+    run(() => onAnswer(buildSkippedQuestionResponse(questions)));
   };
 
   return (
     <div
-      className={`mb-2 rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface-under)] px-4 py-3 ${
-        isBusy ? 'animate-pulse' : ''
+      className={`rounded-2xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] px-3 py-2.5 ${
+        isBusy ? 'opacity-70' : ''
       }`}
       onKeyDown={(event) => {
         if (isBusy) return;
@@ -94,7 +108,7 @@ export function QuestionCard({ interaction, onAnswer, onDismiss, busy = false }:
       }}
     >
       {questions.map((question) => (
-        <div key={question.id} className="mb-3 last:mb-0">
+        <div key={question.id} className="mb-2.5 last:mb-0">
           <div className="text-[13px] font-medium text-[var(--color-text-foreground)]">
             {question.header ?? question.question}
           </div>
@@ -103,41 +117,50 @@ export function QuestionCard({ interaction, onAnswer, onDismiss, busy = false }:
               {question.body}
             </div>
           ) : null}
-          <div className="mt-2 space-y-1">
+          <div className="mt-1.5 space-y-1">
             {question.options.map((option) => {
               const isSelected = (selected[question.id] ?? []).includes(option.id);
+              const recommended = isRecommendedOption(option);
               return (
                 <button
                   key={option.id}
                   type="button"
                   disabled={isBusy}
                   title={option.description}
-                  onClick={() => toggleOption(question, option.id)}
-                  className={`block w-full cursor-pointer rounded-md border px-3 py-1 text-left text-[12px] transition-colors disabled:cursor-default disabled:opacity-50 ${
+                  onClick={() => toggleOption(question.id, option.id)}
+                  className={`block w-full cursor-pointer rounded-lg border px-2.5 py-1 text-left text-[12px] transition-colors disabled:cursor-default disabled:opacity-50 ${
                     isSelected
                       ? 'border-[var(--color-border-heavy)] bg-[var(--color-list-hover)] text-[var(--color-text-foreground)]'
                       : 'border-[var(--color-border-light)] text-[var(--color-text-foreground)] opacity-80 hover:bg-[var(--color-list-hover)]'
                   }`}
                 >
-                  {question.multi_select === true && isSelected ? '☑ ' : question.multi_select === true ? '☐ ' : ''}
+                  <span className="select-none">
+                    {question.multiSelect ? (isSelected ? '☑ ' : '☐ ') : isSelected ? '● ' : '○ '}
+                  </span>
                   {option.label}
+                  {recommended ? (
+                    <span className="ml-1.5 text-[10px] font-medium text-[var(--blue-300)]">推荐</span>
+                  ) : null}
+                  {option.description !== undefined && option.description !== '' ? (
+                    <span className="mt-0.5 block opacity-60">{option.description}</span>
+                  ) : null}
                 </button>
               );
             })}
           </div>
-          {question.allow_other === true ? (
+          {question.allowOther ? (
             <input
               type="text"
               disabled={isBusy}
               value={others[question.id] ?? ''}
               onChange={(event) => setOther(question.id, event.target.value)}
-              placeholder={question.other_label ?? '其他…'}
+              placeholder={question.otherLabel ?? '其他…'}
               className="mt-1.5 w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-background-surface)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] outline-none placeholder:text-[var(--color-text-foreground)] placeholder:opacity-40 focus:border-[var(--color-border-heavy)] disabled:opacity-50"
             />
           ) : null}
         </div>
       ))}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
         <button
           type="button"
           autoFocus
@@ -161,7 +184,7 @@ export function QuestionCard({ interaction, onAnswer, onDismiss, busy = false }:
           onClick={() => void onDismiss()}
           className="cursor-pointer rounded-md px-2 py-1 text-[11px] text-[var(--color-text-foreground)] opacity-50 underline-offset-2 hover:opacity-80 disabled:cursor-default disabled:opacity-40"
         >
-          Dismiss
+          关闭提问
         </button>
       </div>
     </div>
@@ -177,38 +200,4 @@ function resolvedLabel(state: string): string {
     default:
       return state;
   }
-}
-
-function buildAnswers(
-  questions: readonly QuestionItem[],
-  selected: Readonly<Record<string, readonly string[]>>,
-  others: Readonly<Record<string, string>>,
-): Record<string, QuestionAnswer> {
-  const answers: Record<string, QuestionAnswer> = {};
-  for (const question of questions) {
-    const optionIds = [...(selected[question.id] ?? [])];
-    const other = (others[question.id] ?? '').trim();
-    if (question.multi_select === true) {
-      if (optionIds.length > 0 && other !== '') {
-        answers[question.id] = { kind: 'multi_with_other', option_ids: optionIds, other_text: other };
-      } else if (optionIds.length > 0) {
-        answers[question.id] = { kind: 'multi', option_ids: optionIds };
-      } else if (other !== '') {
-        answers[question.id] = { kind: 'other', text: other };
-      }
-    } else if (optionIds.length > 0) {
-      answers[question.id] = { kind: 'single', option_id: optionIds[0]! };
-    } else if (other !== '') {
-      answers[question.id] = { kind: 'other', text: other };
-    }
-  }
-  return answers;
-}
-
-function skipAnswers(questions: readonly QuestionItem[]): Record<string, QuestionAnswer> {
-  const answers: Record<string, QuestionAnswer> = {};
-  for (const question of questions) {
-    answers[question.id] = { kind: 'skipped' };
-  }
-  return answers;
 }

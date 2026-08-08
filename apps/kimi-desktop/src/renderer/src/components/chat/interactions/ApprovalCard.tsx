@@ -1,5 +1,4 @@
 import {
-  approvalRequestSchema,
   approvalResponseSchema,
   ToolInputDisplaySchema,
   type ApprovalDecision,
@@ -11,6 +10,7 @@ import { useState, type ReactNode } from 'react';
 
 import { detectDangerousCommand } from '#/lib/dangerousCommand';
 import { diffBeforeAfter, type DiffLine } from '#/lib/diffRender';
+import { approvalInteractionPresentation } from '#/lib/approvalInteraction';
 import { MarkdownCodeBlock } from '../../markdown/MarkdownCodeBlock';
 import { DiffLines, FullscreenPreview } from './FullscreenPreview';
 import { PlanReviewCard, type PlanReviewDisplay } from './PlanReviewCard';
@@ -55,14 +55,14 @@ type PreviewState =
 export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalCardProps) {
   const [inFlight, setInFlight] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
-  const request = approvalRequestSchema.safeParse(interaction.request);
+  const request = approvalInteractionPresentation(interaction);
   const response = approvalResponseSchema.safeParse(interaction.response);
   const pending = interaction.state === 'pending';
   const isBusy = busy || inFlight;
   const run = (fn: () => void | Promise<void>): void => {
     if (isBusy) return;
     setInFlight(true);
-    Promise.resolve()
+    void Promise.resolve()
       .then(fn)
       .finally(() => setInFlight(false));
   };
@@ -74,7 +74,7 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
           <span className={RESOLVED_TONE[interaction.state]}>
             {resolvedLabel(interaction.state)}
           </span>
-          <span className="opacity-70">{request.success ? request.data.action : '请求批准操作'}</span>
+          <span className="opacity-70">{request.action}</span>
         </div>
         {response.success && response.data.feedback !== undefined ? (
           <div className="mt-1 text-[11px] opacity-60">{response.data.feedback}</div>
@@ -83,7 +83,7 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
     );
   }
 
-  const planReview = request.success ? parsePlanReview(request.data.tool_input_display) : undefined;
+  const planReview = parsePlanReview(request.display);
   if (planReview !== undefined) {
     return (
       <PlanReviewCard
@@ -96,15 +96,20 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
     );
   }
 
-  const action = request.success ? request.data.action : '请求批准操作';
-  const display = request.success
-    ? ToolInputDisplaySchema.safeParse(request.data.tool_input_display)
-    : undefined;
-  const detail = request.success ? renderDetail(request.data, display?.success ? display.data : undefined, setPreview) : null;
+  const display = ToolInputDisplaySchema.safeParse(request.display);
+  const detail = renderDetail(
+    {
+      tool_name: request.toolName,
+      tool_call_id: request.toolCallId,
+      tool_input_display: request.display,
+    },
+    display.success ? display.data : undefined,
+    setPreview,
+  );
   return (
     <div
-      className={`mb-2 rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface-under)] px-4 py-3 ${
-        isBusy ? 'animate-pulse' : ''
+      className={`rounded-2xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] px-3 py-2.5 ${
+        isBusy ? 'opacity-70' : ''
       }`}
       onKeyDown={(event) => {
         if (isBusy) return;
@@ -117,7 +122,7 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
       }}
     >
       <div className="text-[13px] font-medium leading-snug text-[var(--color-text-foreground)]">
-        {action}
+        {request.action}
       </div>
       {detail}
       <div className="mt-3 flex flex-wrap gap-2">
@@ -128,7 +133,7 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
           onClick={() => run(() => onResolve('approved'))}
           className="cursor-pointer rounded-md bg-[var(--gray-1000)] px-3 py-1 text-[12px] font-medium text-[var(--color-text-foreground)] hover:bg-[var(--gray-900)] disabled:cursor-default disabled:opacity-50"
         >
-          Allow once
+          仅允许本次
         </button>
         <button
           type="button"
@@ -136,7 +141,7 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
           onClick={() => run(() => onResolve('approved', { scope: 'session' }))}
           className="cursor-pointer rounded-md border border-[var(--color-border-heavy)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
         >
-          Always allow
+          本会话始终允许
         </button>
         <button
           type="button"
@@ -144,7 +149,7 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
           onClick={() => run(() => onResolve('rejected'))}
           className="cursor-pointer rounded-md border border-[var(--color-border)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] opacity-70 hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
         >
-          Deny
+          拒绝
         </button>
       </div>
       <div className="mt-2 text-[10px] text-[var(--color-text-foreground)] opacity-40">
@@ -243,7 +248,7 @@ function renderDetail(
             {danger !== undefined ? (
               <div className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-error)] px-2 py-1 text-[11px] text-[var(--color-text-danger)]">
                 <span aria-hidden>⚠</span>
-                <span>Dangerous: {danger}</span>
+                <span>危险命令：{danger}</span>
               </div>
             ) : null}
             <pre className="overflow-auto whitespace-pre-wrap rounded-md bg-[var(--color-background-surface-under)] px-2 py-1.5 text-[11px] leading-relaxed text-[var(--color-text-foreground)]">

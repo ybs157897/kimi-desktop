@@ -23,6 +23,7 @@ import {
   useReplaceProvider,
 } from '#/lib/queries';
 import { apiKeyPatchTriState, buildProviderModelsFromCatalog, stripAliasPrefix } from '#/lib/providers';
+import { useModalDialog } from '#/lib/useModalDialog';
 
 export interface ProviderEditDialogProps {
   /** Provider being edited; `null` opens the create form. */
@@ -74,21 +75,15 @@ export function ProviderEditDialog({ provider, onClose }: ProviderEditDialogProp
   );
   const [rows, setRows] = useState<ModelRow[]>(() => [{ key: 0, model: '', maxContextSize: '' }]);
   const nextRowKey = useRef(1);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const typeRef = useRef<HTMLSelectElement>(null);
+  useModalDialog(dialogRef, onClose, { initialFocusRef: typeRef });
 
   // The api key arrives with the detail fetch; the item already carried the
   // base_url, so only the key lags behind.
   useEffect(() => {
     if (detail.data !== undefined) setApiKey(detail.data.api_key ?? '');
   }, [detail.data]);
-
-  // Esc closes the dialog.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
 
   const pending = createProvider.isPending || replaceProvider.isPending;
   const mutationError = createProvider.error ?? replaceProvider.error;
@@ -132,10 +127,18 @@ export function ProviderEditDialog({ provider, onClose }: ProviderEditDialogProp
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label={isEdit ? `编辑 Provider ${provider.id}` : '添加 Provider'}
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
         className="flex w-[540px] max-h-[85vh] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
       >
@@ -157,6 +160,7 @@ export function ProviderEditDialog({ provider, onClose }: ProviderEditDialogProp
           <div className="flex items-center gap-2">
             <label className="w-24 shrink-0 text-[11px] text-[var(--gray-500)]">类型</label>
             <select
+              ref={typeRef}
               value={type}
               disabled={pending}
               onChange={(event) => setType(event.target.value as ProviderWireType)}

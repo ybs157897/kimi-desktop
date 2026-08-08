@@ -5,9 +5,10 @@
  * renderer used for before/after and unified diff content.
  */
 
-import { useEffect, type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 
 import { diffLineTone, diffPrefix, type DiffLine } from '#/lib/diffRender';
+import { useModalDialog } from '#/lib/useModalDialog';
 
 export interface FullscreenPreviewProps {
   readonly title: string;
@@ -16,16 +17,16 @@ export interface FullscreenPreviewProps {
 }
 
 export function FullscreenPreview({ title, children, onClose }: FullscreenPreviewProps) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalDialog(dialogRef, onClose);
 
   return (
     <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      tabIndex={-1}
       className="fixed inset-0 z-50 flex flex-col bg-[var(--color-background-surface)]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();

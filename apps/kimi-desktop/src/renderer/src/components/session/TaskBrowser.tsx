@@ -6,12 +6,13 @@
  * already-finished tasks, which is treated as success.
  */
 
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import type { Task, TaskStatus } from '@moonshot-ai/protocol';
 
 import { useCancelTask, useGetTask, useTasks } from '#/lib/queries';
 import { formatDuration } from '#/lib/sessionModes';
+import { useModalDialog } from '#/lib/useModalDialog';
 
 export interface TaskBrowserProps {
   readonly sessionId: string;
@@ -57,21 +58,24 @@ export function TaskBrowser({ sessionId, onClose }: TaskBrowserProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const detail = useGetTask(sessionId, expandedId);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalDialog(dialogRef, onClose);
 
   const items = tasks.data?.items ?? [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label="后台任务"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
         className="flex w-[680px] max-h-[85vh] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
       >

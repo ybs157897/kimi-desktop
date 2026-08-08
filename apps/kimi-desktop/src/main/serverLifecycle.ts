@@ -86,6 +86,7 @@ export class DesktopServerLifecycle {
       host: '127.0.0.1',
       port: 0,
       homeDir: this.options.homeDir,
+      corsOrigins: ['file://'],
       hostIdentity: {
         productName: 'kimi-code-desktop',
         version: this.options.desktopVersion,

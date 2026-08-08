@@ -42,6 +42,7 @@ import {
   type V2SessionsQuery,
 } from './api';
 import { useConnection } from './connection';
+import { projectPendingSessionInteractions } from './sessionInteractions';
 import { applyStatusEventToSession, applyStatusEventToStatus } from './sessionModes';
 import { createActivitySocket, type ActivitySocket } from './ws';
 
@@ -66,6 +67,24 @@ export function useSession(sessionId: string | null) {
     queryFn: () => api.getSession(sessionId as string),
     enabled: sessionId !== null,
     staleTime: 5_000,
+  });
+}
+
+/** Session-scoped pending interactions across main and every child agent. */
+export function usePendingSessionInteractions(sessionId: string | null) {
+  const { api } = useConnection();
+  return useQuery({
+    queryKey: ['pending-interactions', sessionId],
+    queryFn: async () => {
+      const [approvals, questions] = await Promise.all([
+        api.listPendingApprovals(sessionId as string),
+        api.listPendingQuestions(sessionId as string),
+      ]);
+      return projectPendingSessionInteractions(approvals.items, questions.items);
+    },
+    enabled: sessionId !== null,
+    staleTime: 5_000,
+    refetchInterval: 30_000,
   });
 }
 
@@ -214,6 +233,29 @@ export function useFsGitStatus(sessionId: string | null) {
     enabled: sessionId !== null,
     staleTime: 5_000,
     refetchInterval: 15_000,
+  });
+}
+
+export function useFsGitBranches(sessionId: string | null, enabled = true) {
+  const { api } = useConnection();
+  return useQuery({
+    queryKey: ['fs-git-branches', sessionId],
+    queryFn: () => api.fsGitBranches(sessionId as string),
+    enabled: sessionId !== null && enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useFsGitCheckout(sessionId: string) {
+  const { api } = useConnection();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (branch: string) => api.fsGitCheckout(sessionId, branch),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['fs-git-status', sessionId] });
+      void queryClient.invalidateQueries({ queryKey: ['fs-git-branches', sessionId] });
+      void queryClient.invalidateQueries({ queryKey: ['v2-sessions'] });
+    },
   });
 }
 
@@ -513,24 +555,39 @@ export function useAbortPrompt(sessionId: string) {
 
 export function useResolveApproval(sessionId: string) {
   const { api } = useConnection();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (args: { approvalId: string; body: ApprovalResolveRequest }) =>
       api.resolveApproval(sessionId, args.approvalId, args.body),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['pending-interactions', sessionId] });
+      void queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
+    },
   });
 }
 
 export function useResolveQuestion(sessionId: string) {
   const { api } = useConnection();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (args: { questionId: string; body: QuestionResolveRequest }) =>
       api.resolveQuestion(sessionId, args.questionId, args.body),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['pending-interactions', sessionId] });
+      void queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
+    },
   });
 }
 
 export function useDismissQuestion(sessionId: string) {
   const { api } = useConnection();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (questionId: string) => api.dismissQuestion(sessionId, questionId),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['pending-interactions', sessionId] });
+      void queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
+    },
   });
 }
 
@@ -622,8 +679,12 @@ export function useGlobalActivitySocket(activeSessionId: string | null): void {
       url: baseUrl,
       token,
       handlers: {
-        onWorkChanged: () => {
+        onWorkChanged: (sessionId) => {
           void queryClient.invalidateQueries({ queryKey: ['v2-sessions'] });
+          void queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
+          void queryClient.invalidateQueries({
+            queryKey: ['pending-interactions', sessionId],
+          });
         },
         onSessionCreated: () => {
           void queryClient.invalidateQueries({ queryKey: ['v2-sessions'] });
@@ -652,6 +713,8 @@ export function useGlobalActivitySocket(activeSessionId: string | null): void {
         onReconnected: () => {
           // Live facts are missed while the socket was down — full re-seed.
           void queryClient.invalidateQueries({ queryKey: ['v2-sessions'] });
+          void queryClient.invalidateQueries({ queryKey: ['session'] });
+          void queryClient.invalidateQueries({ queryKey: ['pending-interactions'] });
           void queryClient.invalidateQueries({ queryKey: ['config'] });
         },
       },

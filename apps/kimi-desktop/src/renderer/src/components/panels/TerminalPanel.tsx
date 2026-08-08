@@ -31,16 +31,40 @@ interface Tab {
   readonly term: Terminal;
   readonly fit: FitAddon;
   readonly container: HTMLDivElement;
+  readonly dispose: () => void;
+}
+
+interface PendingTerminal {
+  readonly term: Terminal;
+  readonly container: HTMLDivElement;
+  cancelled: boolean;
+}
+
+interface TerminalError {
+  readonly message: string;
+  readonly cwd?: string;
 }
 
 const RESIZE_THROTTLE_MS = 150;
 
+/**
+ * Key the stateful implementation here rather than relying on every parent to
+ * remember to key the panel. A session switch must unmount the old PTY owner
+ * before the new session can retain any of its state or callbacks.
+ */
 export function TerminalPanel({ sessionId }: TerminalPanelProps) {
+  return <TerminalPanelSession key={sessionId} sessionId={sessionId} />;
+}
+
+function TerminalPanelSession({ sessionId }: TerminalPanelProps) {
   const { api } = useConnection();
   const close = useCloseTerminal(sessionId);
   const [creating, setCreating] = useState(false);
+  const [creationError, setCreationError] = useState<TerminalError | null>(null);
   const [tabs, setTabs] = useState<readonly Tab[]>([]);
   const tabsRef = useRef<readonly Tab[]>([]);
+  const pendingRef = useRef<PendingTerminal | null>(null);
+  const mountedRef = useRef(true);
   const [activeId, setActiveId] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
@@ -50,9 +74,9 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
 
   const mountTab = useCallback(
     async (cwd?: string) => {
-      if (creating) return;
+      if (pendingRef.current !== null) return;
       setCreating(true);
-      // Provisionary container + terminal so the tab exists before REST resolves.
+      // Provisionary container + terminal so xterm can determine its initial grid.
       const container = document.createElement('div');
       container.style.height = '100%';
       container.style.width = '100%';
@@ -73,6 +97,9 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
         // fit before paint can throw on a 0-size container — safe to ignore.
       }
 
+      const pending: PendingTerminal = { term, container, cancelled: false };
+      pendingRef.current = pending;
+
       let handle: TerminalHandle;
       try {
         handle = await startTerminalSession({
@@ -81,8 +108,11 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
           cwd,
           initialCols: term.cols,
           initialRows: term.rows,
-          onOutput: (data) => term.write(data),
+          onOutput: (data) => {
+            if (!pending.cancelled) term.write(data);
+          },
           onExit: (exitCode) => {
+            if (pending.cancelled) return;
             term.write(`\r\n\x1b[90m[process exited${exitCode !== null && exitCode !== undefined ? ` code ${exitCode}` : ''}]\x1b[0m\r\n`);
           },
           onReady: () => {
@@ -90,12 +120,30 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
           },
         });
       } catch (error) {
-        term.write(`\x1b[31m无法创建终端：${error instanceof Error ? error.message : String(error)}\x1b[0m\r\n`);
-        term.dispose();
-        container.remove();
-        setCreating(false);
+        if (!pending.cancelled && mountedRef.current) {
+          term.dispose();
+          container.remove();
+          pendingRef.current = null;
+          setCreationError({
+            message: error instanceof Error ? error.message : String(error),
+            cwd,
+          });
+          setCreating(false);
+        }
         return;
       }
+
+      // The REST create may finish after a session switch. Detach the socket
+      // and close the now-unowned PTY against the session that created it.
+      if (pending.cancelled || !mountedRef.current) {
+        handle.stop();
+        void api.closeTerminal(sessionId, handle.terminalId).catch(() => {
+          // best-effort cleanup of a terminal that was never presented
+        });
+        return;
+      }
+
+      pendingRef.current = null;
       // Forward keyboard input; resize is throttled below.
       const inputData = term.onData((data) => handle.sendInput(data));
       const resizeObserver = new ResizeObserver(() => {
@@ -111,14 +159,23 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
       });
       resizeObserver.observe(container);
 
-      const tab: Tab = { terminalId: handle.terminalId, handle, term, fit, container };
-      // Tear-down wiring kept on the handle so closeTab can find everything.
-      (tab as Tab & { dispose?: () => void }).dispose = () => {
-        inputData.dispose();
-        resizeObserver.disconnect();
+      const tab: Tab = {
+        terminalId: handle.terminalId,
+        handle,
+        term,
+        fit,
+        container,
+        dispose: () => {
+          pending.cancelled = true;
+          inputData.dispose();
+          resizeObserver.disconnect();
+        },
       };
-      setTabs((prev) => [...prev, tab]);
+      const nextTabs = [...tabsRef.current, tab];
+      tabsRef.current = nextTabs;
+      setTabs(nextTabs);
       setActiveId(tab.terminalId);
+      setCreationError(null);
       // Append once state settles (effect below moves containers).
       scrollerRef.current?.appendChild(container);
       requestAnimationFrame(() => {
@@ -131,12 +188,8 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
       });
       setCreating(false);
     },
-    [api, sessionId, creating],
+    [api, sessionId],
   );
-
-  useEffect(() => {
-    tabsRef.current = tabs;
-  }, [tabs]);
 
   // Keep only the active tab's container attached; detach the rest.
   useEffect(() => {
@@ -153,17 +206,17 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
 
   const closeTab = useCallback(
     (tab: Tab) => {
-      (tab as Tab & { dispose?: () => void }).dispose?.();
+      if (!tabsRef.current.includes(tab)) return;
+      tab.dispose();
       tab.handle.stop();
       tab.term.dispose();
       tab.container.remove();
-      setTabs((prev) => {
-        const next = prev.filter((entry) => entry.terminalId !== tab.terminalId);
-        if (activeId === tab.terminalId) {
-          setActiveId(next.at(-1)?.terminalId ?? null);
-        }
-        return next;
-      });
+      const nextTabs = tabsRef.current.filter((entry) => entry !== tab);
+      tabsRef.current = nextTabs;
+      setTabs(nextTabs);
+      if (activeId === tab.terminalId) {
+        setActiveId(nextTabs.at(-1)?.terminalId ?? null);
+      }
       void close.mutateAsync(tab.terminalId).catch(() => {
         // best-effort; the socket is already gone
       });
@@ -171,17 +224,30 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
     [close, activeId],
   );
 
-  // Tear down every tab on unmount.
+  // Tear down every tab and an in-flight provisional terminal on unmount.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
+      const pending = pendingRef.current;
+      if (pending !== null) {
+        pending.cancelled = true;
+        pending.term.dispose();
+        pending.container.remove();
+        pendingRef.current = null;
+      }
       for (const tab of tabsRef.current) {
-        (tab as Tab & { dispose?: () => void }).dispose?.();
+        tab.dispose();
         tab.handle.stop();
         tab.term.dispose();
         tab.container.remove();
+        void api.closeTerminal(sessionId, tab.terminalId).catch(() => {
+          // best-effort cleanup when the owning session is left
+        });
       }
+      tabsRef.current = [];
     };
-  }, []);
+  }, [api, sessionId]);
 
   // Refit the active tab when it becomes visible.
   useEffect(() => {
@@ -241,6 +307,26 @@ export function TerminalPanel({ sessionId }: TerminalPanelProps) {
           ＋
         </button>
       </div>
+      {creationError !== null ? (
+        <div
+          role="alert"
+          className="mx-2 mt-2 flex shrink-0 items-start gap-3 rounded-md border border-red-400/25 bg-red-400/10 px-3 py-2 text-[11px] text-red-100"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">无法创建或连接终端</div>
+            <div className="mt-0.5 break-words text-red-100/75">{creationError.message}</div>
+            <div className="mt-1 text-red-100/60">请检查服务器连接，然后重试。</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void mountTab(creationError.cwd)}
+            disabled={creating}
+            className="shrink-0 rounded-md border border-red-100/20 px-2 py-1 font-medium text-red-50 hover:bg-red-100/10 disabled:opacity-40"
+          >
+            {creating ? '正在重试…' : '重试'}
+          </button>
+        </div>
+      ) : null}
       <div ref={scrollerRef} className="min-h-0 flex-1 overflow-hidden px-2 pb-2 pt-1" />
     </div>
   );

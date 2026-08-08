@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import WebSocket from 'ws';
 
 import { startServer as startKapServer, type ServerStartOptions } from '@moonshot-ai/kap-server';
 
@@ -64,6 +65,7 @@ describe('desktop server lifecycle (owns embedded backend or discovers attach pe
       host: '127.0.0.1',
       port: 0,
       homeDir: '/tmp/kimi-desktop-test',
+      corsOrigins: ['file://'],
       hostIdentity: {
         productName: 'kimi-code-desktop',
         version: '1.2.3',
@@ -153,5 +155,40 @@ describe('desktop server lifecycle (owns embedded backend or discovers attach pe
       code: 0,
       data: { backend: 'v2' },
     });
+  });
+
+  it('accepts file-origin WebSocket clients when the embedded backend is running', async () => {
+    realHomeDir = await mkdtemp(join(tmpdir(), 'kimi-desktop-test-'));
+    realLifecycle = new DesktopServerLifecycle(
+      { mode: 'embedded', homeDir: realHomeDir, desktopVersion: '1.2.3' },
+      {
+        startServer: startKapServer,
+        findLiveServer: vi.fn(async () => null),
+        readServerToken: vi.fn(async () => undefined),
+      },
+    );
+
+    const connection = await realLifecycle.getConnection();
+    expect(connection).not.toBeNull();
+    if (connection === null) return;
+
+    await expect(
+      new Promise<void>((resolve, reject) => {
+        const socket = new WebSocket(
+          `ws://${connection.host}:${connection.port}/api/v1/ws`,
+          {
+            headers: {
+              authorization: `Bearer ${connection.token}`,
+              origin: 'file://',
+            },
+          },
+        );
+        socket.once('open', () => {
+          socket.close();
+          resolve();
+        });
+        socket.once('error', reject);
+      }),
+    ).resolves.toBeUndefined();
   });
 });

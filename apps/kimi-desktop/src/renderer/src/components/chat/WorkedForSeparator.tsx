@@ -7,9 +7,7 @@ export interface WorkedForSeparatorProps {
   readonly nextTurn?: TranscriptTurn;
 }
 
-/** Separator between turns (Codex `worked-for`): "Working…" while the turn is
- *  live, "Worked for {duration}" once it settled, "You stopped after
- *  {duration}" when it was cancelled. */
+/** A quiet, localized status separator between adjacent turns. */
 export function WorkedForSeparator({ turn }: WorkedForSeparatorProps) {
   const label = separatorLabel(turn);
   return (
@@ -23,16 +21,16 @@ export function WorkedForSeparator({ turn }: WorkedForSeparatorProps) {
 }
 
 function separatorLabel(turn: TranscriptTurn): string {
-  if (turn.state === 'running' || turn.state === 'queued') return 'Working…';
+  if (turn.state === 'running' || turn.state === 'queued') return '工作中…';
   const duration = turn.durationMs ?? elapsedBetween(turn.startedAt, turn.endedAt);
-  const suffix = duration !== undefined ? ` after ${formatDuration(duration)}` : '';
+  const durationLabel = duration !== undefined ? formatDuration(duration) : undefined;
   switch (turn.state) {
     case 'cancelled':
-      return `You stopped${suffix}`;
+      return durationLabel !== undefined ? `已停止 · ${durationLabel}` : '已停止';
     case 'failed':
-      return `Failed${suffix}`;
+      return durationLabel !== undefined ? `失败 · ${durationLabel}` : '失败';
     default:
-      return duration !== undefined ? `Worked for ${formatDuration(duration)}` : 'Worked';
+      return durationLabel !== undefined ? `耗时 ${durationLabel}` : '已完成';
   }
 }
 

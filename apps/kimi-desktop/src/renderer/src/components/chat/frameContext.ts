@@ -15,6 +15,12 @@ export interface TurnContextValue {
   readonly startedAt?: string;
   readonly endedAt?: string;
   readonly durationMs?: number;
+  /**
+   * Tip frame id while the turn is live. Streaming cursor / live-thinking
+   * affordances must key off this — not `state === 'running'` alone — because
+   * the turn stays running through subsequent tool calls.
+   */
+  readonly liveTailFrameId?: string;
 }
 
 export const TurnContext = createContext<TurnContextValue | null>(null);

@@ -69,8 +69,8 @@ export function PlanReviewCard({ plan, path, options, busy = false, onResolve }:
 
   return (
     <div
-      className={`mb-2 rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface-under)] px-4 py-3 ${
-        busy ? 'animate-pulse' : ''
+      className={`rounded-2xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] px-3 py-2.5 ${
+        busy ? 'opacity-70' : ''
       }`}
       onKeyDown={(event) => {
         if (busy) return;
@@ -88,7 +88,7 @@ export function PlanReviewCard({ plan, path, options, busy = false, onResolve }:
           </span>
         ) : null}
       </div>
-      <div className="max-h-[40vh] overflow-y-auto rounded-lg border border-[var(--color-border-light)] bg-[var(--color-background-surface)] px-3 py-2">
+      <div className="max-h-[24vh] overflow-y-auto rounded-lg border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-2">
         <Markdown source={plan} />
       </div>
 

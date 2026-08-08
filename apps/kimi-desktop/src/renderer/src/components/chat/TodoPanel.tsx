@@ -36,7 +36,7 @@ export function TodoPanel({ todos }: TodoPanelProps) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[46rem] px-5 pb-1">
+    <div className="mx-auto w-full max-w-[var(--layout-thread-max-width)] px-6 pb-1">
       <div className="rounded-xl border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-2">
         <div className="mb-1 flex items-center justify-between">
           <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[var(--gray-500)]">

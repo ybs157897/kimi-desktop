@@ -5,7 +5,7 @@
  * sidebar's bottom nav.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { useConnection } from '#/lib/connection';
 import { normalizePermissionMode } from '#/lib/permissionMode';
@@ -16,6 +16,7 @@ import {
   usePatchConfig,
 } from '#/lib/queries';
 import { resolveThemeChoice, setThemeChoice, type ThemeChoice } from '#/lib/theme';
+import { useModalDialog } from '#/lib/useModalDialog';
 import { PermissionModeSelect } from './composer/PermissionModeSelect';
 import { ModelSelect } from './composer/ModelSelect';
 import { ProviderManager } from './settings/ProviderManager';
@@ -36,6 +37,8 @@ export function Settings({ activeSessionId, onClose }: SettingsProps) {
   const { serverVersion, mode, serverId } = useConnection();
   const [theme, setTheme] = useState<ThemeChoice>(resolveThemeChoice);
   const [providerManagerOpen, setProviderManagerOpen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalDialog(dialogRef, onClose, { active: !providerManagerOpen });
   const configQuery = useConfig();
   const modelsQuery = useModels();
   const patchConfig = usePatchConfig();
@@ -81,8 +84,11 @@ export function Settings({ activeSessionId, onClose }: SettingsProps) {
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label="设置"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
         className="flex w-[520px] max-h-[80vh] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
       >
@@ -136,6 +142,7 @@ export function Settings({ activeSessionId, onClose }: SettingsProps) {
               onChange={(nextModel) => patch({ default_model: nextModel === '' ? undefined : nextModel })}
               disabled={patchPending}
               emptyLabel="未设置"
+              className="composer-menu w-full max-w-none justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-background-panel)] px-2.5"
             />
             <p className="mt-1 text-[10px] leading-4 text-[var(--gray-500)]">
               新会话与未指定模型的请求使用的默认模型（写入服务端配置）。
@@ -150,6 +157,7 @@ export function Settings({ activeSessionId, onClose }: SettingsProps) {
               value={defaultPermission}
               onChange={(nextMode) => patch({ default_permission_mode: nextMode })}
               disabled={patchPending}
+              className="composer-menu w-full max-w-none justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-background-panel)] px-2.5"
             />
             <p className="mt-1 text-[10px] leading-4 text-[var(--gray-500)]">
               新会话的权限模式（写入服务端配置）。
@@ -186,25 +194,29 @@ export function Settings({ activeSessionId, onClose }: SettingsProps) {
           </section>
 
           {patchConfig.isError ? (
-            <p className="mb-5 text-[11px] text-[var(--red-400)]">
+            <p role="alert" className="mb-5 text-[11px] text-[var(--red-400)]">
               {patchConfig.error instanceof Error ? patchConfig.error.message : '配置写入失败'}
+            </p>
+          ) : patchConfig.isSuccess ? (
+            <p role="status" className="mb-5 text-[11px] text-[var(--green-500)]">
+              设置已保存
             </p>
           ) : null}
 
           {/* Providers */}
           <section className="mb-5">
             <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--gray-500)]">
-              Provider
+              模型服务商
             </h2>
             <button
               type="button"
               onClick={() => setProviderManagerOpen(true)}
               className="rounded-md border border-[var(--color-border-heavy)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)]"
             >
-              管理 Provider…
+              管理模型服务商…
             </button>
             <p className="mt-1 text-[10px] leading-4 text-[var(--gray-500)]">
-              添加 / 编辑 / 删除模型服务商，配置 API Key 与默认模型。
+              添加、编辑或删除模型服务商，配置 API Key 与默认模型。
             </p>
           </section>
 

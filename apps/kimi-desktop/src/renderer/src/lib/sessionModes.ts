@@ -20,6 +20,17 @@ export function agentConfigPatch(agentConfig: SessionAgentConfigPartial): Update
   return { agent_config: agentConfig };
 }
 
+/** A newly armed goal uses the next user message as its objective. */
+export function goalObjectiveForSubmission(
+  goalModeArmed: boolean,
+  goalAlreadyActive: boolean,
+  message: string,
+): string | undefined {
+  if (!goalModeArmed || goalAlreadyActive) return undefined;
+  const objective = message.trim();
+  return objective === '' ? undefined : objective;
+}
+
 /**
  * Merge an `agent.status.updated` event into a cached `Session` record so the
  * mode bar tracks engine-side changes (the model entering plan/swarm on its

@@ -324,7 +324,7 @@ The data layer copies the pattern kimi-inspect has already validated — two soc
 2. **Transcript socket**: serves the current session via `subscribe_v2`, defaulting to the `block` grade (switch to `delta` for a typewriter effect), with `transcript_since` and `/transcript/ops` for gap repair.
 3. **REST baseline**: the session list uses `GET /api/v2/sessions`; opening a session starts from `GET .../snapshot` (or the newest transcript page), and scrolling up pages with `before_turn`.
 
-The rendering pipeline: `transcript.ops` → the L2 reducer (reused from `@moonshot-ai/transcript`) → store → the view registry dispatches by key to React components → body frames go through the marked pipeline. Interactions (approvals / questions) render as cards driven by the transcript's `interactions`, answered over REST; after a reconnect, `GET .../approvals?status=pending` is the backstop.
+The rendering pipeline: `transcript.ops` → the L2 reducer (reused from `@moonshot-ai/transcript`) → store → the view registry dispatches by key to React components → body frames go through the marked pipeline. Session-scoped interactions (approvals / questions) render in the composer from the pending REST lists, which aggregate requests from the main agent and subagents; `agent_id` identifies the source, and answers go through REST. Per-agent transcript `interactions` remain useful for inline context and as an initial compatibility fallback, but they are not the canonical session-pending source. The activity socket invalidates the lists on `event.session.work_changed`, with reconnect and periodic refresh as backstops.
 
 ### UI mapping
 
@@ -338,7 +338,7 @@ Codex timeline items mapped to kimi-code protocol objects (desktop components ar
 | `exec` | `tool` frame (`Bash`, …) / `task` (`kind: 'shell'`) | Command card + status footer |
 | `patch` / `turn-diff` | `tool` frame (`Edit` / `Write`, …) + `fs:diff` | Per-file diff blocks, turn-level aggregation |
 | `web-search` | `tool` frame (`WebSearch`) | Single-line summary + animated dots |
-| `permission-request` | `interactions` (`approval`) + `ApprovalRequest` | Approval card (Allow once / Always / Deny) |
+| `permission-request` | Session pending interactions + `ApprovalRequest` | Approval card (Allow once / Always / Deny), including subagent requests |
 | `todo-list` | Global state `todos` | Task checklist |
 | `proposed-plan` | Plan interaction (`display.kind: 'plan_review'`) + `GET .../transcript/plan` | Plan card (Accept / Revise) |
 | `mcp-tool-call` | `tool` frame (MCP tools) | With MCP server identity |
@@ -361,7 +361,7 @@ Deliver in verifiable milestones; each ends in a usable state:
 1. **M0 Scaffold and connection**: Electron project (electron-vite), embedded `startServer`, token management, `GET /api/v1/meta` validation, activity socket up. Acceptance: the window opens and the sidebar shows the backend version.
 2. **M1 Session list**: `GET /api/v2/sessions` paginated list, activity badges, create / archive / search (`POST /api/v1/search`), workspace picker (`fs::browse`). Acceptance: full session management.
 3. **M2 Chat rendering**: transcript REST pagination + `subscribe_v2` (block) + L2 reducer + view registry; the marked body pipeline (GFM + breaks + fault-tolerant directives + Shiki + KaTeX + file citation chips); tool / thinking / notice components. Acceptance: correct history and streaming rendering, seamless reconnect recovery.
-4. **M3 Composer and interactions**: Slate input, `@` / `$` / `/` mentions, attachment upload (`POST /files`), send / queue / steer / stop; approval cards, question cards, plan review; permission mode and effort dropdowns (written back via `POST .../prompts` and the profile). Acceptance: complete a full task that includes an approval.
+4. **M3 Composer and interactions**: Slate input, `@` / `$` / `/` mentions, attachment upload (`POST /files`), send / queue / steer / stop; approval cards, question cards, plan review; permission mode and effort dropdowns (written back via `POST .../prompts` and the profile). Acceptance: complete a full task in which either the main agent or a subagent requests approval, then verify that the task resumes after the response.
 5. **M4 Panel system**: right-side diff (`fs:diff` / `fs:git_status`), file tree (`fs:list` / `fs:read`), bottom terminal (terminals REST plus its own PTY channel), `open-in` external opening. Acceptance: Codex's panel experience.
 6. **M5 Polish**: full design-token rollout (light and dark themes), shortcuts, multi-window (shared backend via attach mode), export (`POST .../export` with `desktop: true` to bundle desktop logs).
 

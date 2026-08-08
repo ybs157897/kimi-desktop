@@ -6,11 +6,19 @@ import type {
   TranscriptTask,
   TranscriptTurn,
 } from '@moonshot-ai/transcript';
-import type { ApprovalDecision, QuestionResponse } from '@moonshot-ai/protocol';
+import type { QuestionResponse } from '@moonshot-ai/protocol';
 import type { ReactNode } from 'react';
 
-import { ApprovalCard, type ApprovalResolveHandler, type ApprovalResolveOptions } from './interactions/ApprovalCard';
+import type { SourcedPendingInteraction } from '#/lib/sessionInteractions';
+import {
+  liveTailFrameId,
+  pendingInteractionForToolFrame,
+  taskForToolFrame,
+} from '#/lib/timelinePresentation';
+
+import { ApprovalCard, type ApprovalResolveHandler } from './interactions/ApprovalCard';
 import { QuestionCard } from './interactions/QuestionCard';
+import { AttachmentThumbnails } from './attachments/AttachmentThumbnails';
 import { TurnContext } from './frameContext';
 import { NoticeFrame } from './frames/NoticeFrame';
 import { TextFrame } from './frames/TextFrame';
@@ -22,6 +30,7 @@ export interface TurnBlockProps {
   readonly tasks?: ReadonlyMap<string, TranscriptTask>;
   readonly interactions?: ReadonlyMap<string, TranscriptInteraction>;
   readonly attachments?: ReadonlyMap<string, TranscriptAttachment>;
+  readonly pendingSessionInteractions?: readonly SourcedPendingInteraction[];
   readonly onResolveApproval?: ApprovalResolveHandler;
   readonly onAnswerQuestion?: (
     interaction: TranscriptInteraction,
@@ -39,15 +48,16 @@ export function TurnBlock({
   tasks,
   interactions,
   attachments,
+  pendingSessionInteractions = [],
   onResolveApproval,
   onAnswerQuestion,
   onDismissQuestion,
 }: TurnBlockProps) {
   return (
-    <div className="mb-4">
+    <section className="mb-4 last:mb-1">
       {turn.prompt !== undefined && turn.prompt !== '' ? <TurnPrompt turn={turn} /> : null}
       {turn.attachmentIds !== undefined && turn.attachmentIds.length > 0 ? (
-        <AttachmentChips ids={turn.attachmentIds} attachments={attachments} />
+        <AttachmentThumbnails ids={turn.attachmentIds} attachments={attachments} />
       ) : null}
       <TurnContext.Provider
         value={{
@@ -55,6 +65,7 @@ export function TurnBlock({
           startedAt: turn.startedAt,
           endedAt: turn.endedAt,
           durationMs: turn.durationMs,
+          liveTailFrameId: liveTailFrameId(turn),
         }}
       >
         {turn.steps.map((step) => (
@@ -64,6 +75,7 @@ export function TurnBlock({
             tasks={tasks}
             interactions={interactions}
             attachments={attachments}
+            pendingSessionInteractions={pendingSessionInteractions}
             onResolveApproval={onResolveApproval}
             onAnswerQuestion={onAnswerQuestion}
             onDismissQuestion={onDismissQuestion}
@@ -71,23 +83,20 @@ export function TurnBlock({
         ))}
       </TurnContext.Provider>
       {turn.state === 'failed' && turn.error !== undefined ? (
-        <div className="mb-2 rounded-lg border border-[color-mix(in_srgb,var(--red-500)_45%,transparent)] bg-[color-mix(in_srgb,var(--red-500)_12%,transparent)] px-3 py-2 text-[12px] text-[var(--red-400)]">
+        <div className="ui-card-enter mb-2 rounded-lg border border-[color-mix(in_srgb,var(--red-500)_45%,transparent)] bg-[color-mix(in_srgb,var(--red-500)_12%,transparent)] px-3 py-2 text-[12px] text-[var(--red-400)]">
           {turn.error}
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }
 
 function TurnPrompt({ turn }: { turn: TranscriptTurn }) {
   if (turn.origin.kind === 'user') {
     return (
-      <div className="mb-2 flex justify-end">
-        <div className="max-w-[80%] rounded-lg border border-[var(--color-border-light)] bg-[var(--color-background-editor-opaque)] px-3 py-2">
-          <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-foreground)] opacity-50">
-            You
-          </div>
-          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--color-text-foreground)]">
+      <div className="ui-card-enter mb-3 flex justify-end">
+        <div className="max-w-[min(80%,36rem)] rounded-2xl bg-[var(--color-user-bubble)] px-3.5 py-2.5 shadow-[var(--shadow-sm)]">
+          <div className="whitespace-pre-wrap text-[14px] leading-[var(--leading-chat)] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)]">
             {turn.prompt}
           </div>
         </div>
@@ -95,38 +104,11 @@ function TurnPrompt({ turn }: { turn: TranscriptTurn }) {
     );
   }
   return (
-    <div className="mb-2 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-2">
-      <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-foreground)] opacity-50">
-        {turn.origin.kind}
-      </div>
-      <div className="whitespace-pre-wrap text-[12px] leading-relaxed text-[var(--color-text-foreground)] opacity-80">
+    <div className="ui-card-enter mb-3 max-w-[46rem] rounded-2xl border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3.5 py-2.5">
+      <div className="ui-label mb-1">{turn.origin.kind}</div>
+      <div className="whitespace-pre-wrap text-[12.5px] leading-[var(--leading-chat)] text-[var(--color-text-secondary)]">
         {turn.prompt}
       </div>
-    </div>
-  );
-}
-
-function AttachmentChips({
-  ids,
-  attachments,
-}: {
-  ids: readonly string[];
-  attachments?: ReadonlyMap<string, TranscriptAttachment>;
-}) {
-  return (
-    <div className="mb-2 flex flex-wrap gap-1">
-      {ids.map((id) => {
-        const attachment = attachments?.get(id);
-        return (
-          <span
-            key={id}
-            className="rounded border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-foreground)] opacity-70"
-            title={attachment?.mediaType}
-          >
-            📎 {attachment?.name ?? attachment?.mediaType ?? id}
-          </span>
-        );
-      })}
     </div>
   );
 }
@@ -136,6 +118,7 @@ function StepView({
   tasks,
   interactions,
   attachments,
+  pendingSessionInteractions,
   onResolveApproval,
   onAnswerQuestion,
   onDismissQuestion,
@@ -144,6 +127,7 @@ function StepView({
   tasks?: ReadonlyMap<string, TranscriptTask>;
   interactions?: ReadonlyMap<string, TranscriptInteraction>;
   attachments?: ReadonlyMap<string, TranscriptAttachment>;
+  pendingSessionInteractions: readonly SourcedPendingInteraction[];
   onResolveApproval?: TurnBlockProps['onResolveApproval'];
   onAnswerQuestion?: TurnBlockProps['onAnswerQuestion'];
   onDismissQuestion?: TurnBlockProps['onDismissQuestion'];
@@ -154,9 +138,11 @@ function StepView({
         <FrameView
           key={frame.frameId}
           frame={frame}
+          stepDurationMs={elapsedBetween(step.startedAt, step.endedAt)}
           tasks={tasks}
           interactions={interactions}
           attachments={attachments}
+          pendingSessionInteractions={pendingSessionInteractions}
           onResolveApproval={onResolveApproval}
           onAnswerQuestion={onAnswerQuestion}
           onDismissQuestion={onDismissQuestion}
@@ -173,17 +159,21 @@ function StepView({
 
 function FrameView({
   frame,
+  stepDurationMs,
   tasks,
   interactions,
   attachments,
+  pendingSessionInteractions,
   onResolveApproval,
   onAnswerQuestion,
   onDismissQuestion,
 }: {
   frame: TranscriptFrame;
+  stepDurationMs?: number;
   tasks?: ReadonlyMap<string, TranscriptTask>;
   interactions?: ReadonlyMap<string, TranscriptInteraction>;
   attachments?: ReadonlyMap<string, TranscriptAttachment>;
+  pendingSessionInteractions: readonly SourcedPendingInteraction[];
   onResolveApproval?: TurnBlockProps['onResolveApproval'];
   onAnswerQuestion?: TurnBlockProps['onAnswerQuestion'];
   onDismissQuestion?: TurnBlockProps['onDismissQuestion'];
@@ -192,9 +182,12 @@ function FrameView({
     case 'text':
       return <TextFrame frame={frame} attachments={attachments} />;
     case 'thinking':
-      return <ThinkingFrame frame={frame} />;
+      return <ThinkingFrame frame={frame} durationMs={stepDurationMs} />;
     case 'tool': {
-      const interaction = findInteraction(frame.toolCallId, frame.approvalId, interactions);
+      const interaction =
+        findInteraction(frame.toolCallId, frame.approvalId, interactions) ??
+        pendingInteractionForToolFrame(frame, pendingSessionInteractions)?.interaction;
+      const task = taskForToolFrame(frame, tasks);
       const pending =
         interaction !== undefined && interaction.state === 'pending'
           ? renderInteraction(interaction, {
@@ -205,7 +198,7 @@ function FrameView({
           : null;
       return (
         <>
-          <ToolFrame frame={frame} task={tasks?.get(frame.taskId ?? '')} interaction={interaction} />
+          <ToolFrame frame={frame} task={task} interaction={interaction} />
           {pending}
         </>
       );
@@ -213,6 +206,14 @@ function FrameView({
     case 'notice':
       return <NoticeFrame frame={frame} />;
   }
+}
+
+function elapsedBetween(startedAt?: string, endedAt?: string): number | undefined {
+  if (startedAt === undefined || endedAt === undefined) return undefined;
+  const start = Date.parse(startedAt);
+  const end = Date.parse(endedAt);
+  if (Number.isNaN(start) || Number.isNaN(end)) return undefined;
+  return Math.max(0, end - start);
 }
 
 /** An interaction anchors to a tool frame by `toolCallId` (or its own

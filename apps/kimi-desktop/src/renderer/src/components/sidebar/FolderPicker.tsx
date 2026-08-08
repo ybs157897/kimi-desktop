@@ -8,9 +8,10 @@
  * subdirectories, and resolves with the highlighted directory on "Choose".
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { useFsBrowse } from '#/lib/queries';
+import { useModalDialog } from '#/lib/useModalDialog';
 
 export interface FolderPickerProps {
   /** Resolve with the chosen absolute directory; the owner creates the session. */
@@ -27,32 +28,45 @@ function basename(path: string): string {
 export function FolderPicker({ onPick, onClose }: FolderPickerProps) {
   // `undefined` resolves the server host home; navigation replaces it.
   const [path, setPath] = useState<string | undefined>(undefined);
+  const [pathInput, setPathInput] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
   const browse = useFsBrowse(path);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  // Focus the list once mounted so keyboard nav works immediately.
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  // Esc closes the picker (the backdrop handles outside clicks separately).
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  const listboxId = useId();
+  useModalDialog(dialogRef, onClose);
 
   const current = browse.data;
   const parent: string | undefined = current?.parent ?? undefined;
   const listing = current?.entries ?? [];
 
+  useEffect(() => {
+    if (current?.path !== undefined) setPathInput(current.path);
+  }, [current?.path]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [current?.path]);
+
+  useEffect(() => {
+    const item = listRef.current?.children[activeIndex] as HTMLElement | undefined;
+    item?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex]);
+
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label="选择工作区目录"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
         className="flex max-h-[70vh] w-[560px] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
       >
@@ -82,14 +96,43 @@ export function FolderPicker({ onPick, onClose }: FolderPickerProps) {
           ) : listing.length === 0 ? (
             <div className="px-4 py-3 text-[12px] text-[var(--gray-500)]">没有子目录</div>
           ) : (
-            <ul>
-              {listing.map((entry) => (
-                <li key={entry.path}>
+            <ul
+              ref={listRef}
+              id={listboxId}
+              role="listbox"
+              tabIndex={0}
+              aria-label="子目录"
+              aria-activedescendant={`${listboxId}-option-${activeIndex}`}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  const direction = event.key === 'ArrowDown' ? 1 : -1;
+                  setActiveIndex((index) => (index + direction + listing.length) % listing.length);
+                } else if (event.key === 'Enter') {
+                  event.preventDefault();
+                  const selected = listing[activeIndex];
+                  if (selected !== undefined) {
+                    if (event.metaKey || event.ctrlKey) onPick(selected.path);
+                    else setPath(selected.path);
+                  }
+                }
+              }}
+              className="outline-none"
+            >
+              {listing.map((entry, index) => (
+                <li
+                  id={`${listboxId}-option-${index}`}
+                  role="option"
+                  aria-selected={index === activeIndex}
+                  key={entry.path}
+                >
                   <button
                     type="button"
+                    tabIndex={-1}
+                    onMouseEnter={() => setActiveIndex(index)}
                     onClick={() => setPath(entry.path)}
                     onDoubleClick={() => onPick(entry.path)}
-                    className="flex w-full items-center gap-2 px-4 py-1.5 text-left hover:bg-[var(--color-list-hover)]"
+                    className={`flex w-full items-center gap-2 px-4 py-1.5 text-left hover:bg-[var(--color-list-hover)] ${index === activeIndex ? 'bg-[var(--color-list-hover)]' : ''}`}
                   >
                     <span aria-hidden className="shrink-0 text-[var(--gray-500)]">
                       📁
@@ -108,11 +151,26 @@ export function FolderPicker({ onPick, onClose }: FolderPickerProps) {
           <input
             ref={inputRef}
             type="text"
-            value={path ?? ''}
+            value={pathInput}
             placeholder={current?.path ?? ''}
-            onChange={(event) => setPath(event.target.value === '' ? undefined : event.target.value)}
+            aria-label="目录路径"
+            onChange={(event) => setPathInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                setPath(pathInput === '' ? undefined : pathInput);
+              }
+            }}
             className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-2 py-1 font-mono text-[11px] text-[var(--color-text-foreground)] outline-none focus:border-[var(--color-border-heavy)]"
           />
+          <button
+            type="button"
+            disabled={pathInput === '' || pathInput === current?.path}
+            onClick={() => setPath(pathInput)}
+            className="rounded-md px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-40"
+          >
+            前往
+          </button>
           <button
             type="button"
             onClick={onClose}

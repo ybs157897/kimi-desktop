@@ -1,32 +1,25 @@
-import {
-  itemId,
-  type AgentState,
-  type TranscriptInteraction,
-  type TranscriptItem,
-} from '@moonshot-ai/transcript';
-import type { ApprovalDecision, QuestionResponse } from '@moonshot-ai/protocol';
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { itemId, type AgentState, type TranscriptItem } from '@moonshot-ai/transcript';
+import { ArrowDown } from '@phosphor-icons/react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
+import { visibleTimelineItems } from '#/lib/timelinePresentation';
+import type { SourcedPendingInteraction } from '#/lib/sessionInteractions';
+import { ChatSkeleton } from './ChatSkeleton';
 import { TurnBlock } from './TurnBlock';
 import { WorkedForSeparator } from './WorkedForSeparator';
-import { ApprovalCard, type ApprovalResolveHandler, type ApprovalResolveOptions } from './interactions/ApprovalCard';
-import { QuestionCard } from './interactions/QuestionCard';
 
 export interface TimelineProps {
   /** The store state driving the timeline (items + global entities). */
   readonly state: AgentState;
   readonly loading?: boolean;
   readonly error?: unknown;
+  readonly onRetry?: (() => void);
   /** Page older turns (before_turn); wired to an IntersectionObserver sentinel
    *  by the host view. */
   readonly onLoadOlder?: (() => void);
   readonly loadingOlder?: boolean;
-  readonly onResolveApproval?: ApprovalResolveHandler;
-  readonly onAnswerQuestion?: (
-    interaction: TranscriptInteraction,
-    response: QuestionResponse,
-  ) => void | Promise<void>;
-  readonly onDismissQuestion?: (interaction: TranscriptInteraction) => void | Promise<void>;
+  /** Session-level pending interactions, including requests owned by subagents. */
+  readonly pendingSessionInteractions?: readonly SourcedPendingInteraction[];
 }
 
 /** Distance from the bottom below which the viewport counts as "pinned". */
@@ -46,11 +39,10 @@ export function Timeline({
   state,
   loading = false,
   error = null,
+  onRetry,
   onLoadOlder,
   loadingOlder = false,
-  onResolveApproval,
-  onAnswerQuestion,
-  onDismissQuestion,
+  pendingSessionInteractions = [],
 }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -58,12 +50,25 @@ export function Timeline({
   const stickBottomRef = useRef(true);
   /** Scroll offset from the bottom captured before a prepend (restore anchor). */
   const anchorRef = useRef<number | null>(null);
-  const items = state.items;
+  /** Mirrors `stickBottomRef` for rendering (the floating jump button). */
+  const [atBottom, setAtBottom] = useState(true);
+  const items = visibleTimelineItems(state.items);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (el === null) return;
-    stickBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_BOTTOM_THRESHOLD;
+    const pinned = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_BOTTOM_THRESHOLD;
+    stickBottomRef.current = pinned;
+    setAtBottom(pinned);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' });
+    stickBottomRef.current = true;
+    setAtBottom(true);
   }, []);
 
   const loadOlder = useCallback(() => {
@@ -108,19 +113,18 @@ export function Timeline({
   }, [state.hasMoreOlder, error, loadingOlder, onLoadOlder, loadOlder]);
 
   if (loading && items.length === 0) {
-    return <LoadingState />;
+    return <ChatSkeleton />;
   }
   if (error !== null && items.length === 0) {
-    return <ErrorState error={error} />;
+    return <ErrorState onRetry={onRetry} />;
   }
-  const unanchored = unanchoredInteractions(state);
   return (
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="min-h-0 flex-1 overflow-y-auto bg-[var(--color-background-surface)]"
+      className="relative min-h-0 flex-1 overflow-y-auto bg-[var(--color-background-surface)]"
     >
-      <div className="selectable mx-auto w-full max-w-[46rem] px-6 py-6">
+      <div className="selectable mx-auto w-full max-w-[var(--layout-thread-max-width)] px-6 pb-8 pt-5">
         {error !== null ? (
           <div className="mb-3 flex items-center gap-2 rounded-lg border border-[color-mix(in_srgb,var(--red-500)_45%,transparent)] bg-[color-mix(in_srgb,var(--red-500)_12%,transparent)] px-3 py-2 text-[11px] text-[var(--red-400)]">
             <span className="min-w-0 flex-1">加载更早的对话失败。</span>
@@ -142,54 +146,40 @@ export function Timeline({
             </span>
           </div>
         ) : null}
-        {items.length === 0 ? (
-          <EmptyState />
-        ) : (
-          items.map((item, index) => {
-            const previous = index > 0 ? items[index - 1] : undefined;
-            return (
-              <div key={itemId(item)}>
-                {previous?.kind === 'turn' && item.kind === 'turn' ? (
-                  <WorkedForSeparator turn={previous} nextTurn={item} />
-                ) : null}
-                <ItemView
-                  item={item}
-                  state={state}
-                  onResolveApproval={onResolveApproval}
-                  onAnswerQuestion={onAnswerQuestion}
-                  onDismissQuestion={onDismissQuestion}
-                />
-              </div>
-            );
-          })
-        )}
-        {unanchored.map((interaction) => (
-          <div key={interaction.interactionId} className="mt-2">
-            <FloatingInteraction
-              interaction={interaction}
-              onResolveApproval={onResolveApproval}
-              onAnswerQuestion={onAnswerQuestion}
-              onDismissQuestion={onDismissQuestion}
-            />
-          </div>
-        ))}
+        {items.map((item, index) => {
+          const previous = index > 0 ? items[index - 1] : undefined;
+          return (
+            <div key={itemId(item)}>
+              {previous?.kind === 'turn' && item.kind === 'turn' ? (
+                <WorkedForSeparator turn={previous} nextTurn={item} />
+              ) : null}
+              <ItemView
+                item={item}
+                state={state}
+                pendingSessionInteractions={pendingSessionInteractions}
+              />
+            </div>
+          );
+        })}
       </div>
+      {/* Floating "jump to latest": appears when the viewport drifts off the
+          bottom (so streaming follow is suspended); smooth-scrolls back. */}
+      {!atBottom && items.length > 0 ? (
+        <button
+          type="button"
+          onClick={scrollToBottom}
+          aria-label="跳到最新"
+          title="跳到最新"
+          className="ui-pressable absolute bottom-5 right-6 z-10 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-[var(--color-border-heavy)] bg-[var(--color-background-editor-opaque)] text-[var(--color-text-secondary)] shadow-[var(--shadow-lg)] hover:text-[var(--color-text-foreground)]"
+        >
+          <ArrowDown size={15} weight="bold" aria-hidden />
+        </button>
+      ) : null}
     </div>
   );
 }
 
-function LoadingState() {
-  return (
-    <div className="flex min-h-0 flex-1 items-center justify-center bg-[var(--color-background-surface)]">
-      <div className="flex items-center gap-2 text-[12px] text-[var(--color-text-foreground)] opacity-50">
-        <span className="h-3 w-3 animate-spin rounded-full border border-[var(--color-border-heavy)] border-t-transparent" />
-        正在加载对话…
-      </div>
-    </div>
-  );
-}
-
-function ErrorState({ error }: { error: unknown }) {
+function ErrorState({ onRetry }: { readonly onRetry?: (() => void) }) {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center bg-[var(--color-background-surface)]">
       <div className="max-w-[32rem] px-4 text-center">
@@ -197,34 +187,24 @@ function ErrorState({ error }: { error: unknown }) {
         <div className="mt-1.5 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
           请检查连接后重试。
         </div>
+        {onRetry !== undefined ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="ui-pressable mt-3 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)]"
+          >
+            重试
+          </button>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function EmptyState() {
-  return (
-    <div className="flex min-h-[36vh] flex-col items-center justify-center px-2 text-center">
-      <div className="text-[16px] font-semibold tracking-[-0.015em] text-[var(--color-text-foreground)]">开始新的对话</div>
-      <div className="mt-2 text-[12px] text-[var(--color-text-secondary)]">
-        描述你想完成的任务，或添加文件作为上下文。
-      </div>
-    </div>
-  );
-}
-
-function ItemView({
-  item,
-  state,
-  onResolveApproval,
-  onAnswerQuestion,
-  onDismissQuestion,
-}: {
+function ItemView({ item, state, pendingSessionInteractions }: {
   item: TranscriptItem;
   state: AgentState;
-  onResolveApproval?: TimelineProps['onResolveApproval'];
-  onAnswerQuestion?: TimelineProps['onAnswerQuestion'];
-  onDismissQuestion?: TimelineProps['onDismissQuestion'];
+  pendingSessionInteractions: readonly SourcedPendingInteraction[];
 }) {
   switch (item.kind) {
     case 'turn':
@@ -234,17 +214,15 @@ function ItemView({
           tasks={state.tasks}
           interactions={state.interactions}
           attachments={state.attachments}
-          onResolveApproval={onResolveApproval}
-          onAnswerQuestion={onAnswerQuestion}
-          onDismissQuestion={onDismissQuestion}
+          pendingSessionInteractions={pendingSessionInteractions}
         />
       );
     case 'marker':
       return (
-        <div className="my-2 flex items-center gap-2 text-[10px] text-[var(--color-text-foreground)] opacity-45">
-          <div className="h-px flex-1 bg-[var(--color-border-light)]" />
-          <span className="font-mono">{item.marker}</span>
-          <div className="h-px flex-1 bg-[var(--color-border-light)]" />
+        <div className="my-4 flex justify-center">
+          <span className="rounded-full bg-[var(--color-background-surface-under)] px-2 py-0.5 text-[9.5px] font-medium text-[var(--color-text-tertiary)]">
+            {markerLabel(item.marker)}
+          </span>
         </div>
       );
     case 'taskref': {
@@ -269,52 +247,9 @@ function ItemView({
   }
 }
 
-/** Interactions whose anchor frame is outside the loaded window (or that have
- *  no anchor at all) render floating at the end of the timeline. */
-function unanchoredInteractions(state: AgentState): TranscriptInteraction[] {
-  const anchored = new Set<string>();
-  for (const item of state.items) {
-    if (item.kind !== 'turn') continue;
-    for (const step of item.steps) {
-      for (const frame of step.frames) {
-        if (frame.kind === 'tool') anchored.add(frame.toolCallId);
-      }
-    }
-  }
-  return [...state.interactions.values()].filter(
-    (interaction) =>
-      interaction.state === 'pending' &&
-      (interaction.toolCallId === undefined || !anchored.has(interaction.toolCallId)),
-  );
-}
-
-function FloatingInteraction({
-  interaction,
-  onResolveApproval,
-  onAnswerQuestion,
-  onDismissQuestion,
-}: {
-  interaction: TranscriptInteraction;
-  onResolveApproval?: TimelineProps['onResolveApproval'];
-  onAnswerQuestion?: TimelineProps['onAnswerQuestion'];
-  onDismissQuestion?: TimelineProps['onDismissQuestion'];
-}) {
-  if (interaction.interactionKind === 'approval' && onResolveApproval !== undefined) {
-    return (
-      <ApprovalCard
-        interaction={interaction}
-        onResolve={(decision, options) => onResolveApproval(interaction, decision, options)}
-      />
-    );
-  }
-  if (interaction.interactionKind === 'question' && onAnswerQuestion !== undefined) {
-    return (
-      <QuestionCard
-        interaction={interaction}
-        onAnswer={(response) => onAnswerQuestion(interaction, response)}
-        onDismiss={() => onDismissQuestion?.(interaction)}
-      />
-    );
-  }
-  return null;
+function markerLabel(marker: string): string {
+  if (marker === 'undo') return '已撤销到这里';
+  if (marker === 'compact') return '上下文已压缩';
+  if (marker === 'swarm.enter') return '蜂群已启动';
+  return marker;
 }

@@ -1,19 +1,16 @@
 /*
- * Markdown body typography — Codex-aligned values from the desktop-app design
- * doc («正文 Markdown 协议» / «设计 token»): 13px body text with
- * line-height calc(font-size + 8px), inline code (mono, 6px radius,
- * 1px 6px padding, .92em), code blocks (10px radius, 8px padding,
- * 20px line-height, horizontal scroll, token code-block background), lists
- * with padding-inline-start 1.3125rem, .625rem paragraph spacing and
- * overflow-wrap: anywhere. All colors reference semantic design tokens.
+ * Markdown body typography — tuned for chat readability: optical tracking,
+ * clear heading steps, recessed code materials, and a steadier vertical
+ * rhythm than the previous flat Codex defaults.
  *
  * Imported by Markdown.tsx (not app.css).
  */
 
 .markdown {
   color: var(--color-token-text-primary, var(--color-text-foreground));
-  font-size: var(--codex-chat-font-size, 13px);
-  line-height: calc(var(--codex-chat-font-size, 13px) + 8px);
+  font-size: var(--codex-chat-font-size, 14px);
+  letter-spacing: var(--tracking-tight, 0);
+  line-height: var(--leading-chat, 1.5);
   overflow-wrap: anywhere;
 }
 
@@ -28,15 +25,19 @@
 .markdown details,
 .markdown .markdown-alert,
 .markdown .markdown-math-block,
+.markdown .markdown-code-shell,
 .markdown .markdown-shiki {
-  margin-block: 0 var(--markdown-paragraph-spacing, 0.625rem);
+  margin-block: 0 var(--markdown-paragraph-spacing, 0.75rem);
 }
 .markdown > :last-child {
   margin-bottom: 0;
 }
 .markdown ul,
 .markdown ol {
-  padding-inline-start: var(--markdown-list-padding-inline-start, 1.3125rem);
+  padding-inline-start: var(--markdown-list-padding-inline-start, 1.35rem);
+}
+.markdown li + li {
+  margin-top: 0.2rem;
 }
 .markdown li > p {
   margin-block: 0;
@@ -53,26 +54,33 @@
 .markdown h5,
 .markdown h6 {
   font-weight: 600;
-  line-height: 1.3;
-  margin-block: 1rem 0.5rem;
+  letter-spacing: var(--tracking-display, -0.01em);
+  line-height: 1.28;
+  margin-block: 1.15rem 0.45rem;
+  color: var(--color-text-foreground);
+}
+.markdown > :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
 }
 .markdown h1 {
-  font-size: 1.4em;
+  font-size: 1.35em;
 }
 .markdown h2 {
-  font-size: 1.25em;
+  font-size: 1.2em;
 }
 .markdown h3 {
-  font-size: 1.125em;
+  font-size: 1.08em;
+  letter-spacing: var(--tracking-tight, 0);
 }
 .markdown h4 {
   font-size: 1em;
+  letter-spacing: var(--tracking-tight, 0);
 }
-.markdown h5 {
-  font-size: 0.9em;
-}
+.markdown h5,
 .markdown h6 {
-  font-size: 0.85em;
+  font-size: 0.92em;
+  letter-spacing: var(--tracking-tight, 0);
+  color: var(--color-text-secondary);
 }
 
 /* ------------------------------------------------------------------ inline */
@@ -82,30 +90,110 @@
   font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, monospace);
 }
 .markdown :not(pre) > code {
-  background-color: var(--color-background-editor-opaque, var(--color-background-surface-under));
-  border-radius: var(--markdown-inline-code-border-radius, 6px);
+  background-color: var(--color-background-button-secondary);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--markdown-inline-code-border-radius, 5px);
   padding: var(--markdown-inline-code-padding, 1px 6px);
-  font-size: var(--markdown-inline-code-font-size, 0.92em);
+  font-size: var(--markdown-inline-code-font-size, 0.9em);
+  letter-spacing: 0;
 }
 
 /* ----------------------------------------------------------- code blocks */
-.markdown pre,
-.markdown .markdown-shiki pre {
-  background-color: var(--color-token-text-code-block-background);
+.markdown-code-shell {
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: var(--markdown-code-block-border-radius, 10px);
-  padding: var(--markdown-code-block-padding, 8px);
-  line-height: var(--markdown-code-block-line-height, 20px);
+  border-radius: var(--markdown-code-block-border-radius, 12px);
+  background-color: var(--color-token-text-code-block-background);
+  box-shadow: var(--shadow-sm);
+}
+.markdown-code-lang {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--color-border-light);
+  padding: 0.4rem 0.75rem;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label, 0.08em);
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: color-mix(in srgb, var(--color-background-panel) 55%, transparent);
+}
+/* Copy button — floats over the header / code top-right, revealed on hover
+   or keyboard focus, mirroring the web version's hover affordance. */
+.markdown-code-copy {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 6px;
+  padding: 1px 7px;
+  background-color: transparent;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.6;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--duration-hover) ease,
+    visibility var(--duration-hover) ease;
+  user-select: none;
+}
+.markdown-code-shell:hover .markdown-code-copy,
+.markdown-code-copy:focus-visible {
+  opacity: 1;
+  visibility: visible;
+}
+.markdown-code-copy:hover {
+  background-color: var(--color-list-hover);
+  color: var(--color-text-foreground);
+}
+.markdown-code-copy.is-copied,
+.markdown-code-copy.is-copied:hover {
+  color: var(--color-text-success);
+  border-color: color-mix(in srgb, var(--color-text-success) 30%, var(--color-border-light));
+}
+.markdown pre,
+.markdown .markdown-code-block,
+.markdown .markdown-shiki pre {
+  margin: 0;
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  padding: var(--markdown-code-block-padding, 12px);
+  line-height: var(--markdown-code-block-line-height, 1.55);
   overflow-x: auto;
   font-size: var(--codex-code-font-size, 12px);
+  letter-spacing: 0;
+}
+/* Bare pre (no shell) still gets material treatment. */
+.markdown > pre,
+.markdown p > pre {
+  background-color: var(--color-token-text-code-block-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--markdown-code-block-border-radius, 12px);
+  box-shadow: var(--shadow-sm);
 }
 /* Shiki paints the `pre` background inline — the token surface wins. */
 .markdown .markdown-shiki pre.shiki {
-  background-color: var(--color-token-text-code-block-background) !important;
+  background-color: transparent !important;
 }
 .markdown pre > code,
 .markdown .markdown-shiki pre code {
   background: none;
+  border: none;
   border-radius: 0;
   padding: 0;
   font-size: inherit;
@@ -116,6 +204,7 @@
 .markdown a {
   color: var(--color-token-text-link-foreground, var(--blue-300));
   text-decoration: none;
+  text-underline-offset: 2px;
 }
 .markdown a:hover {
   text-decoration: underline;
@@ -124,37 +213,41 @@
 /* ------------------------------------------------------------- quotations */
 .markdown blockquote {
   margin-inline: 0;
-  border-left: 2px solid var(--color-border);
-  padding-left: 0.75rem;
-  opacity: 0.85;
+  border-left: 2.5px solid var(--color-border-heavy);
+  padding: 0.15rem 0 0.15rem 0.85rem;
+  color: var(--color-text-secondary);
 }
 
 /* ---------------------------------------------------------------- details */
 .markdown details {
   border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  padding: 0.55rem 0.8rem;
   background-color: var(--color-background-surface-under);
+  box-shadow: var(--shadow-sm);
 }
 .markdown details > summary {
   cursor: pointer;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight, 0);
 }
 .markdown details[open] > summary {
-  margin-bottom: 0.375rem;
+  margin-bottom: 0.4rem;
 }
 
 /* ------------------------------------------------------------- alerts (:::) */
 .markdown-alert {
   border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  padding: 0.55rem 0.8rem;
+  background-color: var(--color-background-panel);
+  box-shadow: var(--shadow-sm);
 }
 .markdown-alert-title {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  margin-bottom: 0.25rem;
+  letter-spacing: var(--tracking-label, 0.08em);
+  margin-bottom: 0.3rem;
 }
 .markdown-alert-body > :last-child {
   margin-bottom: 0;
@@ -205,27 +298,33 @@
   width: 100%;
   display: block;
   overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
 }
 .markdown th,
 .markdown td {
-  border: 1px solid var(--color-border);
-  padding: 4px 8px;
+  border: 1px solid var(--color-border-light);
+  padding: 6px 10px;
 }
 .markdown th {
   background-color: var(--color-background-surface-under);
   font-weight: 600;
+  letter-spacing: var(--tracking-tight, 0);
 }
 
 /* ------------------------------------------------------------------- image */
 .markdown img {
   max-width: 100%;
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
 }
 
 /* ------------------------------------------------------------------- hr */
 .markdown hr {
   border: none;
   border-top: 1px solid var(--color-border);
+  margin-block: 1rem;
 }
 
 /* ----------------------------------------------------------- streaming dot */
@@ -244,6 +343,52 @@
   }
 }
 
+/* ------------------------------------------------- streaming incremental fade
+   Each streamed chunk is wrapped in a `markdown-stream-delta` span/div; the
+   animation plays once when the element first appears and never restarts on
+   later frames (chunk markup is stable across renders). Duration/easing match
+   the web version's text-node-stream-update-fade. */
+.markdown-stream-delta {
+  animation-duration: 0.28s;
+  animation-timing-function: cubic-bezier(0.33, 0, 0.67, 1);
+  animation-fill-mode: both;
+  will-change: opacity;
+}
+.markdown-stream-delta--a {
+  animation-name: markdown-stream-fade-a;
+}
+.markdown-stream-delta--b {
+  animation-name: markdown-stream-fade-b;
+}
+/* A block wrapper adds no rhythm of its own; its children own the spacing. */
+.markdown-stream-delta-block {
+  margin-block: 0;
+}
+.markdown-stream-delta-block > :last-child {
+  margin-bottom: 0;
+}
+@keyframes markdown-stream-fade-a {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes markdown-stream-fade-b {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .markdown-stream-delta {
+    animation: none;
+  }
+}
+
 /* ------------------------------------------------------- error boundary UI */
 .markdown-error {
   display: flex;
@@ -254,11 +399,11 @@
 }
 .markdown-error button {
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: 8px;
   background-color: var(--color-background-surface-under);
   color: var(--color-text-foreground);
   font-size: 12px;
-  padding: 1px 8px;
+  padding: 2px 8px;
   cursor: pointer;
 }
 .markdown-error button:hover {

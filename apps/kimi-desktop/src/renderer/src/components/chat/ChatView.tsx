@@ -16,8 +16,6 @@
  */
 
 import {
-  approvalRequestSchema,
-  questionRequestSchema,
   type ApprovalDecision,
   type ApprovalScope,
   type QuestionResponse,
@@ -37,20 +35,35 @@ import {
 } from 'react';
 
 import { useConnection } from '#/lib/connection';
+import { approvalInteractionPresentation } from '#/lib/approvalInteraction';
 import {
+  useAbortPrompt,
   useDismissQuestion,
+  usePendingSessionInteractions,
   useResolveApproval,
   useResolveQuestion,
+  useSession,
 } from '#/lib/queries';
+import {
+  projectAgentPendingInteractions,
+  type SourcedPendingInteraction,
+} from '#/lib/sessionInteractions';
+import {
+  pendingComposerInteractions,
+  shouldAbortAfterApproval,
+} from '#/lib/timelinePresentation';
 import { TranscriptChatStore } from '#/lib/transcript/chatStore';
 import { TranscriptSync } from '#/lib/transcriptSync';
 
 import { Timeline } from './Timeline';
 import { TodoPanel } from './TodoPanel';
 import { Composer } from '../composer/Composer';
+import { ApprovalCard, type ApprovalResolveOptions } from './interactions/ApprovalCard';
+import { QuestionCard } from './interactions/QuestionCard';
 
 export interface ChatViewProps {
   readonly sessionId: string;
+  readonly onSwitchWorkspace?: (cwd: string) => void;
   /** Agent whose transcript this view renders; defaults to the main agent.
    *  Side-channel (btw) panels pass the `agent-<N>` returned by `:btw`. */
   readonly agentId?: string;
@@ -70,7 +83,7 @@ interface Channel {
 const noopSubscribe = () => () => {};
 
 export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
-  { sessionId, agentId = 'main' },
+  { sessionId, agentId = 'main', onSwitchWorkspace },
   ref,
 ) {
   const { api } = useConnection();
@@ -148,22 +161,29 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
   const resolveApproval = useResolveApproval(sessionId);
   const resolveQuestion = useResolveQuestion(sessionId);
   const dismissQuestion = useDismissQuestion(sessionId);
+  const abortPrompt = useAbortPrompt(sessionId);
+  const sessionQuery = useSession(sessionId);
+  const pendingQuery = usePendingSessionInteractions(sessionId);
+  const transcriptFallback = projectAgentPendingInteractions(state.interactions, agentId);
+  const pendingInteractions = pendingQuery.data ?? transcriptFallback;
+  const pendingInteraction = pendingComposerInteractions(pendingInteractions)[0];
 
   const handleResolveApproval = useCallback(
     (
       interaction: TranscriptInteraction,
       decision: ApprovalDecision,
       options?: { scope?: ApprovalScope; feedback?: string; selectedLabel?: string },
+      sourceAgentId = 'main',
     ) => {
-      const parsed = approvalRequestSchema.safeParse(interaction.request);
-      if (!parsed.success) return;
+      const approval = approvalInteractionPresentation(interaction);
       setInteractionError(null);
       // Returns the in-flight promise so the card can keep its busy state
       // until the answer lands. `selectedLabel`/`feedback` ride the body for
       // plan-review answers; the engine records them on the interaction.
+      const promptId = sessionQuery.data?.current_prompt_id;
       return resolveApproval
         .mutateAsync({
-          approvalId: parsed.data.approval_id,
+          approvalId: approval.approvalId,
           body: {
             decision,
             scope: options?.scope,
@@ -171,19 +191,32 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
             selected_label: options?.selectedLabel,
           },
         })
+        .then(async () => {
+          if (
+            shouldAbortAfterApproval(decision, options?.selectedLabel, sourceAgentId) &&
+            promptId !== undefined
+          ) {
+            // The engine may finish the rejected call between the resolve and
+            // abort requests. That already satisfies the terminal outcome, so
+            // treat an abort race as a no-op instead of surfacing a second UI
+            // error after the user's rejection succeeded.
+            await abortPrompt.mutateAsync(promptId).catch(() => undefined);
+          }
+        })
         .catch(setInteractionError)
         .then(() => undefined);
     },
-    [resolveApproval],
+    [resolveApproval, abortPrompt, sessionQuery.data?.current_prompt_id],
   );
 
   const handleAnswerQuestion = useCallback(
     (interaction: TranscriptInteraction, response: QuestionResponse) => {
-      const parsed = questionRequestSchema.safeParse(interaction.request);
-      if (!parsed.success) return;
       setInteractionError(null);
+      // The transcript carries the in-process request (no wire question_id);
+      // the REST `:question_id` is the interaction id, which the server matches
+      // against `interaction.id` (see routes/questions.ts).
       return resolveQuestion
-        .mutateAsync({ questionId: parsed.data.question_id, body: response })
+        .mutateAsync({ questionId: interaction.interactionId, body: response })
         .catch(setInteractionError)
         .then(() => undefined);
     },
@@ -192,11 +225,9 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
 
   const handleDismissQuestion = useCallback(
     (interaction: TranscriptInteraction) => {
-      const parsed = questionRequestSchema.safeParse(interaction.request);
-      if (!parsed.success) return;
       setInteractionError(null);
       return dismissQuestion
-        .mutateAsync(parsed.data.question_id)
+        .mutateAsync(interaction.interactionId)
         .catch(setInteractionError)
         .then(() => undefined);
     },
@@ -214,13 +245,17 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
       .finally(() => setLoadingOlder(false));
   }, [channel, loadingOlder]);
 
+  const retryInitialLoad = useCallback(() => {
+    setLoadError(null);
+    channel?.sync.refresh();
+  }, [channel]);
+
   return (
-    <div className="flex min-w-0 flex-1 flex-col bg-[var(--color-background-surface)]">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-background-surface)]">
       <ConnectionBar
-        loaded={loaded}
-        error={loadError}
+        error={loadError ?? pendingQuery.error}
         running={running}
-        pendingCount={state.pendingInteractions.size}
+        pendingCount={pendingInteractions.length}
       />
       {interactionError !== null ? (
         <div className="mx-auto mt-2 w-[calc(100%-2.5rem)] max-w-[46rem] rounded-xl border border-[var(--color-border-error)] bg-[color-mix(in_srgb,var(--red-500)_6%,transparent)] px-3 py-2 text-[12px] text-[var(--color-text-danger)]">
@@ -231,47 +266,119 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
         state={state}
         loading={!loaded}
         error={loadError ?? olderError}
+        onRetry={retryInitialLoad}
         onLoadOlder={loadOlder}
         loadingOlder={loadingOlder}
-        onResolveApproval={handleResolveApproval}
-        onAnswerQuestion={handleAnswerQuestion}
-        onDismissQuestion={handleDismissQuestion}
+        pendingSessionInteractions={pendingInteractions}
       />
       <TodoPanel todos={state.todos} />
-      <Composer sessionId={sessionId} agentId={agentId} />
+      {/* Empty headline sits directly above the composer so they read as one unit. */}
+      {loaded && state.items.length === 0 ? <EmptyComposerHero /> : null}
+      {pendingInteraction !== undefined ? (
+        <PendingInteractionDock
+          pending={pendingInteraction}
+          onResolveApproval={handleResolveApproval}
+          onAnswerQuestion={handleAnswerQuestion}
+          onDismissQuestion={handleDismissQuestion}
+        />
+      ) : null}
+      {loadError !== null && !loaded ? null : (
+        <Composer
+          sessionId={sessionId}
+          agentId={agentId}
+          empty={loaded && state.items.length === 0}
+          onSwitchWorkspace={onSwitchWorkspace}
+        />
+      )}
     </div>
   );
 });
 
+function PendingInteractionDock({
+  pending,
+  onResolveApproval,
+  onAnswerQuestion,
+  onDismissQuestion,
+}: {
+  readonly pending: SourcedPendingInteraction;
+  readonly onResolveApproval: (
+    interaction: TranscriptInteraction,
+    decision: ApprovalDecision,
+    options?: ApprovalResolveOptions,
+    sourceAgentId?: string,
+  ) => void | Promise<void>;
+  readonly onAnswerQuestion: (
+    interaction: TranscriptInteraction,
+    response: QuestionResponse,
+  ) => void | Promise<void>;
+  readonly onDismissQuestion: (interaction: TranscriptInteraction) => void | Promise<void>;
+}) {
+  const { interaction, sourceAgentId } = pending;
+  return (
+    <div className="mx-auto w-full max-w-[var(--layout-thread-max-width)] px-6 pb-2">
+      <div className="max-h-[34vh] overflow-y-auto rounded-2xl shadow-[var(--shadow-md)]">
+        {sourceAgentId !== 'main' ? (
+          <div className="border-b border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-1.5 text-[10.5px] font-medium text-[var(--color-text-secondary)]">
+            来自子 Agent · {sourceAgentId}
+          </div>
+        ) : null}
+        {interaction.interactionKind === 'approval' ? (
+          <ApprovalCard
+            interaction={interaction}
+            onResolve={(decision, options) =>
+              onResolveApproval(interaction, decision, options, sourceAgentId)
+            }
+          />
+        ) : (
+          <QuestionCard
+            interaction={interaction}
+            onAnswer={(response) => onAnswerQuestion(interaction, response)}
+            onDismiss={() => onDismissQuestion(interaction)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Empty-session hero: purpose line paired with the composer below it. */
+function EmptyComposerHero() {
+  return (
+    <div className="mx-auto w-full max-w-[var(--layout-thread-max-width)] px-6 pb-2 pt-2 text-center">
+      <div className="text-[22px] font-semibold tracking-[var(--tracking-display)] text-[var(--color-text-foreground)]">
+        今天想做什么？
+      </div>
+      <p className="mt-1.5 text-[13px] leading-5 tracking-[var(--tracking-tight)] text-[var(--color-text-secondary)]">
+        描述你的任务，或用 + 添加文件作为上下文。
+      </p>
+    </div>
+  );
+}
+
 /** Slim status line: connection/sync state, the active turn, pending
  *  interactions. */
 function ConnectionBar({
-  loaded,
   error,
   running,
   pendingCount,
 }: {
-  loaded: boolean;
   error: unknown;
   running: boolean;
   pendingCount: number;
 }) {
   const failed = error !== null;
-  const dot = failed
-    ? 'bg-[var(--red-500)]'
-    : loaded
-      ? 'bg-[var(--green-500)]'
-      : 'bg-[var(--orange-400)]';
-  const label = failed ? '同步失败' : loaded ? '已同步' : '同步中…';
+  if (!running && pendingCount === 0 && !failed) return null;
   return (
     <div className="flex min-h-[28px] items-center justify-end gap-2 px-5 py-1 text-[10.5px] text-[var(--color-text-secondary)]">
       <span className="flex shrink-0 items-center gap-3">
-        {running ? <span className="text-[var(--orange-400)]">● 运行中</span> : null}
+        {running ? (
+          <span className="flex items-center gap-1.5 text-[var(--orange-400)]">
+            <span className="ui-dot-pulse h-1.5 w-1.5 bg-current" aria-hidden />
+            运行中
+          </span>
+        ) : null}
         {pendingCount > 0 ? <span className="text-[var(--orange-400)]">{pendingCount} 待处理</span> : null}
-        <span className="flex items-center gap-1.5">
-          <span className={`h-1.5 w-1.5 rounded-full ${dot} ${!failed && loaded ? '' : 'animate-pulse'}`} />
-          {label}
-        </span>
+        {failed ? <span className="text-[var(--color-text-danger)]">同步失败</span> : null}
       </span>
     </div>
   );

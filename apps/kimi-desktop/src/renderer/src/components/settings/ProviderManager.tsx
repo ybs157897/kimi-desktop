@@ -5,13 +5,14 @@
  * models.dev catalog import. Opens from Settings as a nested modal (z-50).
  */
 
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import type { ProviderCatalogItem, ProviderCatalogStatus } from '@moonshot-ai/protocol';
 
 import { ApiError } from '#/lib/api';
 import { useDeleteProvider, useProviders, useRefreshProvider } from '#/lib/queries';
 import { PROVIDER_STATUS_LABELS } from '#/lib/providers';
+import { useModalDialog } from '#/lib/useModalDialog';
 
 import { CatalogImportDialog } from './CatalogImportDialog';
 import { ProviderEditDialog } from './ProviderEditDialog';
@@ -40,13 +41,8 @@ export function ProviderManager({ onClose }: ProviderManagerProps) {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalDialog(dialogRef, onClose, { active: editing === null && !catalogOpen });
 
   const items = providers.data?.items ?? [];
   const pending = deleteProvider.isPending || refreshProvider.isPending;
@@ -62,8 +58,11 @@ export function ProviderManager({ onClose }: ProviderManagerProps) {
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label="Provider 管理"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
         className="flex w-[640px] max-h-[85vh] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
       >

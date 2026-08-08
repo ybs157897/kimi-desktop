@@ -15,16 +15,14 @@ const TONE: Record<NoticeFrameModel['level'], string> = {
 /** Error / warning / info banner attached to a step, tinted by level. */
 export function NoticeFrame({ frame }: NoticeFrameProps) {
   return (
-    <div className={`mb-2 rounded-lg border px-3 py-2 text-[12px] ${TONE[frame.level]}`}>
+    <div className={`ui-card-enter mb-3 max-w-[46rem] rounded-xl border px-3.5 py-2.5 text-[12.5px] tracking-[var(--tracking-tight)] ${TONE[frame.level]}`}>
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide opacity-80">
-          {frame.level}
-        </span>
+        <span className="ui-label !text-inherit opacity-80">{frame.level}</span>
         {frame.source !== undefined ? (
-          <span className="font-mono text-[10px] opacity-60">{frame.source}</span>
+          <span className="font-mono text-[10.5px] opacity-60">{frame.source}</span>
         ) : null}
       </div>
-      <div className="mt-0.5 whitespace-pre-wrap leading-relaxed opacity-90">{frame.message}</div>
+      <div className="mt-1 whitespace-pre-wrap leading-[var(--leading-chat)] opacity-90">{frame.message}</div>
     </div>
   );
 }

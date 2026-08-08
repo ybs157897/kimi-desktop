@@ -10,7 +10,7 @@
  * `MarkdownMath`) that other modules consume from this file.
  */
 
-import { Component, useMemo, useState, type ReactNode } from 'react';
+import { Component, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Lexer, Marked } from 'marked';
 
 import '../../styles/markdown.css';
@@ -18,6 +18,7 @@ import '../../styles/markdown.css';
 import { createMarkdownExtensions } from './extensions';
 import { preprocessMarkdown } from './preprocess';
 import { renderTokens, type RenderContext } from './render';
+import { advanceStreamState, buildStreamedSource, createInitialStreamState, type StreamState } from './streaming';
 import { MarkdownCitation } from './MarkdownCitation';
 import { MarkdownCodeBlock } from './MarkdownCodeBlock';
 import type { MarkdownCodeBlockProps } from './MarkdownCodeBlock';
@@ -89,17 +90,33 @@ class MarkdownErrorBoundary extends Component<MarkdownErrorBoundaryProps, Markdo
 export function Markdown({ source, streaming = false }: MarkdownProps) {
   // `attempt` re-runs the pipeline on retry; lexing is cheap for one message.
   const [attempt, setAttempt] = useState(0);
+  const attemptRef = useRef(attempt);
+
+  // Chunk state for the streaming fade-in. Derived during render (React's
+  // documented pattern): the delta split must happen before the markup source
+  // below is built, and the transition is pure so double-invoked renders and
+  // StrictMode produce the same state.
+  const [stream, setStream] = useState<StreamState>(() => createInitialStreamState(source));
+  if (attemptRef.current !== attempt) {
+    attemptRef.current = attempt;
+    setStream(createInitialStreamState(source));
+  } else {
+    const nextStream = advanceStreamState(stream, source, streaming);
+    if (nextStream !== stream) setStream(nextStream);
+  }
+
+  const markupSource = useMemo(() => buildStreamedSource(stream), [stream]);
 
   const content = useMemo(() => {
     try {
-      const processed = preprocessMarkdown(source, streaming);
+      const processed = preprocessMarkdown(markupSource, streaming);
       const tokens = markdown.lexer(processed);
       return renderTokens(tokens, RENDER_CONTEXT);
     } catch {
       // Last-resort fallback: the raw source as escaped plain text.
       return source;
     }
-  }, [source, streaming, attempt]);
+  }, [markupSource, streaming, attempt]);
 
   return (
     <MarkdownErrorBoundary onRetry={() => setAttempt((n) => n + 1)}>

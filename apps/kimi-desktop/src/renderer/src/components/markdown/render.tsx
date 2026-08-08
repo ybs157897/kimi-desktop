@@ -12,6 +12,7 @@ import { createElement, Fragment, type ReactNode } from 'react';
 import type { Token, Tokens } from 'marked';
 
 import type { CitationToken, DirectiveToken } from './extensions';
+import { pairStreamHtml } from './streamHtml';
 import { MarkdownCitation } from './MarkdownCitation';
 import { MarkdownCodeBlock } from './MarkdownCodeBlock';
 import { MarkdownMath } from './MarkdownMath';
@@ -25,7 +26,7 @@ export interface RenderContext {
 }
 
 export function renderTokens(tokens: readonly Token[], ctx: RenderContext): ReactNode[] {
-  return tokens.map((token, index) => renderToken(token, index, ctx));
+  return pairStreamHtml(tokens, (token, key) => renderToken(token, key, ctx));
 }
 
 // ------------------------------------------------------------------ renderer

@@ -1,4 +1,12 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import type { SearchHit } from '#/lib/api';
 import { useSearch } from '#/lib/queries';
@@ -6,7 +14,7 @@ import { useSearch } from '#/lib/queries';
 export interface SidebarSearchProps {
   readonly value: string;
   readonly onChange: (value: string) => void;
-  /** Fired on Enter with the current input; the search results UI is a later milestone. */
+  /** Fired on Enter only when the current query has no search result. */
   readonly onSubmit: (query: string) => void;
   readonly placeholder?: string;
   /** Clicking a result hands its session to the shell (selects it in the list). */
@@ -68,7 +76,8 @@ function Highlighted({ text, query }: { text: string; query: string }) {
 
 /** Sidebar search input (`Cmd+K` target in the full shell): controlled input,
  *  300 ms debounce, `POST /api/v1/search` results in a dropdown below the
- *  field. Esc clears the input; picking a result emits `onSelect(sessionId)`. */
+ *  field. Esc closes results before clearing the input; picking a result emits
+ *  `onSelect(sessionId)`. */
 export const SidebarSearch = forwardRef<SidebarSearchHandle, SidebarSearchProps>(function SidebarSearch(
   { value, onChange, onSubmit, placeholder = '搜索…', onSelect },
   ref,
@@ -80,17 +89,47 @@ export const SidebarSearch = forwardRef<SidebarSearchHandle, SidebarSearchProps>
   }, [value]);
 
   const [open, setOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const search = useSearch(debouncedQuery);
   const results = search.data?.items ?? [];
   const inputRef = useRef<HTMLInputElement>(null);
+  const optionRefs = useRef<Array<HTMLLIElement | null>>([]);
+  const listboxId = useId();
+  const currentQueryIsDebounced = value.trim() === debouncedQuery.trim();
+  const highlightedHit = currentQueryIsDebounced ? results[highlightedIndex] : undefined;
+
+  useEffect(() => {
+    setHighlightedIndex(-1);
+  }, [value]);
+
+  useEffect(() => {
+    setHighlightedIndex((current) => (current < results.length ? current : -1));
+  }, [results.length]);
+
+  useEffect(() => {
+    if (highlightedIndex !== -1) {
+      optionRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlightedIndex]);
+
   useImperativeHandle(ref, () => ({
     focus: () => inputRef.current?.focus(),
   }));
 
   const choose = (hit: SearchHit) => {
     setOpen(false);
+    setHighlightedIndex(-1);
     onSelect?.(hit.sessionId);
     onChange('');
+  };
+
+  const moveHighlight = (direction: 1 | -1) => {
+    if (!currentQueryIsDebounced || results.length === 0) return;
+    setOpen(true);
+    setHighlightedIndex((current) => {
+      if (current === -1) return direction === 1 ? 0 : results.length - 1;
+      return (current + direction + results.length) % results.length;
+    });
   };
 
   return (
@@ -104,53 +143,84 @@ export const SidebarSearch = forwardRef<SidebarSearchHandle, SidebarSearchProps>
           onChange(event.target.value);
           setOpen(true);
         }}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={open && value.trim() !== ''}
+        aria-controls={listboxId}
+        aria-activedescendant={
+          highlightedHit === undefined ? undefined : `${listboxId}-option-${highlightedIndex}`
+        }
         onKeyDown={(event) => {
-          if (event.key === 'Enter') {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault();
-            onSubmit(value);
+            moveHighlight(event.key === 'ArrowDown' ? 1 : -1);
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            const resultToChoose =
+              highlightedHit ?? (currentQueryIsDebounced ? results[0] : undefined);
+            if (resultToChoose !== undefined) choose(resultToChoose);
+            else onSubmit(value);
           } else if (event.key === 'Escape') {
-            onChange('');
-            setOpen(false);
+            event.preventDefault();
+            setHighlightedIndex(-1);
+            if (open) setOpen(false);
+            else if (value !== '') onChange('');
           }
         }}
         onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        className="w-full rounded-lg border border-transparent bg-[var(--color-background-button-secondary)] px-3 py-2 text-[12px] text-[var(--color-text-foreground)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-heavy)] focus:bg-[var(--color-background-panel)]"
+        onBlur={() => {
+          setOpen(false);
+          setHighlightedIndex(-1);
+        }}
+        className="w-full rounded-xl border border-transparent bg-[var(--color-background-button-secondary)] px-3 py-2 text-[13px] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)] outline-none transition-[border-color,background-color,box-shadow] duration-[var(--duration-hover)] ease placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-heavy)] focus:bg-[var(--color-background-panel)] focus:shadow-[var(--shadow-sm)]"
       />
       {open && debouncedQuery.trim() !== '' ? (
         <div
           onMouseDown={(event) => event.preventDefault()}
           className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-background-surface)] shadow-xl"
         >
-          {search.isLoading ? (
+          {!currentQueryIsDebounced || search.isLoading ? (
             <div className="px-3 py-2 text-[12px] text-[var(--gray-500)]">搜索中…</div>
           ) : search.isError ? (
             <div className="px-3 py-2 text-[12px] text-[var(--red-400)]">搜索失败</div>
           ) : results.length === 0 ? (
             <div className="px-3 py-2 text-[12px] text-[var(--gray-500)]">无匹配结果</div>
           ) : (
-            <ul className="max-h-80 overflow-y-auto py-1">
+            <ul id={listboxId} role="listbox" className="max-h-80 overflow-y-auto py-1">
               {search.data?.indexState.state === 'building' ? (
                 <li className="px-3 py-1 text-[10px] text-[var(--gray-600)]">
                   索引构建中（{search.data.indexState.indexedSessions}/{search.data.indexState.totalSessions}），结果可能不完整
                 </li>
               ) : null}
-              {results.map((hit, index) => (
-                <li key={`${hit.sessionId}-${hit.agentId}-${hit.time}-${index}`}>
-                  <button
-                    type="button"
-                    onClick={() => choose(hit)}
-                    className="block w-full px-3 py-1.5 text-left hover:bg-[var(--color-list-hover)]"
+              {results.map((hit, index) => {
+                const highlighted = index === highlightedIndex;
+                return (
+                  <li
+                    ref={(node) => {
+                      optionRefs.current[index] = node;
+                    }}
+                    id={`${listboxId}-option-${index}`}
+                    role="option"
+                    aria-selected={highlighted}
+                    key={`${hit.sessionId}-${hit.agentId}-${hit.time}-${index}`}
                   >
-                    <div className="truncate text-[12px] font-medium text-[var(--color-text-foreground)]">
-                      {hit.sessionTitle !== '' ? hit.sessionTitle : '（无标题会话）'}
-                    </div>
-                    <div className="line-clamp-2 text-[11px] leading-snug text-[var(--gray-500)]">
-                      <Highlighted text={hit.snippet} query={debouncedQuery} />
-                    </div>
-                  </button>
-                </li>
-              ))}
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onMouseEnter={() => setHighlightedIndex(index)}
+                      onClick={() => choose(hit)}
+                      className={`block w-full px-3 py-1.5 text-left hover:bg-[var(--color-list-hover)] ${highlighted ? 'bg-[var(--color-list-hover)]' : ''}`}
+                    >
+                      <div className="truncate text-[12px] font-medium text-[var(--color-text-foreground)]">
+                        {hit.sessionTitle !== '' ? hit.sessionTitle : '（无标题会话）'}
+                      </div>
+                      <div className="line-clamp-2 text-[11px] leading-snug text-[var(--gray-500)]">
+                        <Highlighted text={hit.snippet} query={debouncedQuery} />
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

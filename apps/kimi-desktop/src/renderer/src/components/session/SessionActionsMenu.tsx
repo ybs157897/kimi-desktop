@@ -118,7 +118,7 @@ export function SessionActionsMenu({
                   onClick={runUndo}
                   className="rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-text-danger)] hover:bg-[var(--color-list-hover)] disabled:opacity-50"
                 >
-                  y
+                  确认
                 </button>
                 <button
                   type="button"
@@ -126,7 +126,7 @@ export function SessionActionsMenu({
                   onClick={() => setConfirming(null)}
                   className="rounded px-1.5 py-0.5 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] disabled:opacity-50"
                 >
-                  N
+                  取消
                 </button>
               </div>
             ) : (
@@ -149,7 +149,7 @@ export function SessionActionsMenu({
                   onClick={runCompact}
                   className="rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-text-danger)] hover:bg-[var(--color-list-hover)] disabled:opacity-50"
                 >
-                  y
+                  确认
                 </button>
                 <button
                   type="button"
@@ -157,7 +157,7 @@ export function SessionActionsMenu({
                   onClick={() => setConfirming(null)}
                   className="rounded px-1.5 py-0.5 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] disabled:opacity-50"
                 >
-                  N
+                  取消
                 </button>
               </div>
             ) : (
@@ -178,7 +178,7 @@ export function SessionActionsMenu({
               title="复制当前会话（含上下文）"
               className={itemClass}
             >
-              Fork 会话
+              复制会话
             </button>
             <button
               type="button"

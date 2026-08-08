@@ -22,6 +22,14 @@ import {
   type ToolInputDisplay,
 } from '@moonshot-ai/protocol';
 import type { ToolCallFrame, TranscriptInteraction, TranscriptTask } from '@moonshot-ai/transcript';
+import {
+  CaretRight,
+  CheckCircle,
+  FileCode,
+  MagnifyingGlass,
+  TerminalWindow,
+  Wrench,
+} from '@phosphor-icons/react';
 import { useState, type ReactNode } from 'react';
 
 import {
@@ -39,6 +47,11 @@ export interface ToolFrameProps {
   /** The approval/question interaction gating this call, when known. */
   readonly interaction?: TranscriptInteraction;
 }
+
+const TOOL_CARD =
+  'ui-card-enter mb-1 max-w-[46rem] overflow-hidden rounded-lg border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)]';
+const TOOL_BODY =
+  'max-h-72 overflow-auto border-t border-[var(--color-border-light)] bg-[var(--color-background-panel)] px-3 py-2 font-mono text-[11.5px] leading-[1.55] text-[var(--color-text-secondary)]';
 
 export function ToolFrame({ frame, task, interaction }: ToolFrameProps) {
   const display = parseDisplay(frame.display);
@@ -89,70 +102,116 @@ function stringField(record: Record<string, unknown>, key: string): string | und
   return typeof value === 'string' ? value : undefined;
 }
 
-/** Expandable card header (a button toggling the body). */
+/** Shared expandable header — caret + icon + title row. */
 function CardHeader({
   expanded,
   onToggle,
+  icon,
   children,
+  trailing,
 }: {
   expanded: boolean;
   onToggle: () => void;
+  icon: ReactNode;
   children: ReactNode;
+  trailing?: ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full cursor-pointer select-none items-start gap-2 px-3 py-2 text-left"
+      className="ui-pressable flex min-h-8 w-full cursor-pointer select-none items-center gap-1.5 px-2.5 py-1 text-left hover:bg-[var(--color-list-hover)]"
     >
-      <span
-        className={`mt-0.5 text-[10px] leading-4 text-[var(--color-text-foreground)] opacity-40 transition-transform ${
+      <CaretRight
+        size={11}
+        weight="bold"
+        className={`shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[var(--duration-hover)] ease-[var(--ease-out)] ${
           expanded ? 'rotate-90' : ''
         }`}
-      >
-        ▸
+        aria-hidden
+      />
+      <span className="shrink-0 text-[var(--color-text-tertiary)]" aria-hidden>
+        {icon}
       </span>
-      {children}
+      <div className="min-w-0 flex-1">{children}</div>
+      {trailing !== undefined ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}
     </button>
+  );
+}
+
+function BadgeRow({
+  frame,
+  task,
+  interaction,
+  alwaysShowState = false,
+}: {
+  frame: ToolCallFrame;
+  task: TranscriptTask | undefined;
+  interaction: TranscriptInteraction | undefined;
+  alwaysShowState?: boolean;
+}) {
+  return (
+    <>
+      {interaction !== undefined ? <InteractionBadge interaction={interaction} /> : null}
+      {task !== undefined ? <TaskBadge task={task} /> : null}
+      {interaction?.state !== 'pending' && (alwaysShowState || frame.state === 'running') ? (
+        <StateBadge frame={frame} />
+      ) : null}
+    </>
   );
 }
 
 // ------------------------------------------------------------------ status bits
 
+/** Busy pill: tinted orange with a sweeping highlight while the call is live
+ *  (web shimmer). The overlay is pointer-inert so the pill stays readable. */
+function BusyPill({ label }: { readonly label: string }) {
+  return (
+    <span className="relative overflow-hidden rounded-md bg-[color-mix(in_srgb,var(--orange-400)_14%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--orange-400)]">
+      {label}
+      <span className="ui-shimmer absolute inset-0" aria-hidden />
+    </span>
+  );
+}
+
 function StateBadge({ frame }: { frame: ToolCallFrame }) {
   if (frame.state === 'running') {
-    return <span className="animate-pulse text-[10px] text-[var(--orange-400)]">运行中</span>;
+    return <BusyPill label="运行中" />;
   }
   if (frame.state === 'error') {
-    return <span className="text-[10px] text-[var(--red-400)]">失败</span>;
+    return (
+      <span className="rounded-md bg-[color-mix(in_srgb,var(--red-400)_14%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--red-400)]">
+        失败
+      </span>
+    );
   }
-  return <span className="text-[10px] text-[var(--green-400)]">完成</span>;
+  return (
+    <span className="rounded-md bg-[color-mix(in_srgb,var(--green-400)_14%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--green-400)]">
+      完成
+    </span>
+  );
 }
 
 function TaskBadge({ task }: { task: TranscriptTask }) {
   const tone =
     task.state === 'running'
-      ? 'text-[var(--orange-400)]'
+      ? 'text-[var(--orange-400)] bg-[color-mix(in_srgb,var(--orange-400)_12%,transparent)]'
       : task.state === 'completed'
-        ? 'text-[var(--green-400)]'
+        ? 'text-[var(--green-400)] bg-[color-mix(in_srgb,var(--green-400)_12%,transparent)]'
         : task.state === 'failed' || task.state === 'timed_out' || task.state === 'lost'
-          ? 'text-[var(--red-400)]'
-          : 'text-[var(--color-text-foreground)] opacity-60';
+          ? 'text-[var(--red-400)] bg-[color-mix(in_srgb,var(--red-400)_12%,transparent)]'
+          : 'text-[var(--color-text-tertiary)] bg-[var(--color-background-button-secondary)]';
   return (
-    <span className={`text-[10px] ${tone}`}>
+    <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium ${tone}`}>
       {task.kind}
-      {task.detached ? ' (后台)' : ''} · {task.state}
+      {task.detached ? ' · 后台' : ''} · {task.state}
     </span>
   );
 }
 
 function InteractionBadge({ interaction }: { interaction: TranscriptInteraction }) {
   if (interaction.state === 'pending') {
-    return (
-      <span className="animate-pulse text-[10px] text-[var(--orange-400)]">
-        {interaction.interactionKind === 'approval' ? '待审批' : '待回答'}
-      </span>
-    );
+    return <BusyPill label={interaction.interactionKind === 'approval' ? '待审批' : '待回答'} />;
   }
   const label =
     interaction.state === 'approved'
@@ -165,7 +224,9 @@ function InteractionBadge({ interaction }: { interaction: TranscriptInteraction 
             ? '已跳过'
             : interaction.state;
   return (
-    <span className="text-[10px] text-[var(--color-text-foreground)] opacity-50">{label}</span>
+    <span className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-tertiary)]">
+      {label}
+    </span>
   );
 }
 
@@ -208,7 +269,10 @@ function BashCard({
   task: TranscriptTask | undefined;
   interaction: TranscriptInteraction | undefined;
 }) {
-  const [expanded, setExpanded] = useState(frame.state === 'running');
+  // Collapsed by default — command execution is background noise the user can
+  // opt into. The header's running/status badge still surfaces progress, so a
+  // live call is identifiable without the noisy streaming tail.
+  const [expanded, setExpanded] = useState(false);
   const input = isRecord(frame.input) ? frame.input : undefined;
   const command =
     (display?.kind === 'command' && display.command) ||
@@ -217,37 +281,38 @@ function BashCard({
     '';
   const cwd = (display?.kind === 'command' && display.cwd) || stringField(input ?? {}, 'cwd');
   const output = toolOutput(frame, task);
-  const footer = bashFooter(frame, output);
+  const outcome = bashFooter(frame, output);
   return (
-    <div className="mb-2 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-background-surface-under)]">
-      <CardHeader expanded={expanded} onToggle={() => setExpanded((value) => !value)}>
-        <div className="min-w-0 flex-1">
-          <code className="block truncate font-mono text-[12px] leading-5 text-[var(--color-text-foreground)]">
-            {command}
-          </code>
+    <div className={TOOL_CARD}>
+      <CardHeader
+        expanded={expanded}
+        onToggle={() => setExpanded((value) => !value)}
+        icon={<TerminalWindow size={14} weight="duotone" />}
+        trailing={
+          <>
+            <BadgeRow frame={frame} task={task} interaction={interaction} />
+            {outcome !== undefined ? (
+              <span className={`flex items-center gap-1 text-[10.5px] font-medium ${outcome.tone}`}>
+                {outcome.icon}
+                {outcome.label}
+              </span>
+            ) : null}
+          </>
+        }
+      >
+        <code className="block truncate font-mono text-[12px] leading-5 tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)]" title={command}>
+          {command}
+        </code>
+      </CardHeader>
+      {expanded && output !== undefined ? (
+        <>
           {cwd !== undefined && cwd !== '' ? (
-            <div className="truncate font-mono text-[10px] text-[var(--color-text-foreground)] opacity-45">
+            <div className="border-t border-[var(--color-border-light)] bg-[var(--color-background-panel)] px-3 pt-2 font-mono text-[10.5px] text-[var(--color-text-tertiary)]">
               {cwd}
             </div>
           ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {interaction !== undefined ? <InteractionBadge interaction={interaction} /> : null}
-          {task !== undefined ? <TaskBadge task={task} /> : null}
-          {frame.state === 'running' ? <StateBadge frame={frame} /> : null}
-        </div>
-      </CardHeader>
-      {expanded && output !== undefined ? (
-        <pre className="max-h-72 overflow-auto whitespace-pre-wrap border-t border-[var(--color-border-light)] px-3 py-2 font-mono text-[11px] leading-5 text-[var(--color-text-foreground)] opacity-80">
-          {output}
-        </pre>
-      ) : null}
-      {footer !== undefined ? (
-        <div
-          className={`flex items-center gap-1.5 border-t border-[var(--color-border-light)] px-3 py-1.5 text-[10px] ${footer.tone}`}
-        >
-          {footer.label}
-        </div>
+          <pre className={`${TOOL_BODY} whitespace-pre-wrap ${cwd !== undefined && cwd !== '' ? 'border-t-0' : ''}`}>{output}</pre>
+        </>
       ) : null}
     </div>
   );
@@ -256,22 +321,34 @@ function BashCard({
 function bashFooter(
   frame: ToolCallFrame,
   output: string | undefined,
-): { tone: string; label: string } | undefined {
+): { tone: string; label: string; icon: ReactNode } | undefined {
   // While running the header badge carries the state; the footer only
   // reports the settled outcome.
   if (frame.state === 'running') return undefined;
   if (frame.state === 'done') {
-    return { tone: 'text-[var(--green-400)]', label: '✓ 完成' };
+    return {
+      tone: 'text-[var(--green-400)]',
+      label: '完成',
+      icon: <CheckCircle size={12} weight="fill" aria-hidden />,
+    };
   }
   const text = output ?? frame.error ?? '';
   if (/interrupted|aborted/i.test(text)) {
-    return { tone: 'text-[var(--color-text-foreground)] opacity-70', label: 'Stopped' };
+    return {
+      tone: 'text-[var(--color-text-tertiary)]',
+      label: 'Stopped',
+      icon: null,
+    };
   }
   const exit = /exit code[:\s]+(\d+)/i.exec(text);
   if (exit !== null) {
-    return { tone: 'text-[var(--red-400)]', label: `Exit code: ${exit[1]}` };
+    return {
+      tone: 'text-[var(--red-400)]',
+      label: `Exit code: ${exit[1]}`,
+      icon: null,
+    };
   }
-  return { tone: 'text-[var(--red-400)]', label: 'Failed' };
+  return { tone: 'text-[var(--red-400)]', label: 'Failed', icon: null };
 }
 
 // ------------------------------------------------------------------ diff block
@@ -287,7 +364,7 @@ function DiffCard({
   task: TranscriptTask | undefined;
   interaction: TranscriptInteraction | undefined;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const input = isRecord(frame.input) ? frame.input : undefined;
   let path: string | undefined;
   let before: string | undefined;
@@ -315,25 +392,33 @@ function DiffCard({
     writeContent !== undefined ? addAllLines(writeContent) : diffBeforeAfter(before ?? '', after ?? '');
   const { adds, dels } = countChanges(lines);
   return (
-    <div className="mb-2 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-background-surface-under)]">
-      <CardHeader expanded={expanded} onToggle={() => setExpanded((value) => !value)}>
-        <span className="truncate font-mono text-[11px] text-[var(--color-text-foreground)]">
+    <div className={TOOL_CARD}>
+      <CardHeader
+        expanded={expanded}
+        onToggle={() => setExpanded((value) => !value)}
+        icon={<FileCode size={14} weight="duotone" />}
+        trailing={
+          <>
+            <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10.5px]">
+              <span className="rounded-md bg-[color-mix(in_srgb,var(--green-400)_12%,transparent)] px-1.5 py-0.5 text-[var(--green-400)]">
+                +{adds}
+              </span>
+              <span className="rounded-md bg-[color-mix(in_srgb,var(--red-400)_12%,transparent)] px-1.5 py-0.5 text-[var(--red-400)]">
+                −{dels}
+              </span>
+            </span>
+            <BadgeRow frame={frame} task={task} interaction={interaction} />
+          </>
+        }
+      >
+        <span className="block truncate font-mono text-[12px] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)]">
           {path !== undefined && path !== '' ? path : frame.name}
         </span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-[10px]">
-          <span className="text-[var(--green-400)]">+{adds}</span>
-          <span className="text-[var(--red-400)]">−{dels}</span>
-        </span>
-        <div className="flex shrink-0 items-center gap-2">
-          {interaction !== undefined ? <InteractionBadge interaction={interaction} /> : null}
-          {task !== undefined ? <TaskBadge task={task} /> : null}
-          {frame.state === 'running' ? <StateBadge frame={frame} /> : null}
-        </div>
       </CardHeader>
       {expanded && lines.length > 0 ? (
-        <pre className="max-h-72 overflow-auto border-t border-[var(--color-border-light)] py-1 font-mono text-[11px] leading-5">
+        <pre className="max-h-72 overflow-auto border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] py-1.5 font-mono text-[11.5px] leading-[1.55]">
           {lines.map((line, index) => (
-            <div key={index} className={`px-3 ${diffLineTone(line.type)}`}>
+            <div key={index} className={`px-3.5 ${diffLineTone(line.type)}`}>
               <span className="select-none opacity-50">{diffPrefix(line.type)}</span>
               {line.text}
             </div>
@@ -367,16 +452,23 @@ function SearchLine({
   const query = (display?.kind === 'search' && display.query) || stringField(input ?? {}, 'query');
   const running = frame.state === 'running';
   return (
-    <div className="mb-2 flex items-center gap-2 px-0.5 py-1 text-[12px] text-[var(--color-text-foreground)] opacity-80">
-      <span className="text-[var(--blue-300)]">🔍</span>
-      <span className="truncate">
-        {running ? '正在搜索' : '已搜索'}：{query ?? frame.name}
+    <div className="ui-card-enter mb-2 flex min-h-9 max-w-[46rem] items-center gap-2 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-1.5 text-[12px] tracking-[var(--tracking-tight)] text-[var(--color-text-secondary)]">
+      <MagnifyingGlass size={14} weight="duotone" className="shrink-0 text-[var(--color-text-accent)]" aria-hidden />
+      <span className="min-w-0 truncate text-[var(--color-text-foreground)]">
+        {running ? '正在搜索' : '已搜索'}
+        {query !== undefined && query !== '' ? (
+          <>
+            ：<span className="font-medium">{query}</span>
+          </>
+        ) : (
+          <> · {frame.name}</>
+        )}
       </span>
-      {running ? (
-        <span className="animate-pulse text-[10px] text-[var(--orange-400)]">…</span>
-      ) : null}
-      {interaction !== undefined ? <InteractionBadge interaction={interaction} /> : null}
-      {task !== undefined ? <TaskBadge task={task} /> : null}
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        {running ? <BusyPill label="…" /> : null}
+        {interaction !== undefined ? <InteractionBadge interaction={interaction} /> : null}
+        {task !== undefined ? <TaskBadge task={task} /> : null}
+      </div>
     </div>
   );
 }
@@ -396,40 +488,54 @@ function GenericCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const summary = (display?.kind === 'generic' && display.summary) || summarize(frame);
-  const hasBody = frame.input !== undefined || frame.output !== undefined;
+  const output = toolOutput(frame, task);
+  const inputText =
+    typeof frame.inputText === 'string' && frame.inputText !== '' ? frame.inputText : undefined;
+  // Subagents (and other generic tools) must stay expandable while running —
+  // callers need the streamed input / outputTail, not just the header badge.
+  const hasBody =
+    frame.input !== undefined ||
+    frame.output !== undefined ||
+    inputText !== undefined ||
+    output !== undefined;
   return (
-    <div className="mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-3 py-2">
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-[12px] text-[var(--color-text-foreground)]">
-          {frame.name}
-        </span>
-        <StateBadge frame={frame} />
-        {interaction !== undefined ? <InteractionBadge interaction={interaction} /> : null}
-        {task !== undefined ? <TaskBadge task={task} /> : null}
-      </div>
-      {summary !== undefined ? (
-        <div className="mt-1 text-[11px] leading-relaxed text-[var(--color-text-foreground)] opacity-70">
-          {summary}
+    <div className={TOOL_CARD}>
+      <CardHeader
+        expanded={expanded}
+        onToggle={() => {
+          if (hasBody) setExpanded((value) => !value);
+        }}
+        icon={<Wrench size={14} weight="duotone" />}
+        trailing={<BadgeRow frame={frame} task={task} interaction={interaction} alwaysShowState />}
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 font-mono text-[12px] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)]">
+            {frame.name}
+          </span>
+          {summary !== undefined ? (
+            <span className="min-w-0 truncate text-[10.5px] text-[var(--color-text-tertiary)]">
+              {summary}
+            </span>
+          ) : null}
         </div>
-      ) : null}
-      {hasBody && frame.state !== 'running' ? (
-        <button
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-          className="mt-1 cursor-pointer text-[10px] text-[var(--color-text-foreground)] opacity-50 hover:opacity-80"
-        >
-          {expanded ? '收起详情' : '查看详情'}
-        </button>
-      ) : null}
+      </CardHeader>
       {expanded ? (
-        <div className="mt-1 border-t border-[var(--color-border-light)] pt-1">
+        <div className="space-y-2 border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3.5 py-2.5">
           {frame.input !== undefined ? (
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10px] leading-4 text-[var(--color-text-foreground)] opacity-70">
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-text-secondary)]">
               {safeJson(frame.input)}
             </pre>
+          ) : inputText !== undefined ? (
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-text-secondary)]">
+              {inputText}
+            </pre>
           ) : null}
-          {frame.output !== undefined ? (
-            <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10px] leading-4 text-[var(--color-text-foreground)] opacity-70">
+          {output !== undefined ? (
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-text-secondary)]">
+              {output}
+            </pre>
+          ) : frame.output !== undefined ? (
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-text-secondary)]">
               {safeJson(frame.output)}
             </pre>
           ) : null}

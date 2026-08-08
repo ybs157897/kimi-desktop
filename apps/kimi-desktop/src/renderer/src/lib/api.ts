@@ -70,6 +70,8 @@ import {
   type UndoSessionResponse,
   fsBrowseResponseSchema,
   fsDiffResponseSchema,
+  fsGitBranchesResponseSchema,
+  fsGitCheckoutResponseSchema,
   fsGitStatusResponseSchema,
   fsHomeResponseSchema,
   fsListResponseSchema,
@@ -90,6 +92,8 @@ import {
   type CloseTerminalResponse,
   type FsBrowseResponse,
   type FsDiffResponse,
+  type FsGitBranchesResponse,
+  type FsGitCheckoutResponse,
   type FsGitStatusResponse,
   type FsHomeResponse,
   type FsListResponse,
@@ -1157,6 +1161,20 @@ export class ApiClient {
     return this.request<FsGitStatusResponse>(
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_status`,
       { method: 'POST', body: paths === undefined ? {} : { paths } },
+    );
+  }
+
+  fsGitBranches(sessionId: string): Promise<FsGitBranchesResponse> {
+    return this.request<FsGitBranchesResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_branches`,
+      { method: 'POST', body: {}, schema: fsGitBranchesResponseSchema },
+    );
+  }
+
+  fsGitCheckout(sessionId: string, branch: string): Promise<FsGitCheckoutResponse> {
+    return this.request<FsGitCheckoutResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_checkout`,
+      { method: 'POST', body: { branch }, schema: fsGitCheckoutResponseSchema },
     );
   }
 

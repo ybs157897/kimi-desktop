@@ -52,14 +52,17 @@
 
   /* ------------------------------- typography ------------------------------ */
 
+  /* Match Codex's native UI stacks exactly. On macOS `-apple-system` resolves
+     to the current San Francisco UI face selected by the OS. */
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono:
-    ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, monospace;
+    ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
 
-  /* Chat (and default body) font size; code is one step smaller. */
+  /* Codex preferences defaults: 14px UI and 12px code. */
   --codex-chat-font-size: 14px;
-  --codex-code-font-size: 12.5px;
+  --codex-code-font-size: 12px;
 
   --font-size-xs: 11px;
   --font-size-sm: 12px;
@@ -69,6 +72,22 @@
   --font-size-2xl: 36px;
   --font-size-3xl: 48px;
   --font-size-4xl: 72px;
+
+  --tracking-tight: 0;
+  --tracking-display: -0.01em;
+  --tracking-label: 0.08em;
+  --leading-chat: 1.5;
+  --leading-ui: 1.35;
+
+  /* ------------------------------- motion --------------------------------- */
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-press: 140ms;
+  --duration-popover: 180ms;
+  --duration-hover: 120ms;
+  --duration-slow: 260ms; /* card entrance (web kimi-card-in) */
 
   /* ------------------------------ corner radius ---------------------------- */
 
@@ -98,30 +117,30 @@
 
   --shadow-panel-divider: -8px 0 16px -8px rgb(0 0 0 / 0.18); /* right dock left edge */
   --shadow-panel-divider-top: 0 -8px 16px -8px rgb(0 0 0 / 0.18); /* bottom dock top edge */
-  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 0.08);
-  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.08);
-  --shadow-lg: 0 4px 8px -2px rgb(0 0 0 / 0.1);
-  --shadow-xl: 0 8px 16px -4px rgb(0 0 0 / 0.12);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 1px rgb(0 0 0 / 0.03);
+  --shadow-md: 0 2px 6px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 8px 20px -6px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.04);
+  --shadow-xl: 0 16px 40px -12px rgb(0 0 0 / 0.18), 0 4px 12px rgb(0 0 0 / 0.06);
   --shadow-floating-panel: 0 12px 36px rgb(0 0 0 / 0.08), 0 2px 8px rgb(0 0 0 / 0.05);
 
   /* --------------------------------- layout -------------------------------- */
 
   --layout-right-panel-min-width: 320px;
-  --layout-thread-max-width: 40rem;
+  --layout-thread-max-width: 48rem;
   --layout-markdown-max-width: 64rem;
   /* Sidebar token-row height: 14px font × 1.5 line-height + 8px vertical padding. */
   --height-token-row: 29px;
 
   /* ---------------------------- markdown prose ----------------------------- */
 
-  --markdown-inline-code-border-radius: 6px;
+  --markdown-inline-code-border-radius: 5px;
   --markdown-inline-code-padding: 1px 6px;
-  --markdown-inline-code-font-size: 0.92em;
-  --markdown-code-block-border-radius: 10px;
-  --markdown-code-block-padding: 8px;
-  --markdown-code-block-line-height: 20px;
-  --markdown-list-padding-inline-start: 1.3125rem;
-  --markdown-paragraph-spacing: 0.625rem;
+  --markdown-inline-code-font-size: 0.9em;
+  --markdown-code-block-border-radius: 12px;
+  --markdown-code-block-padding: 12px;
+  --markdown-code-block-line-height: 1.55;
+  --markdown-list-padding-inline-start: 1.35rem;
+  --markdown-paragraph-spacing: 0.75rem;
 }
 
 /* -------------------------- semantic layer (dark) --------------------------
@@ -134,9 +153,17 @@
   --color-background-panel: #202020;
   --color-terminal-shell: #151515;
   --color-background-accent: var(--blue-900); /* #00284d */
+  --color-user-bubble: rgb(255 255 255 / 0.08);
+  --color-composer-fill: rgb(33 33 33 / 0.92);
+  --shadow-composer:
+    0 0 0 1px rgb(255 255 255 / 0.04), 0 12px 36px -12px rgb(0 0 0 / 0.55),
+    0 2px 10px rgb(0 0 0 / 0.28);
+  --shadow-composer-focus:
+    0 0 0 1px rgb(255 255 255 / 0.08), 0 14px 40px -12px rgb(0 0 0 / 0.62),
+    0 3px 12px rgb(0 0 0 / 0.32);
 
-  --color-button-primary-background: var(--gray-1000); /* main button */
-  --color-button-primary-foreground: var(--gray-0);
+  --color-button-primary-background: var(--gray-0);
+  --color-button-primary-foreground: var(--gray-1000);
   --color-background-button-secondary: rgb(255 255 255 / 0.05);
   --color-background-button-secondary-hover: rgb(255 255 255 / 0.08);
   --color-background-button-tertiary: rgb(255 255 255 / 0.03);
@@ -162,6 +189,12 @@
   --color-list-hover: rgb(255 255 255 / 0.08);
   --color-list-active: rgb(255 255 255 / 0.12);
 
+  /* Busy-pill sweep highlight (`.ui-shimmer` overlay). */
+  --color-shimmer-highlight: rgb(255 255 255 / 0.22);
+
+  /* Lighter floating-panel shadow (Apple-style). */
+  --shadow-floating-panel: 0 4px 16px rgb(0 0 0 / 0.2), 0 1px 4px rgb(0 0 0 / 0.12);
+
   /* accent（背景 / 文本）: blue-900 / blue-100 */
   --color-accent-background: var(--blue-900);
   --color-accent-text: var(--blue-100);
@@ -170,7 +203,11 @@
   --color-token-text-primary: var(--color-text-foreground);
   --color-token-text-secondary: var(--color-text-secondary);
   --color-token-text-tertiary: var(--color-text-tertiary);
-  --color-token-text-code-block-background: var(--color-background-button-secondary);
+  --color-token-text-code-block-background: color-mix(
+    in srgb,
+    var(--color-background-surface-under) 82%,
+    var(--color-background-panel)
+  );
   --color-token-text-link-foreground: var(--blue-300);
   --color-token-border: var(--color-border);
   --color-token-border-light: var(--color-border-light);
@@ -189,39 +226,54 @@
 /* -------------------------- semantic layer (light) ------------------------ */
 
 [data-theme='light'] {
-  --color-background-surface: #fcfcfb;
-  --color-background-surface-under: #f1f2f1;
+  /* Cool-neutral canvas: sidebar recessed, main stage lifted. */
+  --color-background-surface: #F5F5F7;
+  --color-background-surface-under: #ECECF0;
   --color-background-editor-opaque: #ffffff;
   --color-background-panel: #ffffff;
   --color-terminal-shell: #171717;
   --color-background-accent: var(--blue-50); /* #e5f3ff */
+  --color-user-bubble: #ececea;
+  --color-composer-fill: rgb(255 255 255 / 0.92);
+  --shadow-composer:
+    0 0 0 1px rgb(0 0 0 / 0.03), 0 8px 28px -10px rgb(15 18 22 / 0.14),
+    0 2px 8px rgb(15 18 22 / 0.04);
+  --shadow-composer-focus:
+    0 0 0 1px rgb(0 0 0 / 0.05), 0 10px 32px -10px rgb(15 18 22 / 0.18),
+    0 3px 10px rgb(15 18 22 / 0.05);
 
-  --color-button-primary-background: var(--color-text-foreground); /* foreground base */
+  --color-button-primary-background: #1a1c1f;
   --color-button-primary-foreground: var(--gray-0);
-  --color-background-button-secondary: rgb(26 28 31 / 0.05);
-  --color-background-button-secondary-hover: rgb(26 28 31 / 0.05);
+  --color-background-button-secondary: rgb(26 28 31 / 0.055);
+  --color-background-button-secondary-hover: rgb(26 28 31 / 0.09);
   --color-background-button-tertiary: transparent;
   --color-background-button-tertiary-hover: rgb(26 28 31 / 0.1);
 
-  --color-text-foreground: #1a1c1f;
-  --color-text-secondary: rgb(26 28 31 / 0.65);
-  --color-text-tertiary: rgb(26 28 31 / 0.45);
+  --color-text-foreground: #14161a;
+  --color-text-secondary: rgb(20 22 26 / 0.62);
+  --color-text-tertiary: rgb(20 22 26 / 0.42);
   --color-text-on-accent: var(--gray-1000);
   --color-text-accent: var(--blue-500);
   --color-text-success: var(--green-500);
   --color-text-danger: var(--red-500);
   --color-text-warning: var(--orange-400);
 
-  /* border: 8% / 12% / 5% foreground mixes */
-  --color-border: rgb(26 28 31 / 0.075);
-  --color-border-heavy: rgb(26 28 31 / 0.12);
-  --color-border-light: rgb(26 28 31 / 0.05);
+  /* Slightly stronger borders so panels read as layered materials. */
+  --color-border: rgb(20 22 26 / 0.1);
+  --color-border-heavy: rgb(20 22 26 / 0.16);
+  --color-border-light: rgb(20 22 26 / 0.06);
   --color-border-focus: var(--blue-300);
   --color-border-error: rgb(224 46 42 / 0.15); /* red-500 @ 15% */
   --color-border-warning: rgb(226 85 7 / 0.15); /* orange @ 15% */
 
-  --color-list-hover: rgb(26 28 31 / 0.055);
-  --color-list-active: rgb(26 28 31 / 0.085);
+  --color-list-hover: rgb(20 22 26 / 0.05);
+  --color-list-active: rgb(20 22 26 / 0.09);
+
+  /* Busy-pill sweep highlight (`.ui-shimmer` overlay). */
+  --color-shimmer-highlight: rgb(255 255 255 / 0.5);
+
+  /* Lighter floating-panel shadow (Apple-style). */
+  --shadow-floating-panel: 0 4px 16px rgb(0 0 0 / 0.06), 0 1px 4px rgb(0 0 0 / 0.04);
 
   /* accent（背景 / 文本）: blue-50 / blue-300 */
   --color-accent-background: var(--blue-50);
@@ -231,7 +283,11 @@
   --color-token-text-primary: var(--color-text-foreground);
   --color-token-text-secondary: var(--color-text-secondary);
   --color-token-text-tertiary: var(--color-text-tertiary);
-  --color-token-text-code-block-background: var(--color-background-button-secondary);
+  --color-token-text-code-block-background: color-mix(
+    in srgb,
+    var(--color-background-surface-under) 82%,
+    var(--color-background-panel)
+  );
   --color-token-text-link-foreground: var(--blue-500);
   --color-token-border: var(--color-border);
   --color-token-border-light: var(--color-border-light);

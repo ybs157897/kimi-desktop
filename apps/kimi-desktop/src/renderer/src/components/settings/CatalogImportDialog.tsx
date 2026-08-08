@@ -5,11 +5,12 @@
  * disabled with their reason; entries with `needs_base_url` require one.
  */
 
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import type { CatalogProviderItem } from '#/lib/api';
 import { useCatalogProviders, useImportCatalogProvider } from '#/lib/queries';
 import { catalogProviderFilter } from '#/lib/providers';
+import { useModalDialog } from '#/lib/useModalDialog';
 
 export interface CatalogImportDialogProps {
   readonly onClose: () => void;
@@ -26,13 +27,9 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useModalDialog(dialogRef, onClose, { initialFocusRef: searchRef });
 
   const items = catalogProviderFilter(query, catalog.data?.items ?? []);
   const pending = importCatalog.isPending;
@@ -52,10 +49,18 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label="从 models.dev 目录导入"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
         className="flex w-[560px] max-h-[85vh] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
       >
@@ -75,6 +80,7 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
 
         <div className="px-4 pt-3">
           <input
+            ref={searchRef}
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
