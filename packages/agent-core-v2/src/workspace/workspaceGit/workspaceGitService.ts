@@ -9,7 +9,7 @@
 import { LifecycleScope } from '#/app/scopes';
 
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
-import { type FsDiffResponse, type FsGitStatusResponse, IGitService } from '#/app/git/git';
+import { type FsDiffResponse, type FsGitBranchesResponse, type FsGitCheckoutResponse, type FsGitStatusResponse, IGitService } from '#/app/git/git';
 import { IWorkspaceContext } from '#/workspace/workspaceContext/workspaceContext';
 
 import { IWorkspaceGitService } from './workspaceGit';
@@ -24,6 +24,14 @@ export class WorkspaceGitService implements IWorkspaceGitService {
 
   status(pathFilter?: ReadonlySet<string>): Promise<FsGitStatusResponse> {
     return this.git.status(this.workspace.cwd, pathFilter);
+  }
+
+  branches(): Promise<FsGitBranchesResponse> {
+    return this.git.branches(this.workspace.cwd);
+  }
+
+  checkout(branch: string): Promise<FsGitCheckoutResponse> {
+    return this.git.checkout(this.workspace.cwd, branch);
   }
 
   diff(relPath: string, absPath: string): Promise<FsDiffResponse> {

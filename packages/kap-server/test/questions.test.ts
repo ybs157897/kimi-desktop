@@ -43,6 +43,7 @@ interface QuestionItemWire {
 interface QuestionWire {
   question_id: string;
   session_id: string;
+  agent_id?: string;
   turn_id?: number;
   tool_call_id?: string;
   questions: QuestionItemWire[];
@@ -168,6 +169,21 @@ describe('server-v2 /api/v1/sessions/{sid}/questions', () => {
     expect(Number.isNaN(Date.parse(item.created_at))).toBe(false);
     // v1 parity: the question wire shape carries no synthetic expiry.
     expect(item).not.toHaveProperty('expires_at');
+  });
+
+  it('returns the owning agent id when a subagent asks a question', async () => {
+    const sid = await createSession();
+    const abort = new AbortController();
+    const pending = questionService(sid).request(makeRequest('q-agent'), {
+      agentId: 'agent-0',
+      signal: abort.signal,
+    });
+
+    const { body } = await getJson<ListWire>(`/api/v1/sessions/${sid}/questions?status=pending`);
+    expect(body.data.items[0]?.agent_id).toBe('agent-0');
+
+    abort.abort();
+    await pending;
   });
 
   it('resolves a pending question', async () => {

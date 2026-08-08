@@ -291,6 +291,25 @@ export const fsGitStatusResponseSchema = z.object({
 });
 export type FsGitStatusResponse = z.infer<typeof fsGitStatusResponseSchema>;
 
+export const fsGitBranchesRequestSchema = z.object({});
+export type FsGitBranchesRequest = z.infer<typeof fsGitBranchesRequestSchema>;
+
+export const fsGitBranchesResponseSchema = z.object({
+  current: z.string(),
+  branches: z.array(z.string()),
+});
+export type FsGitBranchesResponse = z.infer<typeof fsGitBranchesResponseSchema>;
+
+export const fsGitCheckoutRequestSchema = z.object({
+  branch: z.string().min(1),
+});
+export type FsGitCheckoutRequest = z.infer<typeof fsGitCheckoutRequestSchema>;
+
+export const fsGitCheckoutResponseSchema = z.object({
+  branch: z.string(),
+});
+export type FsGitCheckoutResponse = z.infer<typeof fsGitCheckoutResponseSchema>;
+
 export const fsDiffRequestSchema = z.object({
   path: z.string().min(1),
 });

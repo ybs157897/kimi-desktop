@@ -32,6 +32,7 @@ import { isAbsolute } from 'node:path';
 import {
   ErrorCodes,
   IWorkspaceFsService,
+  IWorkspaceGitService,
   IWorkspaceLifecycleService,
   IWorkspaceService,
   getLiveSessionById,
@@ -42,6 +43,8 @@ import {
 } from '@moonshot-ai/agent-core-v2';
 import {
   fsDiffRequestSchema,
+  fsGitBranchesResponseSchema,
+  fsGitCheckoutRequestSchema,
   fsGitStatusRequestSchema,
   fsGrepRequestSchema,
   fsListManyRequestSchema,
@@ -124,6 +127,8 @@ const FS_ACTIONS = [
   'search',
   'grep',
   'git_status',
+  'git_branches',
+  'git_checkout',
   'diff',
   'open',
   'open-in',
@@ -188,7 +193,7 @@ export function registerFsRoutes(app: FsRouteHost, core: Scope): void {
         [ErrorCode.FS_ALREADY_EXISTS]: {},
       },
       description:
-        'Filesystem action dispatcher. Supported actions: list, read, list_many, stat, stat_many, mkdir, search, grep, git_status, diff, open, open-in, reveal.',
+        'Filesystem action dispatcher. Supported actions: list, read, list_many, stat, stat_many, mkdir, search, grep, git_status, git_branches, git_checkout, diff, open, open-in, reveal.',
       tags: ['fs'],
       operationId: 'fsAction',
     },
@@ -258,6 +263,12 @@ export function registerFsRoutes(app: FsRouteHost, core: Scope): void {
           case 'git_status':
             await handleGitStatus(core, session_id, req, reply);
             return;
+          case 'git_branches':
+            await handleGitBranches(core, session_id, req, reply);
+            return;
+          case 'git_checkout':
+            await handleGitCheckout(core, session_id, req, reply);
+            return;
           case 'diff':
             await handleDiff(core, session_id, req, reply);
             return;
@@ -271,8 +282,8 @@ export function registerFsRoutes(app: FsRouteHost, core: Scope): void {
             await handleReveal(core, session_id, req, reply);
             return;
         }
-      } catch (err) {
-        sendMappedError(reply, req, err);
+      } catch (error) {
+        sendMappedError(reply, req, error);
       }
     },
   );
@@ -319,8 +330,8 @@ export function registerFsRoutes(app: FsRouteHost, core: Scope): void {
       try {
         const data = await fs.search(searchRequest);
         reply.send(okEnvelope(data, req.id));
-      } catch (err) {
-        sendMappedError(reply, req, err);
+      } catch (error) {
+        sendMappedError(reply, req, error);
       }
     },
   );
@@ -377,8 +388,8 @@ export function registerFsRoutes(app: FsRouteHost, core: Scope): void {
       let resolved: Awaited<ReturnType<IWorkspaceFsService['resolveDownload']>>;
       try {
         resolved = await resolveFs(core, session_id).resolveDownload(relPath);
-      } catch (err) {
-        sendMappedError(reply, req, err);
+      } catch (error) {
+        sendMappedError(reply, req, error);
         return;
       }
 
@@ -543,6 +554,25 @@ async function handleGitStatus(core: Scope, sessionId: string, req: Req, reply: 
   reply.send(okEnvelope(data, req.id));
 }
 
+async function handleGitBranches(core: Scope, sessionId: string, req: Req, reply: Reply): Promise<void> {
+  const session = getLiveSessionById(core.accessor, sessionId);
+  if (session === undefined) throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${sessionId} does not exist`);
+  const data = await session.accessor.get(IWorkspaceGitService).branches();
+  reply.send(okEnvelope(fsGitBranchesResponseSchema.parse(data), req.id));
+}
+
+async function handleGitCheckout(core: Scope, sessionId: string, req: Req, reply: Reply): Promise<void> {
+  const parsed = fsGitCheckoutRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    reply.send(buildValidationEnvelope(parsed.error.issues, req.id));
+    return;
+  }
+  const session = getLiveSessionById(core.accessor, sessionId);
+  if (session === undefined) throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${sessionId} does not exist`);
+  const data = await session.accessor.get(IWorkspaceGitService).checkout(parsed.data.branch);
+  reply.send(okEnvelope(data, req.id));
+}
+
 async function handleDiff(core: Scope, sessionId: string, req: Req, reply: Reply): Promise<void> {
   const parsed = fsDiffRequestSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
@@ -590,15 +620,15 @@ async function handleOpenIn(core: Scope, sessionId: string, req: Req, reply: Rep
         isDirectory: resolved.isDirectory,
       }),
     );
-  } catch (err) {
+  } catch (error) {
     requestLog(req)?.warn(
-      { session_id: sessionId, app_id: body.app_id, err },
+      { session_id: sessionId, app_id: body.app_id, error },
       'fs open-in launch failed',
     );
     reply.send(
       errEnvelope(
         ErrorCode.INTERNAL_ERROR,
-        `failed to open in ${body.app_id}: ${err instanceof Error ? err.message : String(err)}`,
+        `failed to open in ${body.app_id}: ${error instanceof Error ? error.message : String(error)}`,
         req.id,
       ),
     );
@@ -707,6 +737,6 @@ function buildValidationEnvelope(
 
 function sanitizeFilename(rel: string): string {
   const segs = rel.split('/');
-  const base = segs[segs.length - 1] ?? rel;
-  return base.replace(/"/g, '\\"');
+  const base = segs.at(-1) ?? rel;
+  return base.replaceAll(/"/g, '\\"');
 }

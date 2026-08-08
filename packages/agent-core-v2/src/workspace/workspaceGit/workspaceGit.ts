@@ -7,12 +7,14 @@
  */
 
 import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiation';
-import type { FsDiffResponse, FsGitStatusResponse } from '#/app/git/git';
+import type { FsDiffResponse, FsGitBranchesResponse, FsGitCheckoutResponse, FsGitStatusResponse } from '#/app/git/git';
 
 export interface IWorkspaceGitService {
   readonly _serviceBrand: undefined;
 
   status(pathFilter?: ReadonlySet<string>): Promise<FsGitStatusResponse>;
+  branches(): Promise<FsGitBranchesResponse>;
+  checkout(branch: string): Promise<FsGitCheckoutResponse>;
   diff(relPath: string, absPath: string): Promise<FsDiffResponse>;
 }
 

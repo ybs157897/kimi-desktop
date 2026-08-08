@@ -156,6 +156,8 @@ const gitStub: IGitService = {
       pullRequest: preset.pullRequest,
     };
   },
+  branches: async () => ({ current: 'main', branches: ['main'] }),
+  checkout: async (branch) => ({ branch }),
   diff: async () => {
     throw new Error2(ErrorCodes.FS_GIT_UNAVAILABLE, 'not used in these tests');
   },

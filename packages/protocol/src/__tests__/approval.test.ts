@@ -63,6 +63,11 @@ describe('approvalRequestSchema (SCHEMAS §6.1)', () => {
     expect(parsed.turn_id).toBe(42);
   });
 
+  it('preserves the optional owning agent id when a subagent requests approval', () => {
+    const parsed = approvalRequestSchema.parse({ ...base, agent_id: 'agent-0' });
+    expect(parsed.agent_id).toBe('agent-0');
+  });
+
   it('normalizes timestamps', () => {
     const parsed = approvalRequestSchema.parse({
       ...base,

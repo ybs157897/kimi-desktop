@@ -102,6 +102,11 @@ describe('questionRequestSchema (SCHEMAS §6.2)', () => {
     expect(questionRequestSchema.parse(baseReq).question_id).toBe('01J_QUESTION');
   });
 
+  it('preserves the optional owning agent id when a subagent asks a question', () => {
+    const parsed = questionRequestSchema.parse({ ...baseReq, agent_id: 'agent-0' });
+    expect(parsed.agent_id).toBe('agent-0');
+  });
+
   it('rejects 0 questions', () => {
     expect(() => questionRequestSchema.parse({ ...baseReq, questions: [] })).toThrow();
   });

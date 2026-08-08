@@ -25,6 +25,8 @@ export type QuestionItem = z.infer<typeof questionItemSchema>;
 export const questionRequestSchema = z.object({
   question_id: z.string().min(1),
   session_id: z.string().min(1),
+  /** Agent that issued the request. Absent on responses from older servers. */
+  agent_id: z.string().min(1).optional(),
   turn_id: z.number().int().nonnegative().optional(),
   tool_call_id: z.string().min(1).optional(),
   questions: z.array(questionItemSchema).min(1).max(4),

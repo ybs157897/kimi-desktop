@@ -84,6 +84,21 @@ describe('GitService', () => {
       expect(result.deletions).toBe(0);
     });
 
+    it('reports every untracked file inside nested directories', async () => {
+      writeFileSync(join(repo, 'tracked.txt'), 'tracked\n');
+      commitAll('init');
+      mkdirSync(join(repo, '.agents', 'skills', 'animate'), { recursive: true });
+      writeFileSync(join(repo, '.agents', 'skills', 'animate', 'SKILL.md'), 'skill\n');
+      writeFileSync(join(repo, '.agents', 'skills', 'animate', 'RECIPES.md'), 'recipes\n');
+
+      const result = await service.status(repo);
+
+      expect(result.entries).toEqual({
+        '.agents/skills/animate/RECIPES.md': 'untracked',
+        '.agents/skills/animate/SKILL.md': 'untracked',
+      });
+    });
+
     it('restricts entries to the path filter', async () => {
       writeFileSync(join(repo, 'a.txt'), 'a\n');
       writeFileSync(join(repo, 'b.txt'), 'b\n');
@@ -150,6 +165,30 @@ describe('GitService', () => {
       await expect(
         service.diff(repo, 'missing.txt', join(repo, 'missing.txt')),
       ).rejects.toMatchObject({ code: ErrorCodes.FS_PATH_NOT_FOUND });
+    });
+  });
+
+  describe('branches', () => {
+    it('lists local branches and switches the working tree', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'hello\n');
+      commitAll('init');
+      const initial = git(repo, 'branch', '--show-current');
+      git(repo, 'branch', 'feature/example');
+
+      await expect(service.branches(repo)).resolves.toEqual({
+        current: initial,
+        branches: expect.arrayContaining([initial, 'feature/example']),
+      });
+      await expect(service.checkout(repo, 'feature/example')).resolves.toEqual({
+        branch: 'feature/example',
+      });
+      expect(git(repo, 'branch', '--show-current')).toBe('feature/example');
+    });
+
+    it('rejects an invalid branch name without invoking switch', async () => {
+      await expect(service.checkout(repo, '--bad')).rejects.toMatchObject({
+        code: ErrorCodes.FS_GIT_UNAVAILABLE,
+      });
     });
   });
 

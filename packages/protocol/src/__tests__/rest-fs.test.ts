@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   fsDownloadParamsSchema,
+  fsGitBranchesResponseSchema,
+  fsGitCheckoutRequestSchema,
+  fsGitCheckoutResponseSchema,
   fsGitStatusRequestSchema,
   fsGitStatusResponseSchema,
   fsGrepRequestSchema,
@@ -420,6 +423,20 @@ describe('fsGitStatusResponseSchema (W11.2)', () => {
         pullRequest: null,
       }).branch,
     ).toBe('');
+  });
+});
+
+describe('git branch schemas', () => {
+  it('round-trips branch discovery and checkout payloads', () => {
+    expect(
+      fsGitBranchesResponseSchema.parse({ current: 'main', branches: ['main', 'feature/example'] }),
+    ).toEqual({ current: 'main', branches: ['main', 'feature/example'] });
+    expect(fsGitCheckoutRequestSchema.parse({ branch: 'feature/example' })).toEqual({
+      branch: 'feature/example',
+    });
+    expect(fsGitCheckoutResponseSchema.parse({ branch: 'feature/example' })).toEqual({
+      branch: 'feature/example',
+    });
   });
 });
 

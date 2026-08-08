@@ -53,6 +53,18 @@ export const fsGitStatusResponseSchema = z.object({
 });
 export type FsGitStatusResponse = z.infer<typeof fsGitStatusResponseSchema>;
 
+export const fsGitBranchesResponseSchema = z.object({
+  current: z.string(),
+  branches: z.array(z.string()),
+});
+export type FsGitBranchesResponse = z.infer<typeof fsGitBranchesResponseSchema>;
+
+export const fsGitCheckoutRequestSchema = z.object({ branch: z.string().min(1) });
+export type FsGitCheckoutRequest = z.infer<typeof fsGitCheckoutRequestSchema>;
+
+export const fsGitCheckoutResponseSchema = z.object({ branch: z.string() });
+export type FsGitCheckoutResponse = z.infer<typeof fsGitCheckoutResponseSchema>;
+
 export const fsDiffRequestSchema = z.object({
   path: z.string().min(1),
 });
@@ -69,6 +81,8 @@ export interface IGitService {
   readonly _serviceBrand: undefined;
 
   status(cwd: string, pathFilter?: ReadonlySet<string>): Promise<FsGitStatusResponse>;
+  branches(cwd: string): Promise<FsGitBranchesResponse>;
+  checkout(cwd: string, branch: string): Promise<FsGitCheckoutResponse>;
   diff(cwd: string, relPath: string, absPath: string): Promise<FsDiffResponse>;
   findWorkTree(cwd: string): Promise<GitWorkTree | null>;
 }

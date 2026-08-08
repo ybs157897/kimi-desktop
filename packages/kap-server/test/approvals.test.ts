@@ -20,6 +20,7 @@ interface Envelope<T> {
 interface ApprovalWire {
   approval_id: string;
   session_id: string;
+  agent_id?: string;
   turn_id?: number;
   tool_call_id: string;
   tool_name: string;
@@ -98,10 +99,11 @@ describe('server-v2 /api/v1/sessions/{sid}/approvals', () => {
   }
 
   /** Park an approval in-process so the REST route has something to list/resolve. */
-  function enqueueApproval(sessionId: string, toolCallId: string): string {
+  function enqueueApproval(sessionId: string, toolCallId: string, agentId?: string): string {
     const handle = getLiveSessionById(server!.core.accessor, sessionId);
     expect(handle).toBeDefined();
     const parked = handle!.accessor.get(ISessionApprovalService).enqueue({
+      agentId,
       toolCallId,
       toolName: 'Bash',
       action: 'run',
@@ -128,6 +130,14 @@ describe('server-v2 /api/v1/sessions/{sid}/approvals', () => {
     expect(Number.isNaN(Date.parse(item.expires_at))).toBe(false);
   });
 
+  it('returns the owning agent id when a subagent requests approval', async () => {
+    const sid = await createSession();
+    enqueueApproval(sid, 'tc-agent', 'agent-0');
+
+    const { body } = await getJson<ListWire>(`/api/v1/sessions/${sid}/approvals?status=pending`);
+    expect(body.data.items[0]?.agent_id).toBe('agent-0');
+  });
+
   it('resolves a pending approval', async () => {
     const sid = await createSession();
     const aid = enqueueApproval(sid, 'tc-2');
@@ -138,6 +148,20 @@ describe('server-v2 /api/v1/sessions/{sid}/approvals', () => {
     expect(body.code).toBe(0);
     expect(body.data.resolved).toBe(true);
     expect(Number.isNaN(Date.parse(body.data.resolved_at))).toBe(false);
+
+    const listed = await getJson<ListWire>(`/api/v1/sessions/${sid}/approvals?status=pending`);
+    expect(listed.body.data.items).toHaveLength(0);
+  });
+
+  it('resolves a subagent approval by its session interaction id', async () => {
+    const sid = await createSession();
+    const aid = enqueueApproval(sid, 'tc-child-resolve', 'agent-0');
+
+    const { body } = await postJson<ResolveWire>(`/api/v1/sessions/${sid}/approvals/${aid}`, {
+      decision: 'approved',
+    });
+    expect(body.code).toBe(0);
+    expect(body.data.resolved).toBe(true);
 
     const listed = await getJson<ListWire>(`/api/v1/sessions/${sid}/approvals?status=pending`);
     expect(listed.body.data.items).toHaveLength(0);

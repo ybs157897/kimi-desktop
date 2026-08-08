@@ -16,6 +16,9 @@ import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiatio
 import { isoDateTimeSchema } from '#/_base/utils/isoDateTime';
 import {
   fsGitStatusSchema,
+  fsGitBranchesResponseSchema,
+  fsGitCheckoutRequestSchema,
+  fsGitCheckoutResponseSchema,
   type FsDiffRequest,
   type FsDiffResponse,
   type FsGitStatusRequest,
@@ -27,6 +30,9 @@ export {
   fsDiffResponseSchema,
   fsGitStatusRequestSchema,
   fsGitStatusResponseSchema,
+  fsGitBranchesResponseSchema,
+  fsGitCheckoutRequestSchema,
+  fsGitCheckoutResponseSchema,
 } from '#/app/git/git';
 export type { FsDiffRequest, FsDiffResponse, FsGitStatusRequest, FsGitStatusResponse };
 

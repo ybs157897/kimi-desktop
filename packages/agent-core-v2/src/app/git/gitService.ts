@@ -10,7 +10,13 @@
  * absolute `cwd` and already-confined repo-relative paths.
  */
 
-import type { FsDiffResponse, FsGitStatusResponse, FsPullRequest } from './git';
+import type {
+  FsDiffResponse,
+  FsGitBranchesResponse,
+  FsGitCheckoutResponse,
+  FsGitStatusResponse,
+  FsPullRequest,
+} from './git';
 import { LifecycleScope } from '#/app/scopes';
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
 import { ErrorCodes, Error2 } from '#/errors';
@@ -56,7 +62,7 @@ export class GitService implements IGitService {
 
     const porc = await this.runCommand(
       'git',
-      ['status', '--porcelain=v1', '--branch', '--', '.'],
+      ['status', '--porcelain=v1', '--branch', '--untracked-files=all', '--', '.'],
       cwd,
     );
     if (porc.exitCode !== 0) {
@@ -87,6 +93,36 @@ export class GitService implements IGitService {
 
     result.pullRequest = await this.readPullRequest(cwd);
     return result;
+  }
+
+  async branches(cwd: string): Promise<FsGitBranchesResponse> {
+    const result = await this.runCommand(
+      'git',
+      ['for-each-ref', '--format=%(refname:short)', '--sort=-committerdate', 'refs/heads/'],
+      cwd,
+    );
+    if (result.exitCode !== 0) {
+      throw this.gitUnavailable(cwd, result.stderr.trim() || `git for-each-ref exit ${result.exitCode}`);
+    }
+    const currentResult = await this.runCommand('git', ['branch', '--show-current'], cwd);
+    if (currentResult.exitCode !== 0) {
+      throw this.gitUnavailable(cwd, currentResult.stderr.trim() || `git branch exit ${currentResult.exitCode}`);
+    }
+    const current = currentResult.stdout.trim();
+    const branches = result.stdout.split('\n').map((branch) => branch.trim()).filter(Boolean);
+    return { current, branches };
+  }
+
+  async checkout(cwd: string, branch: string): Promise<FsGitCheckoutResponse> {
+    const valid = await this.runCommand('git', ['check-ref-format', '--branch', branch], cwd);
+    if (valid.exitCode !== 0) {
+      throw this.gitUnavailable(cwd, valid.stderr.trim() || `invalid branch: ${branch}`);
+    }
+    const result = await this.runCommand('git', ['switch', '--', branch], cwd);
+    if (result.exitCode !== 0) {
+      throw this.gitUnavailable(cwd, result.stderr.trim() || `git switch exit ${result.exitCode}`);
+    }
+    return { branch };
   }
 
   async diff(cwd: string, relPath: string, absPath: string): Promise<FsDiffResponse> {
