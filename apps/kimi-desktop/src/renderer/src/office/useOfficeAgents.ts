@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   AgentPhase,
   AgentStatusUpdatedEvent,
+  SnapshotSubagent,
 } from '@moonshot-ai/protocol';
 import {
   subagentCompletedEventSchema,
@@ -9,263 +10,294 @@ import {
   subagentSpawnedEventSchema,
   subagentStartedEventSchema,
   subagentSuspendedEventSchema,
-  taskStartedEventSchema,
 } from '@moonshot-ai/protocol';
+import type { AgentDescriptor, TodoItem } from '@moonshot-ai/transcript';
 
+import { useConnection } from '#/lib/connection';
 import {
   createActivitySocket,
   type ActivitySocket,
   type ServerFrame,
 } from '#/lib/ws';
-import { useConnection } from '#/lib/connection';
-import { AGENT_ROSTER } from '#/office/vendored/scene/layout/officeLayout';
 import {
-  setAgentPresence,
-  setAgentState,
-} from '#/office/vendored/scene/officeSceneBridge';
-import { submitVisitAction } from '#/office/vendored/services/officeActionDispatcher';
-import type { AgentState } from '#/office/vendored/types/agent';
-import {
-  createRosterAllocator,
-  type RosterSlot,
-} from '#/office/rosterAllocator';
-import { isLiveAgentPhase, mapAgentPhase } from '#/office/phaseMap';
+  classifyAgent,
+  collaborationMode,
+  mapOfficePhase,
+  officialIdentity,
+} from '#/office/officeModel';
+import type {
+  OfficeActivity,
+  OfficeAgentState,
+  OfficeAgentView,
+  OfficeDashboard,
+  OfficeMilestone,
+} from '#/office/types';
 
-/**
- * Live view of the agents occupying the office, surfaced to the overlay.
- * Coordinates (`x`/`y`) are in the scene's 960×640 logical space and are
- * refreshed every animation frame by the OfficeView via `syncPositions`.
- */
-export interface OfficeAgentView {
-  rosterNo: number;
-  /** Vendored scene agent id (marvis/code-agent/…) used to drive the avatar. */
-  sceneAgentId: string;
-  /** Real kimi-desktop agent id (main / agent-<N>), null for empty desks. */
-  agentId: string | null;
-  label: string;
-  state: AgentState;
-  task: string;
-  /** Live scene coordinates (logical 960×640), kept in sync by the view. */
-  x: number;
-  y: number;
-  overflow: boolean;
+const EMPTY_DASHBOARD: OfficeDashboard = {
+  connected: false,
+  title: '选择会话以升堂议事',
+  phaseName: '待升堂',
+  collaborationMode: 'single',
+  agents: [],
+  milestones: [],
+};
+
+type Mutable<T> = { -readonly [Key in keyof T]: T[Key] };
+
+type MutableOfficeAgent = Omit<Mutable<OfficeAgentView>, 'activities'> & {
+  activities: OfficeActivity[];
+};
+
+function activity(text: string, tone?: OfficeActivity['tone']): OfficeActivity {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    time: Date.now(),
+    text,
+    tone,
+  };
 }
 
-/**
- * Bridge between the kap-server event stream and the vendored office scene.
- *
- * Owns its own `ActivitySocket` (independent of `useGlobalActivitySocket`) and
- * drives the scene purely through the `officeSceneBridge` entry points, so no
- * vendored file is modified. Responsibilities:
- *
- * - Maintain the kimi-agent → roster-slot mapping (`rosterAllocator`).
- * - Seed the scene from `GET /sessions/:id/snapshot` on (re)connect.
- * - Translate `agent.status.updated` phases into scene states + overlay text.
- * - Animate task handoffs: on `subagent.spawned` the caller walks over to the
- *   new subagent's desk (a desk-visit), surfacing the handoff visually.
- *
- * The scene bridge buffers actions until `OfficeScene.init()` finishes, so the
- * hook can fire events before the canvas is mounted without losing them.
- */
-export function useOfficeAgents(sessionId: string | null): {
-  agents: OfficeAgentView[];
-  connected: boolean;
+function labelForDescriptor(descriptor: AgentDescriptor): string {
+  if (descriptor.agentId === 'main') return '主理官';
+  return descriptor.label ?? descriptor.agentId;
+}
+
+function phaseFromSnapshot(subagent: SnapshotSubagent): {
+  state: OfficeAgentState;
+  task: string;
 } {
+  switch (subagent.subagent_phase) {
+    case 'working':
+      return { state: 'work', task: subagent.description || '正在办事' };
+    case 'queued':
+      return { state: 'think', task: subagent.description || '候命筹谋' };
+    case 'suspended':
+      return { state: 'review', task: subagent.suspended_reason ?? '候旨批复' };
+    case 'completed':
+      return { state: 'done', task: subagent.description || '交旨完毕' };
+    case 'failed':
+      return { state: 'failed', task: subagent.description || '办事未成' };
+    default:
+      return subagent.status === 'running'
+        ? { state: 'work', task: subagent.description || '正在办事' }
+        : { state: 'idle', task: subagent.description || '候令' };
+  }
+}
+
+function projectMilestones(items: readonly TodoItem[]): OfficeMilestone[] {
+  return items.slice(0, 7).map((item) => ({
+    title: item.title,
+    status: item.status,
+  }));
+}
+
+export function useOfficeAgents(sessionId: string | null): OfficeDashboard {
   const { api, baseUrl, token } = useConnection();
-  const [agents, setAgents] = useState<OfficeAgentView[]>([]);
-  const [connected, setConnected] = useState(false);
+  const [dashboard, setDashboard] = useState<OfficeDashboard>(EMPTY_DASHBOARD);
 
-  // Allocator lives across renders; reset it on session change.
-  const allocatorRef = useRef(createRosterAllocator());
-  // Per-agent phase/task, keyed by kimi agent id (drives the overlay).
-  const phaseRef = useRef<Map<string, { state: AgentState; task: string }>>(
-    new Map(),
-  );
-  const activeAgentIdsRef = useRef<Set<string>>(new Set());
-  // Per-agent live scene coordinates, keyed by scene agent id.
-  const coordsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
-
-  // The roster slot → vendored scene agent id mapping is fixed (AGENT_ROSTER
-  // order). Slot 1 = marvis, 2 = code-agent, … 6 = data-agent.
-  const sceneAgentIdByRosterNo = (n: number): string => {
-    const entry = AGENT_ROSTER[n - 1];
-    return entry?.id ?? AGENT_ROSTER[0]!.id;
-  };
-
-  // Rebuild the overlay snapshot from the current refs.
-  function snapshot(): OfficeAgentView[] {
-    const slots: RosterSlot[] = allocatorRef.current.slots();
-    return slots
-      .filter((slot) => activeAgentIdsRef.current.has(slot.agentId))
-      .map((slot) => {
-        const sceneAgentId = sceneAgentIdByRosterNo(slot.rosterNo);
-        const phase =
-          slot.agentId !== null
-            ? phaseRef.current.get(slot.agentId)
-            : undefined;
-        const coords = coordsRef.current.get(sceneAgentId);
-        return {
-          rosterNo: slot.rosterNo,
-          sceneAgentId,
-          agentId: slot.agentId,
-          label: slot.label,
-          state: phase?.state ?? 'idle',
-          task: phase?.task ?? '',
-          x: coords?.x ?? 0,
-          y: coords?.y ?? 0,
-          overflow: slot.overflow,
-        };
-      });
-  }
-
-  /** Push an agent's phase into the scene + overlay state. */
-  function applyPhase(
-    kimiAgentId: string,
-    phase: AgentPhase | undefined,
-  ): void {
-    const mapped = mapAgentPhase(phase);
-    const task = mapped.task || phaseRef.current.get(kimiAgentId)?.task || '';
-    const state = mapped.state;
-    phaseRef.current.set(kimiAgentId, { state, task });
-    const active = isLiveAgentPhase(phase);
-    let rosterNo = allocatorRef.current.rosterNoOf(kimiAgentId);
-    if (active && rosterNo === undefined && kimiAgentId === 'main') {
-      rosterNo = allocatorRef.current.allocate('main', 'Lead');
-    }
-    if (rosterNo !== undefined) {
-      const sceneAgentId = sceneAgentIdByRosterNo(rosterNo);
-      if (active) {
-        activeAgentIdsRef.current.add(kimiAgentId);
-        setAgentPresence(
-          sceneAgentId,
-          true,
-          allocatorRef.current.labelOf(kimiAgentId),
-        );
-      } else {
-        activeAgentIdsRef.current.delete(kimiAgentId);
-        setAgentPresence(sceneAgentId, false);
-      }
-      setAgentState(sceneAgentId, state, task || undefined);
-    }
-    setAgents(snapshot());
-  }
-
-  /** Allocate a seat for a freshly spawned subagent and animate the handoff. */
-  function spawnSubagent(
-    subagentId: string,
-    subagentName: string | undefined,
-    callerAgentId: string | undefined,
-    description: string | undefined,
-  ): void {
-    const rosterNo = allocatorRef.current.allocate(
-      subagentId,
-      subagentName ?? subagentId,
-    );
-    activeAgentIdsRef.current.add(subagentId);
-    phaseRef.current.set(subagentId, {
-      state: 'idle',
-      task: description ?? '',
-    });
-    setAgentPresence(
-      sceneAgentIdByRosterNo(rosterNo),
-      true,
-      subagentName ?? subagentId,
-    );
-    // The caller (parent) walks over to the new subagent's desk to hand off.
-    const callerRosterNo =
-      callerAgentId !== undefined
-        ? allocatorRef.current.rosterNoOf(callerAgentId)
-        : undefined;
-    if (callerRosterNo !== undefined) {
-      const hostName = AGENT_ROSTER[rosterNo - 1]?.name ?? `工位 ${rosterNo}`;
-      submitVisitAction({
-        type: 'desk_visit',
-        visitor: callerRosterNo,
-        host: rosterNo,
-        message: `把任务交给 ${subagentName ?? subagentId}`,
-      });
-      void hostName; // reserved for future bubble customization
-    }
-    setAgents(snapshot());
-  }
-
-  /** Release a finished/failed subagent's seat. */
-  function retireSubagent(subagentId: string): void {
-    const rosterNo = allocatorRef.current.rosterNoOf(subagentId);
-    if (rosterNo !== undefined) {
-      const sceneAgentId = sceneAgentIdByRosterNo(rosterNo);
-      activeAgentIdsRef.current.delete(subagentId);
-      setAgentPresence(sceneAgentId, false);
-      setAgentState(sceneAgentId, 'idle', undefined);
-    }
-    allocatorRef.current.release(subagentId);
-    phaseRef.current.delete(subagentId);
-    setAgents(snapshot());
-  }
-
-  // Reset everything when the session changes.
   useEffect(() => {
-    for (const entry of AGENT_ROSTER) {
-      setAgentPresence(entry.id, false);
+    if (sessionId === null) {
+      setDashboard(EMPTY_DASHBOARD);
+      return;
     }
-    allocatorRef.current = createRosterAllocator();
-    phaseRef.current.clear();
-    activeAgentIdsRef.current.clear();
-    coordsRef.current.clear();
-    setAgents([]);
-    setConnected(false);
-    if (sessionId === null) return;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
 
-  // Own socket + event handlers, independent of the global activity socket.
-  useEffect(() => {
-    if (sessionId === null) return;
+    let disposed = false;
     let socket: ActivitySocket | null = null;
+    let connected = false;
+    let title = '未题名会话';
+    let goalObjective = '';
+    let swarmMode = false;
+    let todos: TodoItem[] = [];
+    const agents = new Map<string, MutableOfficeAgent>();
 
-    const seedFromSnapshot = async (): Promise<void> => {
-      try {
-        const snap = await api.getSnapshot(sessionId);
-        // Seed main agent phase from the in-flight turn, if any.
-        if (snap.in_flight_turn !== null) {
-          allocatorRef.current.allocate('main', 'Lead');
-          activeAgentIdsRef.current.add('main');
-          phaseRef.current.set('main', { state: 'working', task: '生成回复' });
-          setAgentPresence(sceneAgentIdByRosterNo(1), true, 'Lead');
-          setAgentState(sceneAgentIdByRosterNo(1), 'working', '生成回复');
-        }
-        // Seed already-running subagents.
-        for (const sub of snap.subagents ?? []) {
-          if (
-            sub.status === 'running' ||
-            sub.subagent_phase === 'working' ||
-            sub.subagent_phase === 'queued'
-          ) {
-            const rosterNo = allocatorRef.current.allocate(
-              sub.id,
-              sub.subagent_type ?? sub.id,
-            );
-            activeAgentIdsRef.current.add(sub.id);
-            phaseRef.current.set(sub.id, {
-              state: sub.subagent_phase === 'working' ? 'working' : 'idle',
-              task: sub.description ?? '',
-            });
-            setAgentPresence(
-              sceneAgentIdByRosterNo(rosterNo),
-              true,
-              sub.subagent_type ?? sub.id,
-            );
-            setAgentState(
-              sceneAgentIdByRosterNo(rosterNo),
-              sub.subagent_phase === 'working' ? 'working' : 'idle',
-              sub.description,
-            );
-          }
-        }
-        setAgents(snapshot());
-      } catch {
-        // best-effort; live events will fill in the picture
+    const ensureAgent = (options: {
+      agentId: string;
+      label?: string;
+      parentAgentId?: string;
+      swarmIndex?: number;
+      runInBackground?: boolean;
+      model?: string;
+      thinkingEffort?: string;
+      startedAt?: number;
+    }): MutableOfficeAgent => {
+      const current = agents.get(options.agentId);
+      const label = options.label ?? current?.label ?? options.agentId;
+      const parentAgentId = options.parentAgentId ?? current?.parentAgentId;
+      const swarmIndex = options.swarmIndex ?? current?.swarmIndex;
+      const runInBackground =
+        options.runInBackground ?? current?.runInBackground ?? false;
+      const kind = classifyAgent({
+        agentId: options.agentId,
+        label,
+        parentAgentId,
+        swarmIndex,
+        runInBackground,
+      });
+      const identity = officialIdentity(options.agentId, kind, swarmIndex);
+      const next: MutableOfficeAgent = {
+        agentId: options.agentId,
+        label,
+        officialTitle: identity.title,
+        department: identity.department,
+        color: identity.color,
+        state: current?.state ?? 'idle',
+        task: current?.task ?? '候令',
+        kind,
+        parentAgentId,
+        swarmIndex,
+        runInBackground,
+        model: options.model ?? current?.model,
+        thinkingEffort: options.thinkingEffort ?? current?.thinkingEffort,
+        startedAt: options.startedAt ?? current?.startedAt,
+        completedAt: current?.completedAt,
+        sent: current?.sent ?? 0,
+        received: current?.received ?? 0,
+        activities: current?.activities ?? [],
+      };
+      agents.set(options.agentId, next);
+      return next;
+    };
+
+    const addActivity = (
+      agent: MutableOfficeAgent,
+      text: string,
+      tone?: OfficeActivity['tone'],
+    ): void => {
+      agent.activities = [activity(text, tone), ...agent.activities].slice(0, 30);
+    };
+
+    const emit = (): void => {
+      if (disposed) return;
+      const projected = [...agents.values()].sort((left, right) => {
+        if (left.agentId === 'main') return -1;
+        if (right.agentId === 'main') return 1;
+        const leftDone = left.state === 'done' || left.state === 'failed';
+        const rightDone = right.state === 'done' || right.state === 'failed';
+        if (leftDone !== rightDone) return leftDone ? 1 : -1;
+        return (left.startedAt ?? 0) - (right.startedAt ?? 0);
+      });
+      const active = projected.filter(
+        (agent) => agent.state !== 'done' && agent.state !== 'failed',
+      );
+      const fallbackMilestones: OfficeMilestone[] = [
+        { title: '主理官领旨', status: 'done' },
+        {
+          title: '分派诸司协办',
+          status: projected.length > 1 ? 'done' : 'pending',
+        },
+        {
+          title: '各司并行办差',
+          status: active.some((agent) => agent.state === 'work')
+            ? 'in_progress'
+            : projected.some((agent) => agent.state === 'done')
+              ? 'done'
+              : 'pending',
+        },
+        {
+          title: '门下复核交旨',
+          status:
+            projected.length > 0 &&
+            projected.every(
+              (agent) => agent.state === 'done' || agent.state === 'idle',
+            )
+              ? 'done'
+              : projected.some((agent) => agent.state === 'review')
+                ? 'in_progress'
+                : 'pending',
+        },
+      ];
+      const milestones = projectMilestones(todos);
+      setDashboard({
+        connected,
+        title: goalObjective || title,
+        phaseName:
+          active.some((agent) => agent.state === 'review')
+            ? '门下封驳复核'
+            : active.some((agent) => agent.state === 'work')
+              ? '诸司并行办差'
+              : active.some((agent) => agent.state === 'think')
+                ? '中书筹谋分派'
+                : projected.some((agent) => agent.state === 'done')
+                  ? '交旨归档'
+                  : '待升堂',
+        collaborationMode: collaborationMode(projected, swarmMode),
+        agents: projected,
+        milestones: milestones.length > 0 ? milestones : fallbackMilestones,
+      });
+    };
+
+    const applyPhase = (agentId: string, phase: AgentPhase | undefined): void => {
+      const agent = ensureAgent({ agentId });
+      const mapped = mapOfficePhase(phase);
+      agent.state = mapped.state;
+      if (mapped.task !== '候令' || agent.task === '') agent.task = mapped.task;
+      addActivity(agent, `${mapped.task}`, mapped.state === 'failed' ? 'danger' : undefined);
+      if (mapped.state === 'done' || mapped.state === 'failed') {
+        agent.completedAt = Date.now();
       }
+      emit();
+    };
+
+    const seed = async (): Promise<void> => {
+      const [snapshotResult, transcriptResult, goalResult, statusResult] =
+        await Promise.allSettled([
+          api.getSnapshot(sessionId),
+          api.transcriptPage(sessionId, 'main', { pageSize: 1 }),
+          api.getGoal(sessionId),
+          api.getSessionStatus(sessionId),
+        ]);
+      if (disposed) return;
+
+      const main = ensureAgent({ agentId: 'main', label: '主理官' });
+      if (snapshotResult.status === 'fulfilled') {
+        const snapshot = snapshotResult.value;
+        title = snapshot.session.title || title;
+        main.state = snapshot.in_flight_turn === null ? 'idle' : 'work';
+        main.task = snapshot.in_flight_turn === null ? '候令' : '生成回复';
+        for (const subagent of snapshot.subagents ?? []) {
+          const agent = ensureAgent({
+            agentId: subagent.id,
+            label: subagent.subagent_type,
+            swarmIndex: subagent.swarm_index,
+            runInBackground: subagent.run_in_background,
+            model: subagent.model,
+            thinkingEffort: subagent.thinking_effort,
+            startedAt: Date.parse(subagent.started_at ?? subagent.created_at),
+          });
+          Object.assign(agent, phaseFromSnapshot(subagent));
+        }
+      }
+
+      if (transcriptResult.status === 'fulfilled') {
+        const transcript = transcriptResult.value;
+        todos = transcript.todos.flatMap((todo) => todo.items);
+        swarmMode = transcript.meta.modes?.swarm !== undefined;
+        for (const descriptor of transcript.agents) {
+          ensureAgent({
+            agentId: descriptor.agentId,
+            label: labelForDescriptor(descriptor),
+            parentAgentId: descriptor.parentAgentId,
+            startedAt:
+              descriptor.createdAt === undefined
+                ? undefined
+                : Date.parse(descriptor.createdAt),
+          });
+        }
+      }
+      if (goalResult.status === 'fulfilled' && goalResult.value !== null) {
+        goalObjective = goalResult.value.objective;
+      }
+      if (statusResult.status === 'fulfilled') {
+        swarmMode ||= statusResult.value.swarm_mode;
+        main.model = statusResult.value.model;
+        main.thinkingEffort = statusResult.value.thinking_level;
+        if (statusResult.value.busy && main.state === 'idle') {
+          main.state = 'work';
+          main.task = '统筹诸司';
+        }
+      }
+      connected = true;
+      emit();
     };
 
     socket = createActivitySocket({
@@ -275,96 +307,106 @@ export function useOfficeAgents(sessionId: string | null): {
       handlers: {
         onWorkChanged: () => {},
         onSessionCreated: () => {},
-        onMetaUpdated: () => {},
+        onMetaUpdated: () => {
+          void seed();
+        },
         onConfigChanged: () => {},
         onStatusUpdated: (_sid, event: AgentStatusUpdatedEvent) => {
-          // `agent.status.updated` carries the *main* agent's phase on this
-          // socket (subagents report via subagent.* lifecycle events). The
-          // payload's agentId field distinguishes them when present.
-          const payload = event as AgentStatusUpdatedEvent & {
-            agentId?: string;
-          };
-          const kimiAgentId = payload.agentId ?? 'main';
-          applyPhase(kimiAgentId, event.phase);
+          const payload = event as AgentStatusUpdatedEvent & { agentId?: string };
+          swarmMode = event.swarmMode ?? swarmMode;
+          const agent = ensureAgent({
+            agentId: payload.agentId ?? 'main',
+            model: event.model,
+            thinkingEffort: event.thinkingEffort,
+          });
+          void agent;
+          applyPhase(payload.agentId ?? 'main', event.phase);
         },
-        onGoalUpdated: () => {},
+        onGoalUpdated: (_sid, snapshot) => {
+          goalObjective = snapshot?.objective ?? '';
+          emit();
+        },
         onReconnected: () => {
-          setConnected(true);
-          void seedFromSnapshot();
+          connected = true;
+          void seed();
         },
         onRawFrame: (frame: ServerFrame) => {
-          // subagent.* events arrive here (not handled by the typed handlers).
           const payload = frame.payload as Record<string, unknown> | undefined;
           if (payload === undefined) return;
           switch (frame.type) {
             case 'subagent.spawned': {
               const parsed = subagentSpawnedEventSchema.safeParse(payload);
               if (!parsed.success) return;
-              if (parsed.data.runInBackground) return;
-              spawnSubagent(
-                parsed.data.subagentId,
-                parsed.data.subagentName,
-                parsed.data.callerAgentId ?? parsed.data.parentAgentId,
-                parsed.data.description,
-              );
+              const data = parsed.data;
+              const parentAgentId = data.callerAgentId ?? data.parentAgentId ?? 'main';
+              const agent = ensureAgent({
+                agentId: data.subagentId,
+                label: data.subagentName,
+                parentAgentId,
+                swarmIndex: data.swarmIndex,
+                runInBackground: data.runInBackground,
+                model: data.model,
+                thinkingEffort: data.thinkingEffort,
+                startedAt: Date.now(),
+              });
+              agent.state = 'think';
+              agent.task = data.description ?? '领受差事';
+              addActivity(agent, `受命：${agent.task}`);
+              const parent = agents.get(parentAgentId);
+              if (parent !== undefined) {
+                parent.sent += 1;
+                addActivity(parent, `行文给 ${agent.label}：${agent.task}`);
+                agent.received += 1;
+              }
+              emit();
               return;
             }
             case 'subagent.started': {
               const parsed = subagentStartedEventSchema.safeParse(payload);
               if (!parsed.success) return;
-              applyPhase(parsed.data.subagentId, {
-                kind: 'running',
-                turnId: 0,
-                step: 0,
-                stepId: '',
-                since: Date.now(),
-              });
+              const agent = ensureAgent({ agentId: parsed.data.subagentId });
+              agent.state = 'work';
+              if (agent.task === '候令') agent.task = '开始办差';
+              addActivity(agent, '开衙办差');
+              emit();
               return;
             }
             case 'subagent.suspended': {
               const parsed = subagentSuspendedEventSchema.safeParse(payload);
               if (!parsed.success) return;
-              applyPhase(parsed.data.subagentId, {
-                kind: 'awaiting_approval',
-                turnId: 0,
-                since: Date.now(),
-              });
+              const agent = ensureAgent({ agentId: parsed.data.subagentId });
+              agent.state = 'review';
+              agent.task = parsed.data.reason || '候旨批复';
+              addActivity(agent, `暂驻复核：${agent.task}`);
+              emit();
               return;
             }
             case 'subagent.completed': {
               const parsed = subagentCompletedEventSchema.safeParse(payload);
               if (!parsed.success) return;
-              applyPhase(parsed.data.subagentId, {
-                kind: 'ended',
-                turnId: 0,
-                reason: 'completed',
-                at: Date.now(),
-              });
-              retireSubagent(parsed.data.subagentId);
+              const agent = ensureAgent({ agentId: parsed.data.subagentId });
+              agent.state = 'done';
+              agent.task = parsed.data.resultSummary || '交旨完毕';
+              agent.completedAt = Date.now();
+              addActivity(agent, `交旨：${agent.task}`, 'success');
+              const parent = agents.get(agent.parentAgentId ?? 'main');
+              if (parent !== undefined) {
+                parent.received += 1;
+                addActivity(parent, `收到 ${agent.label} 回文`);
+                agent.sent += 1;
+              }
+              emit();
               return;
             }
             case 'subagent.failed': {
               const parsed = subagentFailedEventSchema.safeParse(payload);
               if (!parsed.success) return;
-              applyPhase(parsed.data.subagentId, {
-                kind: 'ended',
-                turnId: 0,
-                reason: 'failed',
-                at: Date.now(),
-              });
-              retireSubagent(parsed.data.subagentId);
-              return;
-            }
-            case 'task.started': {
-              const parsed = taskStartedEventSchema.safeParse(payload);
-              if (!parsed.success) return;
-              if (
-                parsed.data.info.kind === 'agent' &&
-                parsed.data.info.detached === true &&
-                parsed.data.info.agentId !== undefined
-              ) {
-                retireSubagent(parsed.data.info.agentId);
-              }
+              const agent = ensureAgent({ agentId: parsed.data.subagentId });
+              agent.state = 'failed';
+              agent.task = parsed.data.error;
+              agent.completedAt = Date.now();
+              addActivity(agent, `驳回：${parsed.data.error}`, 'danger');
+              emit();
               return;
             }
             default:
@@ -373,15 +415,14 @@ export function useOfficeAgents(sessionId: string | null): {
         },
       },
     });
-    setConnected(true);
-    void seedFromSnapshot();
+    void seed();
 
     return () => {
+      disposed = true;
       socket?.close();
       socket = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, baseUrl, token, api]);
+  }, [api, baseUrl, sessionId, token]);
 
-  return { agents, connected };
+  return dashboard;
 }

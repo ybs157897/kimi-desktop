@@ -702,7 +702,11 @@ export function App() {
         <main className="flex min-w-0 flex-1">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {officeOpen ? (
-              <OfficeView sessionId={activeSessionId} />
+              <OfficeView
+                sessionId={activeSessionId}
+                onOpenAgent={openSideChat}
+                onClose={() => setOfficeOpen(false)}
+              />
             ) : activeSessionId !== null ? (
               <ChatView
                 key={activeSessionId}

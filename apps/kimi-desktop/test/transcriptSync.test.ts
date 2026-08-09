@@ -21,6 +21,7 @@ function page(activity: 'turn' | 'idle', seq: number): TranscriptPage {
     interactions: [],
     attachments: [],
     todos: [],
+    agents: [],
     meta: { activity },
     pendingInteractions: [],
     hasMoreOlder: false,

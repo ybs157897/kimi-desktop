@@ -1,151 +1,368 @@
-import { useEffect, useRef, useState } from 'react';
-// Pixi v8's WebGL renderer compiles shaders via `new Function(...)`, which the
-// desktop CSP (`script-src 'self'`) forbids. This polyfill replaces those calls
-// with a `Function`-free path so the renderer initialises under strict CSP.
-import 'pixi.js/unsafe-eval';
-import { OfficeScene } from '#/office/vendored/scene/OfficeScene';
-import { getOfficeAgents } from '#/office/vendored/store/officeStore';
-import { AgentOverlay } from '#/office/AgentOverlay';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, Check, Radio, UsersThree } from '@phosphor-icons/react';
+
+import roomAsset from '#/office/assets/liubu-room.svg';
+import officialBlue from '#/office/assets/official-blue.svg';
+import officialGreen from '#/office/assets/official-green.svg';
+import officialOrange from '#/office/assets/official-orange.svg';
+import officialPink from '#/office/assets/official-pink.svg';
+import officialPurple from '#/office/assets/official-purple.svg';
+import officialRed from '#/office/assets/official-red.svg';
+import { MODE_LABEL, STATUS_LABEL } from '#/office/officeModel';
+import type { OfficeAgentView, OfficeDashboard } from '#/office/types';
 import { useOfficeAgents } from '#/office/useOfficeAgents';
+import '#/office/office.css';
 
-/**
- * The "AI office" view: a Pixi/Spine office scene that visualises the active
- * session's multi-agent collaboration in real time. The main agent occupies
- * desk 1; spawned subagents take desks 2–6 in arrival order, and task
- * handoffs play out as the caller walking over to the subagent's desk.
- *
- * The vendored scene is driven entirely through `officeSceneBridge` from
- * `useOfficeAgents`; this component only owns the canvas lifecycle and keeps
- * the HTML overlay's coordinates in sync with the scene.
- */
-export function OfficeView({ sessionId }: { sessionId: string | null }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const sceneRef = useRef<OfficeScene | null>(null);
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  const [error, setError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
+const DESK_POSITIONS = [
+  { left: 20.8, top: 47.5 },
+  { left: 50, top: 47.5 },
+  { left: 79.2, top: 47.5 },
+  { left: 20.8, top: 71.1 },
+  { left: 50, top: 71.1 },
+  { left: 79.2, top: 71.1 },
+] as const;
 
-  const { agents, connected } = useOfficeAgents(sessionId);
-  // Local copy of agent positions, refreshed each animation frame.
-  const [positions, setPositions] = useState(agents);
+const OVERFLOW_POSITIONS = [
+  { left: 12, top: 86 },
+  { left: 19, top: 88 },
+  { left: 72, top: 87 },
+  { left: 80, top: 89 },
+  { left: 88, top: 86 },
+] as const;
 
-  // Mount the scene once per container. StrictMode mounts effects twice in
-  // dev, so abort stale async initialization before it can attach a canvas.
+function positionFor(index: number): { left: number; top: number } {
+  if (index < DESK_POSITIONS.length) return DESK_POSITIONS[index]!;
+  const overflowIndex = index - DESK_POSITIONS.length;
+  const position = OVERFLOW_POSITIONS[overflowIndex % OVERFLOW_POSITIONS.length]!;
+  const row = Math.floor(overflowIndex / OVERFLOW_POSITIONS.length);
+  return { left: position.left, top: position.top - row * 10 };
+}
+
+function formatTime(timestamp: number): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(timestamp);
+}
+
+function kindLabel(agent: OfficeAgentView): string {
+  switch (agent.kind) {
+    case 'main':
+      return '主理';
+    case 'expert':
+      return '专家会审';
+    case 'swarm':
+      return `蜂群 #${(agent.swarmIndex ?? 0) + 1}`;
+    case 'background':
+      return '后台值房';
+    case 'subagent':
+      return '协办';
+  }
+}
+
+function Official({ agent }: { agent: OfficeAgentView }) {
+  const source =
+    {
+      '#c8352a': officialRed,
+      '#2e9e5b': officialGreen,
+      '#2f7fd0': officialBlue,
+      '#8b5fc0': officialPurple,
+      '#c2507a': officialPink,
+      '#cf7a24': officialOrange,
+    }[agent.color] ?? officialRed;
+  return (
+    <img
+      src={source}
+      aria-hidden
+      className="liubu-official"
+    />
+  );
+}
+
+export interface OfficeViewProps {
+  readonly sessionId: string | null;
+  readonly onOpenAgent?: (agentId: string) => void;
+  readonly onClose?: () => void;
+}
+
+export interface OfficeDashboardViewProps extends OfficeViewProps {
+  readonly dashboard: OfficeDashboard;
+}
+
+export function OfficeDashboardView({
+  sessionId,
+  onOpenAgent,
+  onClose,
+  dashboard,
+}: OfficeDashboardViewProps) {
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+
   useEffect(() => {
-    const container = containerRef.current;
-    if (container === null) return;
-    let cancelled = false;
-    const controller = new AbortController();
-    const scene = new OfficeScene();
+    setSelectedAgentId(null);
+  }, [sessionId]);
 
-    setError(null);
-    setReady(false);
+  const selectedAgent = useMemo(
+    () =>
+      dashboard.agents.find((agent) => agent.agentId === selectedAgentId) ??
+      null,
+    [dashboard.agents, selectedAgentId],
+  );
+  const doneMilestones = dashboard.milestones.filter(
+    (milestone) => milestone.status === 'done',
+  ).length;
+  const progress =
+    dashboard.milestones.length === 0
+      ? 0
+      : Math.round((doneMilestones / dashboard.milestones.length) * 100);
 
-    void (async () => {
-      try {
-        await scene.init(
-          container,
-          container.clientWidth,
-          container.clientHeight,
-          controller.signal,
-        );
-      } catch (error) {
-        scene.destroy();
-        if (cancelled) return;
-        setError(
-          error instanceof Error
-            ? `${error.name}: ${error.message}\n${error.stack ?? ''}`
-            : String(error),
-        );
-        return;
-      }
-      if (cancelled) {
-        scene.destroy();
-        return;
-      }
-      sceneRef.current = scene;
-      setSize({ width: container.clientWidth, height: container.clientHeight });
-      setReady(true);
-    })();
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry === undefined) return;
-      const { width, height } = entry.contentRect;
-      setSize({ width, height });
-      sceneRef.current?.resize(width, height);
-    });
-    resizeObserver.observe(container);
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      resizeObserver.disconnect();
-      if (sceneRef.current === scene) sceneRef.current = null;
-      scene.destroy();
-    };
-  }, []);
-
-  // Sync agent positions from the scene every frame for the overlay. We poll
-  // the vendored store (the scene updates it each tick) at ~30fps to avoid a
-  // per-frame React state churn.
-  useEffect(() => {
-    if (!ready || sceneRef.current === null) return;
-    const interval = window.setInterval(() => {
-      const live = getOfficeAgents();
-      setPositions((prev) => {
-        const byId = new Map(live.map((a) => [a.id, a]));
-        let changed = false;
-        const next = agents.map((agent) => {
-          const src = byId.get(agent.sceneAgentId);
-          if (src === undefined) return agent;
-          if (
-            src.x === agent.x &&
-            src.y === agent.y &&
-            src.state === agent.state
-          )
-            return agent;
-          changed = true;
-          return { ...agent, x: src.x, y: src.y, state: src.state };
-        });
-        return changed ? next : prev;
-      });
-    }, 100);
-    return () => window.clearInterval(interval);
-  }, [agents, ready]);
+  const selectAgent = (agentId: string): void => {
+    setSelectedAgentId((current) => (current === agentId ? null : agentId));
+  };
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-[var(--color-background-surface)]">
-      <div ref={containerRef} className="absolute inset-0" />
-      {ready && sessionId !== null ? (
-        <AgentOverlay
-          agents={positions}
-          containerWidth={size.width}
-          containerHeight={size.height}
-        />
-      ) : null}
-      {error !== null ? (
-        <pre className="relative z-20 max-w-[680px] overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--color-border-danger)] bg-[var(--color-background-panel)] p-4 text-xs text-[var(--color-text-danger)] shadow-[var(--shadow-lg)]">
-          {'Office scene init failed:'}
-          {'\n'}
-          {error}
-        </pre>
-      ) : !ready ? (
-        <div className="relative z-20 rounded-xl border border-[var(--color-border-light)] bg-[var(--color-background-panel)]/90 px-4 py-3 text-sm text-[var(--color-text-secondary)] shadow-[var(--shadow-md)] backdrop-blur-sm">
-          正在加载 AI 办公室…
+    <div className="liubu-office">
+      <header className="liubu-topbar">
+        <div className="liubu-brand">
+          <span className="liubu-brand-badge">实时官署</span>
+          <div>
+            <h1>AI 三省六部</h1>
+            <p>Agent 协作实录 · 会话协议实时投影</p>
+          </div>
         </div>
-      ) : sessionId === null ? (
-        <div className="relative z-20 rounded-xl border border-[var(--color-border-light)] bg-[var(--color-background-panel)]/90 px-6 py-4 text-center text-sm text-[var(--color-text-secondary)] shadow-[var(--shadow-md)] backdrop-blur-sm">
-          <p className="mb-1 text-base font-medium text-[var(--color-text-foreground,#eee)]">
-            AI 办公室
-          </p>
-          <p>选择一个会话，实时查看多智能体协作动态。</p>
+        <div className="liubu-session-seal">
+          <span>{MODE_LABEL[dashboard.collaborationMode]}</span>
+          <strong>{dashboard.title}</strong>
         </div>
-      ) : !connected ? (
-        <div className="absolute right-3 top-3 z-20 rounded-md bg-[var(--color-background-panel)]/80 px-2 py-1 text-[10px] text-[var(--color-text-tertiary)] backdrop-blur-sm">
-          正在连接…
+        <div className="liubu-header-actions">
+          <span
+            className={`liubu-live ${dashboard.connected ? 'is-connected' : ''}`}
+          >
+            <Radio size={14} weight="fill" />
+            {dashboard.connected ? 'LIVE' : '连接中'}
+          </span>
+          {onClose === undefined ? null : (
+            <button type="button" className="liubu-back" onClick={onClose}>
+              <ArrowLeft size={15} weight="bold" />
+              返回对话
+            </button>
+          )}
         </div>
-      ) : null}
+        <div className="liubu-agent-chips" aria-label="百官名册">
+          {dashboard.agents.map((agent) => (
+            <button
+              type="button"
+              key={agent.agentId}
+              className={`liubu-chip ${selectedAgentId === agent.agentId ? 'is-selected' : ''}`}
+              aria-pressed={selectedAgentId === agent.agentId}
+              onClick={() => selectAgent(agent.agentId)}
+            >
+              <span
+                className="liubu-chip-face"
+                style={{ backgroundColor: agent.color }}
+              >
+                {agent.officialTitle.at(0)}
+              </span>
+              <span className="liubu-chip-copy">
+                <b>{agent.label}</b>
+                <small>{kindLabel(agent)}</small>
+              </span>
+              <i data-state={agent.state} />
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <main className="liubu-main">
+        <section className="liubu-stage-frame">
+          <span className="liubu-stage-corner">皇城实录 · LIVE</span>
+          <div className="liubu-stage-scale">
+            <img src={roomAsset} className="liubu-room" alt="三省六部官署" />
+            {dashboard.agents.map((agent, index) => {
+              const position = positionFor(index);
+              const overflow = index >= DESK_POSITIONS.length;
+              return (
+                <button
+                  type="button"
+                  key={agent.agentId}
+                  className={`liubu-agent ${selectedAgentId === agent.agentId ? 'is-selected' : ''} ${overflow ? 'is-overflow' : ''}`}
+                  style={{
+                    left: `${position.left}%`,
+                    top: `${position.top}%`,
+                    zIndex: Math.round(position.top * 10),
+                  }}
+                  aria-label={`查看 ${agent.label} 的行迹`}
+                  aria-pressed={selectedAgentId === agent.agentId}
+                  onClick={() => selectAgent(agent.agentId)}
+                >
+                  <span className="liubu-agent-cap">
+                    <span className="liubu-agent-cap-title">
+                      <i data-state={agent.state} />
+                      <b>{agent.label}</b>
+                      <em>{STATUS_LABEL[agent.state]}</em>
+                    </span>
+                    <span className="liubu-agent-task">{agent.task}</span>
+                  </span>
+                  <span className="liubu-emote" data-state={agent.state}>
+                    {agent.state === 'think'
+                      ? '…'
+                      : agent.state === 'review'
+                        ? '？'
+                        : agent.state === 'done'
+                          ? '★'
+                          : agent.state === 'failed'
+                            ? '×'
+                            : agent.state === 'work'
+                              ? '！'
+                              : ''}
+                  </span>
+                  <Official agent={agent} />
+                </button>
+              );
+            })}
+            {dashboard.agents.length === 0 ? (
+              <div className="liubu-empty-stage">
+                <UsersThree size={34} weight="duotone" />
+                <b>{sessionId === null ? '请先选择一卷会话' : '正在召集百官'}</b>
+                <span>代理开始工作后，将在官署中实时就位。</span>
+              </div>
+            ) : null}
+          </div>
+          <div className="liubu-legend">
+            {(['think', 'work', 'review', 'done', 'idle'] as const).map(
+              (state) => (
+                <span key={state}>
+                  <i data-state={state} />
+                  {STATUS_LABEL[state]}
+                </span>
+              ),
+            )}
+            <span className="liubu-legend-hint">点官员可查看个人行迹</span>
+          </div>
+        </section>
+
+        <aside className="liubu-side">
+          <section className="liubu-panel">
+            <header>
+              政事堂 · 进度榜 <span>敕令</span>
+            </header>
+            <div className="liubu-board-body">
+              <h2>{dashboard.phaseName}</h2>
+              <ol className="liubu-milestones">
+                {dashboard.milestones.map((milestone, index) => (
+                  <li
+                    key={`${milestone.title}-${index}`}
+                    data-status={milestone.status}
+                  >
+                    <span>
+                      {milestone.status === 'done' ? (
+                        <Check size={12} weight="bold" />
+                      ) : null}
+                    </span>
+                    {milestone.title}
+                  </li>
+                ))}
+              </ol>
+              <div className="liubu-progress" aria-label={`进度 ${progress}%`}>
+                <i style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          </section>
+
+          <section className="liubu-panel liubu-agent-panel">
+            <header>
+              百官谱 <span>名册</span>
+            </header>
+            {selectedAgent === null ? (
+              <div className="liubu-agent-empty">
+                点击衙署中任意官员
+                <br />
+                查看状态、归属与行迹流水
+              </div>
+            ) : (
+              <div className="liubu-agent-detail">
+                <div className="liubu-agent-detail-head">
+                  <span style={{ backgroundColor: selectedAgent.color }}>
+                    {selectedAgent.officialTitle.at(0)}
+                  </span>
+                  <div>
+                    <h3>{selectedAgent.label}</h3>
+                    <p>
+                      {selectedAgent.officialTitle} · {selectedAgent.department}
+                    </p>
+                  </div>
+                </div>
+                <div className="liubu-agent-badges">
+                  <span>{kindLabel(selectedAgent)}</span>
+                  <span>{STATUS_LABEL[selectedAgent.state]}</span>
+                  {selectedAgent.parentAgentId === undefined ? null : (
+                    <span>
+                      上官：
+                      {dashboard.agents.find(
+                        (agent) => agent.agentId === selectedAgent.parentAgentId,
+                      )?.label ?? selectedAgent.parentAgentId}
+                    </span>
+                  )}
+                </div>
+                <div className="liubu-agent-stats">
+                  <div>
+                    <b>{selectedAgent.sent}</b>
+                    <span>发文</span>
+                  </div>
+                  <div>
+                    <b>{selectedAgent.received}</b>
+                    <span>收文</span>
+                  </div>
+                  <div>
+                    <b>{selectedAgent.activities.length}</b>
+                    <span>行迹</span>
+                  </div>
+                </div>
+                <dl className="liubu-agent-meta">
+                  <div>
+                    <dt>差事</dt>
+                    <dd>{selectedAgent.task}</dd>
+                  </div>
+                  {selectedAgent.model === undefined ? null : (
+                    <div>
+                      <dt>模型</dt>
+                      <dd>{selectedAgent.model}</dd>
+                    </div>
+                  )}
+                </dl>
+                <ul className="liubu-activities">
+                  {selectedAgent.activities.map((item) => (
+                    <li key={item.id} data-tone={item.tone ?? 'normal'}>
+                      <time>{formatTime(item.time)}</time>
+                      <span>{item.text}</span>
+                    </li>
+                  ))}
+                  {selectedAgent.activities.length === 0 ? (
+                    <li>
+                      <time>--:--</time>
+                      <span>尚无新行迹，正在候令。</span>
+                    </li>
+                  ) : null}
+                </ul>
+                {selectedAgent.agentId !== 'main' &&
+                onOpenAgent !== undefined ? (
+                  <button
+                    type="button"
+                    className="liubu-open-chat"
+                    onClick={() => onOpenAgent(selectedAgent.agentId)}
+                  >
+                    查看此官对话
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </section>
+        </aside>
+      </main>
     </div>
   );
+}
+
+export function OfficeView(props: OfficeViewProps) {
+  const dashboard = useOfficeAgents(props.sessionId);
+  return <OfficeDashboardView {...props} dashboard={dashboard} />;
 }

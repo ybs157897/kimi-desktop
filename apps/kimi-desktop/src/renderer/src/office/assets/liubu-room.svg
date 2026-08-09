@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720">
+  <rect width="1200" height="720" fill="#f6ecd6"/>
+  <rect width="1200" height="170" fill="#ecdcc0"/>
+  <path d="M0 169h1200M0 214h1200M0 260h1200M0 306h1200M0 352h1200M0 398h1200M0 444h1200M0 490h1200M0 536h1200M0 582h1200M0 628h1200M0 674h1200" fill="none" stroke="#e6d4b0" stroke-width="2"/>
+  <path d="M0 164h1200v10H0z" fill="#dfc89e" stroke="#262033" stroke-width="2.5"/>
+  <g fill="#a83228" stroke="#262033" stroke-width="3">
+    <rect x="392" y="30" width="26" height="136" rx="10"/><rect x="386" y="26" width="38" height="14" rx="7"/>
+    <rect x="1006" y="30" width="26" height="136" rx="10"/><rect x="1000" y="26" width="38" height="14" rx="7"/>
+  </g>
+  <g stroke="#262033" stroke-width="3.5">
+    <g><rect x="450" y="45" width="150" height="96" rx="10" fill="#cfe3ee"/><path d="M500 45v96M550 45v96M450 93h150" stroke="#a83228" stroke-width="5"/></g>
+    <g><rect x="660" y="45" width="150" height="96" rx="10" fill="#cfe3ee"/><path d="M710 45v96M760 45v96M660 93h150" stroke="#a83228" stroke-width="5"/></g>
+    <g><rect x="870" y="45" width="150" height="96" rx="10" fill="#cfe3ee"/><path d="M920 45v96M970 45v96M870 93h150" stroke="#a83228" stroke-width="5"/></g>
+  </g>
+  <g>
+    <rect x="66" y="41" width="272" height="112" rx="12" fill="#262033" opacity=".85"/>
+    <rect x="60" y="35" width="272" height="112" rx="12" fill="#fbf5e8" stroke="#262033" stroke-width="4"/>
+    <path d="M60 47q0-12 12-12h248q12 0 12 12v16H60z" fill="#a83228" stroke="#262033" stroke-width="3.5"/>
+    <text x="196" y="56" text-anchor="middle" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="19" font-weight="700" fill="#f2d89a" letter-spacing="4">政事堂</text>
+    <g fill="#fdf3d8" stroke="#262033" stroke-width="2.5"><rect x="76" y="78" width="52" height="52"/><rect x="140" y="76" width="52" height="52"/><rect x="206" y="78" width="52" height="52"/><rect x="270" y="74" width="52" height="52"/></g>
+    <g stroke="#262033" stroke-width="2" opacity=".5"><path d="M84 94h36M84 106h30M148 92h36M148 104h30M214 94h36M214 106h30M278 90h36M278 102h30"/></g>
+    <g fill="#c8352a" stroke="#262033" stroke-width="2"><circle cx="120" cy="122" r="5"/><circle cx="184" cy="120" r="5"/><circle cx="250" cy="122" r="5"/><circle cx="314" cy="118" r="5"/></g>
+  </g>
+  <g>
+    <rect x="1052" y="50" width="118" height="100" rx="10" fill="#e3cba3" stroke="#262033" stroke-width="3.5"/><path d="M1052 100h118" stroke="#262033" stroke-width="3"/>
+    <g fill="#fbf5e8" stroke="#262033" stroke-width="2"><rect x="1062" y="64" width="12" height="30" rx="6"/><rect x="1094" y="62" width="12" height="32" rx="6"/><rect x="1078" y="116" width="12" height="26" rx="6"/></g>
+    <g fill="#f2d89a" stroke="#262033" stroke-width="2"><rect x="1078" y="68" width="12" height="26" rx="6"/><rect x="1062" y="112" width="12" height="30" rx="6"/></g>
+    <rect x="1114" y="66" width="44" height="26" rx="4" fill="#c8352a" stroke="#262033" stroke-width="2.5"/><text x="1136" y="84" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#f2d89a">档</text><circle cx="1140" cy="128" r="14" fill="#2e6b4f" stroke="#262033" stroke-width="2.5"/>
+  </g>
+  <ellipse cx="985" cy="592" rx="152" ry="50" fill="#efdba8" stroke="#262033" stroke-width="3"/><ellipse cx="985" cy="592" rx="120" ry="37" fill="none" stroke="#262033" stroke-width="2" opacity=".35"/>
+  <ellipse cx="208" cy="600" rx="142" ry="46" fill="#d5dfd2" stroke="#262033" stroke-width="3"/><ellipse cx="208" cy="600" rx="110" ry="33" fill="none" stroke="#262033" stroke-width="2" opacity=".35"/>
+  <g stroke="#262033">
+    <g stroke-width="3"><circle cx="900" cy="548" r="17" fill="#b98a54"/><circle cx="1072" cy="548" r="17" fill="#b98a54"/><circle cx="985" cy="614" r="17" fill="#b98a54"/><ellipse cx="985" cy="566" rx="98" ry="36" fill="#a87f4e"/><ellipse cx="985" cy="560" rx="98" ry="36" fill="#caa06a"/></g>
+    <g stroke-width="2"><circle cx="962" cy="552" r="9" fill="#fbf5e8"/><circle cx="1010" cy="558" r="5" fill="#fbf5e8"/><circle cx="1024" cy="564" r="5" fill="#fbf5e8"/></g>
+  </g>
+  <g stroke="#262033" stroke-width="3.5"><rect x="112" y="556" width="196" height="46" rx="16" fill="#966f3e"/><rect x="112" y="516" width="196" height="48" rx="16" fill="#4f7283"/><circle cx="112" cy="570" r="18" fill="#966f3e"/><circle cx="308" cy="570" r="18" fill="#966f3e"/></g>
+  <g stroke="#262033" stroke-width="3">
+    <g id="desk"><ellipse cx="250" cy="358" rx="98" ry="15" fill="#262033" opacity=".08"/><rect x="214" y="208" width="72" height="30" rx="8" fill="#fbf5e8"/><rect x="170" y="244" width="160" height="20" rx="8" fill="#caa06a"/><rect x="170" y="262" width="160" height="13" rx="6" fill="#a87f4e"/><path d="M179 274v56M321 274v56" stroke="#966f3e" stroke-width="9"/><circle cx="250" cy="356" r="24" fill="#b98a54"/><ellipse cx="250" cy="348" rx="20" ry="7" fill="#d9a436"/></g>
+    <g transform="translate(350 0)"><use href="#desk"/></g><g transform="translate(700 0)"><use href="#desk"/></g>
+    <g transform="translate(0 170)"><use href="#desk"/></g><g transform="translate(350 170)"><use href="#desk"/></g><g transform="translate(700 170)"><use href="#desk"/></g>
+  </g>
+  <g transform="translate(1128 232)" stroke="#262033"><path d="M-16-26h32L11 0h-22z" fill="#8a5a44" stroke-width="3"/><ellipse cx="-13" cy="-46" rx="11" ry="20" fill="#2e6b4f" stroke-width="2.5"/><ellipse cx="13" cy="-48" rx="11" ry="20" fill="#357a5a" stroke-width="2.5"/><ellipse cy="-56" rx="12" ry="22" fill="#3f8a66" stroke-width="2.5"/></g>
+  <text x="985" y="692" text-anchor="middle" font-family="PingFang SC,sans-serif" font-size="22" font-weight="700" fill="#262033" opacity=".4" letter-spacing="6">议 事 厅</text>
+  <text x="208" y="706" text-anchor="middle" font-family="PingFang SC,sans-serif" font-size="22" font-weight="700" fill="#262033" opacity=".4" letter-spacing="6">值　房</text>
+</svg>

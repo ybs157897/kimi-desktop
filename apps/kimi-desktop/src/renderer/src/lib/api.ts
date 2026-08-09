@@ -125,6 +125,7 @@ import {
   transcriptOpsCatchupResponseSchema,
   transcriptPlanResponseSchema,
   transcriptResponseSchema,
+  type AgentDescriptor,
   type TranscriptAttachment,
   type TranscriptInteraction,
   type TranscriptItem,
@@ -479,6 +480,8 @@ export interface TranscriptPage {
   readonly interactions: readonly TranscriptInteraction[];
   readonly attachments: readonly TranscriptAttachment[];
   readonly todos: readonly TranscriptTodo[];
+  /** Session-wide agent roster, including parent/child relationships. */
+  readonly agents: readonly AgentDescriptor[];
   readonly meta: TranscriptMeta;
   readonly pendingInteractions: readonly string[];
   /** Op-batch watermark (state includes every batch with seq <= N); absent on legacy servers. */
@@ -1375,6 +1378,7 @@ function toTranscriptPage(data: WireTranscriptResponse): TranscriptPage {
     interactions: data.interactions,
     attachments: data.attachments,
     todos: data.todos,
+    agents: data.agents,
     meta: data.meta,
     pendingInteractions: data.pending_interactions,
     seq: data.seq,
