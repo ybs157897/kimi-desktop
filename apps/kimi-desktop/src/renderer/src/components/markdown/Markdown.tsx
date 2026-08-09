@@ -17,7 +17,7 @@ import '../../styles/markdown.css';
 
 import { createMarkdownExtensions } from './extensions';
 import { preprocessMarkdown } from './preprocess';
-import { renderTokens, type RenderContext } from './render';
+import { renderTokens, StreamingContext, type RenderContext } from './render';
 import { advanceStreamState, buildStreamedSource, createInitialStreamState, type StreamState } from './streaming';
 import { MarkdownCitation } from './MarkdownCitation';
 import { MarkdownCodeBlock } from './MarkdownCodeBlock';
@@ -120,10 +120,12 @@ export function Markdown({ source, streaming = false }: MarkdownProps) {
 
   return (
     <MarkdownErrorBoundary onRetry={() => setAttempt((n) => n + 1)}>
-      <div className="markdown selectable">
-        {content}
-        {streaming ? <span className="markdown-cursor" aria-hidden /> : null}
-      </div>
+      <StreamingContext.Provider value={streaming}>
+        <div className="markdown selectable">
+          {content}
+          {streaming ? <span className="markdown-cursor" aria-hidden /> : null}
+        </div>
+      </StreamingContext.Provider>
     </MarkdownErrorBoundary>
   );
 }

@@ -13,14 +13,15 @@
  *    which is the one grade that does NOT suppress `agent.status.updated` /
  *    `goal.updated` (the transcript socket at `block` never sees them).
  *  - **transcript socket** (`createTranscriptSocket`): the incremental channel
- *    for one (session, agent) at the cheapest grade that keeps the live view
- *    correct — `block` (whole-state frame upserts at flush points, no per-token
- *    `append`). After `client_hello` it sends `subscribe_v2` carrying the
- *    grade map plus the `transcript_since` cursor (when a watermark is known)
- *    and forwards every `transcript.ops` frame to the consumer. Loss signals
- *    (`resync_required`, the subscribe_v2 ack after every reconnect) are
- *    surfaced, not repaired locally — transcript frames are volatile by design
- *    (never journaled), so the consumer answers with a REST catch-up/refresh.
+ *    for one (session, agent) at `delta` grade — the full stream including
+ *    per-token `append` chunks, so thinking / assistant text renders live
+ *    (whole-state frame upserts still land at flush points). After
+ *    `client_hello` it sends `subscribe_v2` carrying the grade map plus the
+ *    `transcript_since` cursor (when a watermark is known) and forwards every
+ *    `transcript.ops` frame to the consumer. Loss signals (`resync_required`,
+ *    the subscribe_v2 ack after every reconnect) are surfaced, not repaired
+ *    locally — transcript frames are volatile by design (never journaled), so
+ *    the consumer answers with a REST catch-up/refresh.
  *
  * Both sockets authenticate at the upgrade via the `kimi-code.bearer.<token>`
  * subprotocol (the only credential channel a browser WebSocket has), reconnect
@@ -49,7 +50,7 @@ const RECONNECT_MAX_DELAY_MS = 10_000;
 
 type WebSocketCtor = typeof WebSocket;
 
-interface ServerFrame {
+export interface ServerFrame {
   readonly type: string;
   readonly id?: string;
   readonly seq?: number;
@@ -214,6 +215,10 @@ export interface ActivitySocketHandlers {
   onStatusUpdated?: (sessionId: string, event: AgentStatusUpdatedEvent) => void;
   /** The followed session's goal snapshot changed (null = goal cleared). */
   onGoalUpdated?: (sessionId: string, snapshot: GoalSnapshot | null) => void;
+  /** Catch-all for frames not handled by the handlers above (e.g. `subagent.*`
+   *  lifecycle events that this socket otherwise drops). The raw frame is
+   *  forwarded untouched; parsing is the caller's responsibility. */
+  onRawFrame?: (frame: ServerFrame) => void;
   /** Socket established (initial connect and every reconnect) — live facts are
    *  missed while down, the consumer answers with a REST re-seed. */
   onReconnected: () => void;
@@ -336,6 +341,7 @@ export class ActivitySocket extends BaseSocket {
         return;
       }
       default:
+        this.#handlers.onRawFrame?.(frame);
         return;
     }
   }
@@ -442,7 +448,7 @@ export class TranscriptSocket extends BaseSocket {
       id: this.#subscribeV2Id,
       payload: {
         session_id: this.#sessionId,
-        transcript: { [this.#agentId]: 'block' },
+        transcript: { [this.#agentId]: 'delta' },
         transcript_since: since !== undefined ? { [this.#agentId]: since } : undefined,
       },
     });

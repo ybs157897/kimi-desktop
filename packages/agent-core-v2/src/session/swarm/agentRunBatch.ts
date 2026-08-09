@@ -15,6 +15,7 @@ import { isUserCancellation } from '#/_base/utils/abort';
 import { setClampedTimeout } from '#/_base/utils/timer';
 import { BugIndicatingError, Error2, ErrorCodes } from '#/errors';
 import type { SessionSwarmRunResult, SessionSwarmTask } from './sessionSwarm';
+import type { ResolvedSubagentBinding } from '#/session/subagent/configSection';
 
 
 export interface AgentRunAttemptOptions {
@@ -32,7 +33,7 @@ export interface AgentRunAttemptOptions {
 export interface AgentSpawnAttemptOptions extends AgentRunAttemptOptions {
   readonly profileName: string;
   readonly swarmItem?: string;
-  readonly binding?: { readonly model: string; readonly thinking?: string };
+  readonly binding?: ResolvedSubagentBinding;
 }
 
 export type AgentRunAttemptHandle = {
@@ -653,4 +654,3 @@ export function resolveSwarmMaxConcurrency(
   }
   return value;
 }
-

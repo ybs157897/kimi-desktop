@@ -28,6 +28,7 @@ export default defineConfig({
       externalizeDeps: {
         exclude: [
           '@moonshot-ai/kap-server',
+          '@moonshot-ai/klient',
           '@moonshot-ai/protocol',
           '@moonshot-ai/transcript',
         ],

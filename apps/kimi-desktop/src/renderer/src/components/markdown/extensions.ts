@@ -9,7 +9,7 @@
  *      `:name{attrs}` / `:name{attrs} content :` inline.
  *    Unknown names and malformed syntax return `undefined`, so marked falls
  *    back to the raw text — a bad directive must never crash the message.
- *  - `math` — KaTeX delimiters: block `$$…$$` / `\[…\]` and inline `\(…\)`
+ *  - `math` — KaTeX delimiters: block `$$…$$` / `\[…\]` and inline `$…$` / `\(…\)`
  *    (plus an inline `\[…\]` fallback for mid-paragraph display math).
  *  - `citation` — file references: literal `【path†L12】` / `【F:…†L12-L40】`
  *    and link-shaped bare text `path:12`, `path:12:4-40:8`, `path#L12C4`.
@@ -218,7 +218,7 @@ function mathInlineExtension(name: string, rule: RegExp, displayMode: boolean): 
     name,
     level: 'inline',
     start(src) {
-      const idx = src.search(/\\\(|\\\[/);
+      const idx = src.search(/\$|\\\(|\\\[/);
       return idx === -1 ? undefined : idx;
     },
     tokenizer(src) {
@@ -237,6 +237,11 @@ function mathInlineExtension(name: string, rule: RegExp, displayMode: boolean): 
 
 const blockDollarMath = mathBlockExtension('mathBlockDollar', /^ {0,3}\$\$([\s\S]+?)\$\$(?:\n+|$)/);
 const blockBracketMath = mathBlockExtension('mathBlockBracket', /^ {0,3}\\\[([\s\S]+?)\\\](?:\n+|$)/);
+const inlineDollarMath = mathInlineExtension(
+  'mathInlineDollar',
+  /^\$(?!\$)(?!\s)((?:\\.|[^\\$\n])*?\S)\$(?!\$)/,
+  false,
+);
 const inlineParenMath = mathInlineExtension('mathInlineParen', /^\\\(([\s\S]+?)\\\)/, false);
 // Mid-paragraph `\[…\]` still renders as display math rather than being
 // swallowed by markdown escaping.
@@ -332,6 +337,7 @@ export function createMarkdownExtensions(): MarkedExtension {
     guarded(inlineDirective),
     guarded(blockDollarMath),
     guarded(blockBracketMath),
+    guarded(inlineDollarMath),
     guarded(inlineParenMath),
     guarded(inlineBracketMath),
     guarded(literalCitation),

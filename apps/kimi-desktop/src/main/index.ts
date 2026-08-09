@@ -23,8 +23,25 @@ import {
   DESKTOP_OPEN_EXTERNAL_CHANNEL,
   DESKTOP_READ_CLIPBOARD_IMAGE_CHANNEL,
 } from '../shared/connection';
-import { findLiveServer, readServerToken, resolveKimiHomeDir } from './serverDiscovery';
-import { DesktopServerLifecycle, resolveDesktopServerMode } from './serverLifecycle';
+import {
+  EXPERT_TEAM_LIST_CHANNEL,
+  EXPERT_TEAM_REMOVE_CHANNEL,
+  EXPERT_TEAM_SAVE_CHANNEL,
+  EXPERT_TEAM_SET_ENABLED_CHANNEL,
+  EXPERT_TEAM_STATUS_CHANNEL,
+  type ExpertTeamDraft,
+  type ExpertTeamSetEnabledInput,
+} from '../shared/expertTeams';
+import { ExpertTeamService } from './expertTeams';
+import {
+  findLiveServer,
+  readServerToken,
+  resolveKimiHomeDir,
+} from './serverDiscovery';
+import {
+  DesktopServerLifecycle,
+  resolveDesktopServerMode,
+} from './serverLifecycle';
 
 // kap-server currently pulls in a few CommonJS libraries that inspect
 // `require.cache` at runtime. The Electron main bundle is ESM, so provide the
@@ -79,13 +96,17 @@ function createWindow(): BrowserWindow {
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
   if (!app.isPackaged && devUrl !== undefined && devUrl !== '') {
     void win.loadURL(devUrl);
+    win.webContents.openDevTools({ mode: 'right' });
   } else {
     void win.loadFile(join(import.meta.dirname, '../renderer/index.html'));
   }
   return win;
 }
 
-const WINDOW_BOUNDS_PATH = join(resolveKimiHomeDir(), 'desktop-window-bounds.json');
+const WINDOW_BOUNDS_PATH = join(
+  resolveKimiHomeDir(),
+  'desktop-window-bounds.json',
+);
 
 interface WindowBounds {
   readonly x: number | undefined;
@@ -94,7 +115,12 @@ interface WindowBounds {
   readonly height: number;
 }
 
-const DEFAULT_WINDOW: WindowBounds = { x: undefined, y: undefined, width: 1280, height: 820 };
+const DEFAULT_WINDOW: WindowBounds = {
+  x: undefined,
+  y: undefined,
+  width: 1280,
+  height: 820,
+};
 
 function readWindowBounds(): WindowBounds {
   try {
@@ -103,8 +129,14 @@ function readWindowBounds(): WindowBounds {
     return {
       x: typeof parsed.x === 'number' ? parsed.x : undefined,
       y: typeof parsed.y === 'number' ? parsed.y : undefined,
-      width: typeof parsed.width === 'number' && parsed.width >= 640 ? parsed.width : DEFAULT_WINDOW.width,
-      height: typeof parsed.height === 'number' && parsed.height >= 480 ? parsed.height : DEFAULT_WINDOW.height,
+      width:
+        typeof parsed.width === 'number' && parsed.width >= 640
+          ? parsed.width
+          : DEFAULT_WINDOW.width,
+      height:
+        typeof parsed.height === 'number' && parsed.height >= 480
+          ? parsed.height
+          : DEFAULT_WINDOW.height,
     };
   } catch {
     return DEFAULT_WINDOW;
@@ -115,7 +147,12 @@ function writeWindowBounds(bounds: Electron.Rectangle): void {
   try {
     writeFileSync(
       WINDOW_BOUNDS_PATH,
-      JSON.stringify({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }),
+      JSON.stringify({
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      }),
       { mode: 0o600 },
     );
   } catch {
@@ -134,9 +171,12 @@ const serverLifecycle = new DesktopServerLifecycle(
   },
   { startServer, findLiveServer, readServerToken },
 );
+let expertTeamService: ExpertTeamService | undefined;
 
 void app.whenReady().then(async () => {
-  ipcMain.handle(DESKTOP_GET_CONNECTION_CHANNEL, () => serverLifecycle.getConnection());
+  ipcMain.handle(DESKTOP_GET_CONNECTION_CHANNEL, () =>
+    serverLifecycle.getConnection(),
+  );
 
   // Clipboard image read for the composer's paste-to-attach (the renderer has
   // no clipboard access under contextIsolation). PNG data URL, or null when
@@ -167,6 +207,40 @@ void app.whenReady().then(async () => {
   } catch (error) {
     console.error('[kimi-desktop] embedded server failed to start', error);
   }
+
+  const klient = await serverLifecycle.getKlient();
+  const expertTeams = new ExpertTeamService(
+    resolveKimiHomeDir(),
+    klient === undefined
+      ? undefined
+      : {
+          list: () => klient.global.plugins.list(),
+          install: (source) => klient.global.plugins.install(source),
+          setEnabled: (input) => klient.global.plugins.setEnabled(input),
+          remove: (id) => klient.global.plugins.remove(id),
+        },
+  );
+  expertTeamService = expertTeams;
+  const managerPluginRoot = app.isPackaged
+    ? join(process.resourcesPath, 'expert-manager')
+    : join(app.getAppPath(), 'resources', 'expert-manager');
+  await expertTeams.initialize(managerPluginRoot).catch((error) => {
+    console.error('[kimi-desktop] expert-team initialization failed', error);
+  });
+  ipcMain.handle(EXPERT_TEAM_STATUS_CHANNEL, () => expertTeams.status());
+  ipcMain.handle(EXPERT_TEAM_LIST_CHANNEL, () => expertTeams.list());
+  ipcMain.handle(EXPERT_TEAM_SAVE_CHANNEL, (_event, draft: ExpertTeamDraft) =>
+    expertTeams.save(draft),
+  );
+  ipcMain.handle(
+    EXPERT_TEAM_SET_ENABLED_CHANNEL,
+    (_event, input: ExpertTeamSetEnabledInput) =>
+      expertTeams.setEnabled(input.id, input.enabled),
+  );
+  ipcMain.handle(EXPERT_TEAM_REMOVE_CHANNEL, async (_event, id: string) => {
+    const packagePath = await expertTeams.remove(id);
+    await shell.trashItem(packagePath);
+  });
 
   // Application menu: "New Window" lets multiple windows share one backend
   // (attach mode or the same embedded server). Mirrors the Codex multi-window
@@ -244,10 +318,15 @@ let readyToQuit = false;
 app.on('before-quit', (event) => {
   if (readyToQuit) return;
   event.preventDefault();
+  expertTeamService?.dispose();
+  expertTeamService = undefined;
   void serverLifecycle
     .close()
     .catch((error: unknown) => {
-      console.error('[kimi-desktop] embedded server failed to close cleanly', error);
+      console.error(
+        '[kimi-desktop] embedded server failed to close cleanly',
+        error,
+      );
     })
     .finally(() => {
       readyToQuit = true;

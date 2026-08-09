@@ -86,6 +86,12 @@ function countOccurrences(src: string, needle: string): number {
   return count;
 }
 
+/** Odd unescaped single-dollar delimiters mean an inline formula is open. */
+function hasOpenInlineDollar(src: string): boolean {
+  const delimiters = src.replaceAll(/\$\$|\\\$/g, '').match(/\$/g);
+  return (delimiters?.length ?? 0) % 2 !== 0;
+}
+
 /** Net backticks outside fence lines; odd → the tail sits inside an open code span. */
 function netInlineBackticks(src: string): number {
   let count = 0;
@@ -126,6 +132,7 @@ export function splitStreamingDelta(prev: string, next: string): StreamDelta {
   if (countOccurrences(prev, '\\(') !== countOccurrences(prev, '\\)')) return { kind: 'flush', text: '' };
   if (countOccurrences(prev, '\\[') !== countOccurrences(prev, '\\]')) return { kind: 'flush', text: '' };
   if (countOccurrences(prev, '$$') % 2 !== 0) return { kind: 'flush', text: '' };
+  if (hasOpenInlineDollar(prev)) return { kind: 'flush', text: '' };
   if (countOccurrences(prev, '【') !== countOccurrences(prev, '】')) return { kind: 'flush', text: '' };
   // A trailing half-typed directive would be hidden by the streaming
   // preprocess truncation; wrapped markup would defeat that truncation, so

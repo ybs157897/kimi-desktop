@@ -4,15 +4,18 @@
  * A `plan_review` display is an ordinary approval interaction whose
  * `tool_input_display.kind === 'plan_review'`; the user answers it through the
  * standard approval resolve endpoint with `selected_label` (the chosen option)
- * and `feedback` (a revision note). The card renders the plan body through the
- * markdown pipeline, lists the advertised options, and offers a free-text
- * "Revise" path.
+ * and `feedback` (a revision note). The card stays collapsed to a title row
+ * plus the always-visible answer buttons; the plan body (markdown pipeline)
+ * expands on demand from the title row.
  */
 
 import type { ApprovalDecision } from '@moonshot-ai/protocol';
+import { ArrowSquareOut, CaretRight, ClipboardText } from '@phosphor-icons/react';
 import { useState } from 'react';
 
+import { tagClasses } from '#/lib/agentColors';
 import { Markdown } from '../../markdown/Markdown';
+import { planTitle } from '../planShared';
 import type { ApprovalResolveOptions } from './ApprovalCard';
 
 export interface PlanReviewDisplay {
@@ -27,14 +30,20 @@ export interface PlanReviewCardProps {
   readonly options?: readonly { readonly label: string; readonly description?: string }[];
   readonly busy?: boolean;
   readonly onResolve: (decision: ApprovalDecision, options?: ApprovalResolveOptions) => void | Promise<void>;
+  /** Open this plan in the plan-document dock tab. */
+  readonly onOpenDoc?: () => void;
 }
 
 const REJECT_LABEL = 'Reject and Exit';
 const REVISE_LABEL = 'Revise';
 
-export function PlanReviewCard({ plan, path, options, busy = false, onResolve }: PlanReviewCardProps) {
+export function PlanReviewCard({ plan, path, options, busy = false, onResolve, onOpenDoc }: PlanReviewCardProps) {
   const [feedback, setFeedback] = useState('');
   const [selected, setSelected] = useState<string | undefined>(undefined);
+  // The plan body stays collapsed by default (zcode elicitation pattern): the
+  // title row + answer buttons are always visible, the full markdown only
+  // expands on demand so the card never fills the viewport.
+  const [expanded, setExpanded] = useState(false);
   const advertised = options ?? [];
 
   // The Accept option is always the primary action (approved); a custom
@@ -69,7 +78,7 @@ export function PlanReviewCard({ plan, path, options, busy = false, onResolve }:
 
   return (
     <div
-      className={`rounded-2xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] px-3 py-2.5 ${
+      className={`rounded-[var(--radius-lg)] border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] px-3.5 py-3 shadow-[var(--shadow-md)] ${
         busy ? 'opacity-70' : ''
       }`}
       onKeyDown={(event) => {
@@ -80,17 +89,48 @@ export function PlanReviewCard({ plan, path, options, busy = false, onResolve }:
         }
       }}
     >
-      <div className="mb-1 flex items-center gap-2 text-[12px] font-medium text-[var(--color-text-foreground)]">
-        <span>📋 计划评审</span>
-        {path !== undefined && path !== '' ? (
-          <span className="min-w-0 flex-1 truncate font-mono text-[10px] opacity-50" title={path}>
-            {path}
+      <div className="-mx-1 flex w-[calc(100%+0.5rem)] items-center rounded-[var(--radius-sm)] hover:bg-[var(--color-list-hover)]">
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+          title={path}
+          className="ui-pressable flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-sm)] px-1 py-1 text-left"
+        >
+          <CaretRight
+            size={10}
+            weight="bold"
+            className={`shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[var(--duration-hover)] ease-[var(--ease-out)] ${expanded ? 'rotate-90' : ''}`}
+            aria-hidden
+          />
+          <ClipboardText size={16} weight="regular" className="shrink-0 text-[var(--color-text-secondary)]" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--color-text-foreground)]">
+            {planTitle(plan)}
           </span>
+          {path !== undefined && path !== '' ? (
+            <span className="max-w-[12rem] shrink-0 truncate font-mono text-[10px] text-[var(--color-text-tertiary)] opacity-50">
+              {path}
+            </span>
+          ) : null}
+          <span className={`ui-tag-pill shrink-0 ${tagClasses('plan')}`}>待审批</span>
+        </button>
+        {onOpenDoc !== undefined ? (
+          <button
+            type="button"
+            title="在右侧面板查看计划"
+            aria-label="在右侧面板查看计划"
+            onClick={onOpenDoc}
+            className="ui-pressable mr-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-background-button-secondary)] hover:text-[var(--color-text-foreground)]"
+          >
+            <ArrowSquareOut size={12} weight="regular" aria-hidden />
+          </button>
         ) : null}
       </div>
-      <div className="max-h-[24vh] overflow-y-auto rounded-lg border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-2">
-        <Markdown source={plan} />
-      </div>
+      {expanded ? (
+        <div className="mt-1 max-h-[32vh] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-2">
+          <Markdown source={plan} />
+        </div>
+      ) : null}
 
       {advertised.length > 0 ? (
         <div className="mt-3 space-y-1">
@@ -102,9 +142,9 @@ export function PlanReviewCard({ plan, path, options, busy = false, onResolve }:
               title={option.description}
               onClick={() => pickOption(option.label)}
               onMouseEnter={() => setSelected(option.label)}
-              className={`block w-full cursor-pointer rounded-md border px-3 py-1.5 text-left text-[12px] transition-colors disabled:cursor-default disabled:opacity-50 ${
+              className={`ui-pressable block w-full cursor-pointer rounded-[var(--radius-sm)] border px-3 py-1.5 text-left text-[12px] transition-colors disabled:cursor-default disabled:opacity-50 ${
                 selected === option.label
-                  ? 'border-[var(--color-border-heavy)] bg-[var(--color-list-hover)] text-[var(--color-text-foreground)]'
+                  ? 'border-[var(--color-border-focus)] bg-[var(--color-accent-background)] text-[var(--color-text-foreground)]'
                   : 'border-[var(--color-border-light)] text-[var(--color-text-foreground)] opacity-80 hover:bg-[var(--color-list-hover)]'
               }`}
             >
@@ -125,7 +165,7 @@ export function PlanReviewCard({ plan, path, options, busy = false, onResolve }:
           placeholder="修订意见（可选，Revise 时一并发回）"
           rows={2}
           spellCheck={false}
-          className="w-full resize-none rounded-md border border-[var(--color-border)] bg-[var(--color-background-surface)] px-2 py-1 text-[12px] text-[var(--color-text-foreground)] outline-none placeholder:text-[var(--gray-600)] focus:border-[var(--color-border-heavy)] disabled:opacity-50"
+          className="w-full resize-none rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-surface)] px-2 py-1 text-[12px] text-[var(--color-text-foreground)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-focus)] disabled:opacity-50"
         />
       </div>
 
@@ -135,7 +175,7 @@ export function PlanReviewCard({ plan, path, options, busy = false, onResolve }:
           autoFocus
           disabled={busy}
           onClick={accept}
-          className="cursor-pointer rounded-md bg-[var(--gray-1000)] px-3 py-1 text-[12px] font-medium text-[var(--color-text-foreground)] hover:bg-[var(--gray-900)] disabled:cursor-default disabled:opacity-50"
+          className="ui-pressable cursor-pointer rounded-[var(--radius-sm)] bg-[var(--color-button-primary-background)] px-3 py-1 text-[12px] font-medium text-[var(--color-button-primary-foreground)] hover:opacity-90 disabled:cursor-default disabled:opacity-50"
         >
           Accept
         </button>
@@ -144,7 +184,7 @@ export function PlanReviewCard({ plan, path, options, busy = false, onResolve }:
           disabled={busy}
           onClick={revise}
           title="带着上方修订意见继续（rejected + Revise）"
-          className="cursor-pointer rounded-md border border-[var(--color-border-heavy)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
+          className="ui-pressable cursor-pointer rounded-[var(--radius-sm)] border border-[var(--color-border-heavy)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
         >
           Revise
         </button>
@@ -152,12 +192,12 @@ export function PlanReviewCard({ plan, path, options, busy = false, onResolve }:
           type="button"
           disabled={busy}
           onClick={reject}
-          className="cursor-pointer rounded-md border border-[var(--color-border)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] opacity-70 hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
+          className="ui-pressable cursor-pointer rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] opacity-70 hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
         >
           Reject
         </button>
       </div>
-      <div className="mt-2 text-[10px] text-[var(--color-text-foreground)] opacity-40">
+      <div className="ui-label mt-2 opacity-70">
         Enter 接受 · Esc 拒绝并退出计划模式
       </div>
     </div>

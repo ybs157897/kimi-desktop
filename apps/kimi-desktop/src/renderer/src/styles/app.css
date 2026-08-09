@@ -11,21 +11,25 @@ body,
 }
 
 body {
-  /* Dark-first shell; themes switch via `data-theme` on <html>. */
+  /* Dark-first shell; themes switch via `data-theme` on <html>.
+     Font rendering matches desktop-cc-gui: skip optimizeLegibility (forces
+     kerning/ligatures that look uneven on CJK at small sizes) and disable
+     synthetic bold/italic. */
   background-color: var(--color-background-surface);
   color: var(--color-text-foreground);
-  font-family: var(--font-sans);
-  font-size: var(--codex-chat-font-size);
+  font-family: var(--ui-font-family, var(--font-sans));
+  font-size: var(--client-content-font-size, var(--codex-chat-font-size));
+  font-synthesis: none;
   font-optical-sizing: auto;
   letter-spacing: var(--tracking-tight);
   line-height: var(--leading-chat);
-  text-rendering: optimizeLegibility;
+  text-rendering: auto;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   user-select: none;
 }
 
-/* Window drag region (the 46px shell header). Interactive children are
+/* Window drag region (the 36px shell header). Interactive children are
    excluded so clicks still reach them. */
 .app-drag-region {
   -webkit-app-region: drag;
@@ -56,7 +60,7 @@ body {
 
 /* Section labels: small caps tracking without shouting. */
 .ui-label {
-  font-size: 10.5px;
+  font-size: var(--client-caption-font-size);
   font-weight: 600;
   letter-spacing: var(--tracking-label);
   line-height: var(--leading-ui);
@@ -122,7 +126,7 @@ body {
   background: transparent;
   padding: 0;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--client-meta-font-size);
   font-weight: 500;
   letter-spacing: var(--tracking-tight);
   line-height: 1;
@@ -272,6 +276,52 @@ body {
   }
 }
 
+/* Gradient-clipped shimmer text for live labels (zcode `animated-gradient-text`):
+   a 90° sweep that fades strong → soft → strong, clipped to the glyphs via
+   `-webkit-text-fill-color: transparent`. `currentColor` provides the strong
+   stop so a tinted label (e.g. accent) keeps its hue while shimmering. */
+.ui-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    currentColor 0%,
+    currentColor 34%,
+    color-mix(in srgb, currentColor 22%, transparent) 50%,
+    currentColor 66%,
+    currentColor 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--color-text-foreground);
+  animation: ui-shimmer-text 1.8s var(--ease-in-out) infinite;
+}
+
+@keyframes ui-shimmer-text {
+  0% {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+/* Entity type pill — a compact colored tag keyed off the `--color-tag-*`
+   palette. Pair with `bg-[var(--color-tag-<kind>-fill)]` and
+   `text-[var(--color-tag-<kind>)]` on the element. */
+.ui-tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: var(--radius-full);
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-pressable {
     transition:
@@ -294,8 +344,15 @@ body {
   .ui-breathe,
   .ui-dot-pulse,
   .ui-shimmer,
+  .ui-shimmer-text,
   .ui-card-enter {
     animation: none;
+  }
+
+  /* Reduced motion: restore readable text instead of transparent-fill shimmer. */
+  .ui-shimmer-text {
+    -webkit-text-fill-color: currentColor;
+    background: none;
   }
 }
 

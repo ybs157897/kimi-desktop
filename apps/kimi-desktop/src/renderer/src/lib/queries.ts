@@ -11,7 +11,7 @@
  * kimi-inspect pattern).
  */
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 
 import type {
@@ -124,6 +124,69 @@ export function useModels() {
     queryKey: ['models'],
     queryFn: () => api.models(),
     staleTime: 60_000,
+  });
+}
+
+export function useAgentProfiles() {
+  const { api } = useConnection();
+  return useQuery({
+    queryKey: ['agent-profiles'],
+    queryFn: () => api.agentProfiles(),
+    staleTime: 60_000,
+  });
+}
+
+function useInvalidateAgentProfiles() {
+  const queryClient = useQueryClient();
+  return () => queryClient.invalidateQueries({ queryKey: ['agent-profiles'] });
+}
+
+export function useCreateAgentProfile() {
+  const { api } = useConnection();
+  const invalidate = useInvalidateAgentProfiles();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof api.createAgentProfile>[0]) =>
+      api.createAgentProfile(body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateAgentProfile() {
+  const { api } = useConnection();
+  const invalidate = useInvalidateAgentProfiles();
+  return useMutation({
+    mutationFn: ({
+      name,
+      body,
+    }: {
+      name: string;
+      body: Parameters<typeof api.updateAgentProfile>[1];
+    }) => api.updateAgentProfile(name, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetAgentProfileEnabled() {
+  const { api } = useConnection();
+  const invalidate = useInvalidateAgentProfiles();
+  return useMutation({
+    mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) =>
+      api.setAgentProfileEnabled(name, { enabled }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteAgentProfile() {
+  const { api } = useConnection();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => api.deleteAgentProfile(name),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['agent-profiles'] }),
+        queryClient.invalidateQueries({ queryKey: ['config'] }),
+      ]);
+    },
   });
 }
 
@@ -439,6 +502,42 @@ export function useAbortSession() {
   const { api } = useConnection();
   return useMutation({
     mutationFn: (sessionId: string) => api.abortSession(sessionId),
+  });
+}
+
+// ------------------------------------------------------- subagent visibility
+
+/** Session-wide roster of live FOREGROUND subagents (expert-team / swarm
+ *  members spawned by child agents) from the snapshot endpoint — the only
+ *  surface that sees them; REST `/tasks` is main-agent scope. Polls while the
+ *  caller reports live work OR the roster itself still holds a running entry
+ *  (members can outlive the lead task the caller watches). */
+export function useSessionSubagents(sessionId: string | null, live: boolean) {
+  const { api } = useConnection();
+  return useQuery({
+    queryKey: ['session-subagents', sessionId],
+    queryFn: () => api.sessionSubagents(sessionId!),
+    enabled: sessionId !== null,
+    refetchInterval: (query) => {
+      const rosterRunning = (query.state.data ?? []).some((item) => item.status === 'running');
+      return live || rosterRunning ? 4_000 : false;
+    },
+  });
+}
+
+/** ExitPlanMode plans of the given child agents, merged newest-last. The main
+ *  agent's plans ride the ChatView projection; this covers plans a delegated
+ *  lead (expert team) wrote in its own transcript. */
+export function useChildAgentPlans(sessionId: string | null, agentIds: readonly string[]) {
+  const { api } = useConnection();
+  return useQueries({
+    queries: agentIds.map((agentId) => ({
+      queryKey: ['transcript-plan', sessionId, agentId],
+      queryFn: () => api.transcriptPlan(sessionId!, agentId),
+      enabled: sessionId !== null,
+      refetchInterval: 6_000,
+    })),
+    combine: (results) => results.flatMap((result) => result.data ?? []),
   });
 }
 

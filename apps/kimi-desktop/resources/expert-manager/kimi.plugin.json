@@ -1,0 +1,11 @@
+{
+  "name": "kimi-desktop-expert-manager",
+  "version": "1.0.0",
+  "description": "Create and maintain Kimi expert-team packages through conversation.",
+  "skills": "./skills",
+  "interface": {
+    "displayName": "Expert Manager",
+    "shortDescription": "Create expert teams through conversation",
+    "developerName": "Kimi Code Desktop"
+  }
+}

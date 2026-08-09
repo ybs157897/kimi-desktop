@@ -1,85 +1,69 @@
 /**
- * TodoPanel — the model's TodoList tool rendered as a live strip above the
- * composer (the TUI TodoPanelComponent position). Data comes straight from
- * the transcript store's `todos` map (`todo.upsert` ops keep it current; REST
- * pages replace it wholesale) — no op parsing here. More than 5 items
- * collapse into a summary with an expand toggle.
+ * Todo data helpers — the strip above the composer was removed when the
+ * execution-progress list moved into the right-dock plan panel (`进程`
+ * section). What remains are the shared pure helpers: `selectVisibleTodos`
+ * (the collapsed-window policy) for the panel, and `todosFromTimeline`, the
+ * point-in-time fallback reconstruction for transcripts whose global
+ * `todo.upsert` entities are missing.
  */
 
-import { useState } from 'react';
+import type { TodoItem, TranscriptItem, TranscriptTodo } from '@moonshot-ai/transcript';
 
-import type { TranscriptTodo } from '@moonshot-ai/transcript';
+export const COLLAPSE_AFTER = 5;
 
-export interface TodoPanelProps {
-  readonly todos: ReadonlyMap<string, TranscriptTodo>;
+/** Keep the important states visible in the collapsed strip, matching the
+ * TUI policy: every active item, then the earliest pending work, then the
+ * most recently completed work. Original order is restored for display. */
+export function selectVisibleTodos(items: readonly TodoItem[]): readonly TodoItem[] {
+  const selected = new Set<TodoItem>();
+  for (const item of items) if (item.status === 'in_progress') selected.add(item);
+  for (const item of items) {
+    if (selected.size >= COLLAPSE_AFTER) break;
+    if (item.status === 'pending') selected.add(item);
+  }
+  for (let index = items.length - 1; index >= 0 && selected.size < COLLAPSE_AFTER; index -= 1) {
+    const item = items[index]!;
+    if (item.status === 'done') selected.add(item);
+  }
+  return items.filter((item) => selected.has(item));
 }
 
-const COLLAPSE_AFTER = 5;
+/** Older transcripts may contain TodoList frames but no `todo.upsert` global
+ * entity. Reconstruct the latest point-in-time snapshot for the panel. */
+export function todosFromTimeline(items: readonly TranscriptItem[]): ReadonlyMap<string, TranscriptTodo> {
+  let latest: readonly TodoItem[] | undefined;
+  for (const item of items) {
+    if (item.kind !== 'turn') continue;
+    for (const step of item.steps) {
+      for (const frame of step.frames) {
+        if (frame.kind !== 'tool' || frame.name !== 'TodoList') continue;
+        const display = isTodoDisplay(frame.display) ? frame.display.items : undefined;
+        const input = isRecord(frame.input) && Array.isArray(frame.input['todos']) ? frame.input['todos'] : undefined;
+        const source = display ?? input;
+        if (source === undefined) continue;
+        latest = source.map(normalizeTodo).filter(isTodoItem);
+      }
+    }
+  }
+  if (latest === undefined) return new Map();
+  return new Map([['timeline-todo', { todoId: 'timeline-todo', items: latest }]]);
+}
 
-const STATUS_DOT: Record<string, string> = {
-  pending: 'bg-[var(--gray-600)]',
-  in_progress: 'bg-[var(--blue-400)]',
-  done: 'bg-[var(--green-400)]',
-};
+function isTodoDisplay(value: unknown): value is { kind: 'todo_list'; items: readonly unknown[] } {
+  return isRecord(value) && value['kind'] === 'todo_list' && Array.isArray(value['items']);
+}
 
-export function TodoPanel({ todos }: TodoPanelProps) {
-  const [expanded, setExpanded] = useState(false);
-  const items = Array.from(todos.values()).flatMap((doc) => doc.items);
-  if (items.length === 0) return null;
+function normalizeTodo(value: unknown): TodoItem | undefined {
+  if (!isRecord(value) || typeof value['title'] !== 'string') return undefined;
+  const status = value['status'];
+  if (status !== 'pending' && status !== 'in_progress' && status !== 'done') return undefined;
+  return { title: value['title'], status };
+}
 
-  const collapsed = !expanded && items.length > COLLAPSE_AFTER;
-  const visible = collapsed ? items.slice(0, COLLAPSE_AFTER) : items;
-  const counts = {
-    inProgress: items.filter((item) => item.status === 'in_progress').length,
-    done: items.filter((item) => item.status === 'done').length,
-    pending: items.filter((item) => item.status === 'pending').length,
-  };
+function isTodoItem(value: TodoItem | undefined): value is TodoItem {
+  return value !== undefined;
+}
 
-  return (
-    <div className="mx-auto w-full max-w-[var(--layout-thread-max-width)] px-6 pb-1">
-      <div className="rounded-xl border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-2">
-        <div className="mb-1 flex items-center justify-between">
-          <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[var(--gray-500)]">
-            Todo
-          </span>
-          {collapsed ? (
-            <button
-              type="button"
-              onClick={() => setExpanded(true)}
-              className="text-[10.5px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-foreground)]"
-            >
-              … +{items.length - COLLAPSE_AFTER} 条（{counts.inProgress} 进行中 · {counts.done} 完成）
-            </button>
-          ) : items.length > COLLAPSE_AFTER ? (
-            <button
-              type="button"
-              onClick={() => setExpanded(false)}
-              className="text-[10.5px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-foreground)]"
-            >
-              收起
-            </button>
-          ) : null}
-        </div>
-        <ul className="space-y-0.5">
-          {visible.map((item, index) => (
-            <li key={index} className="flex items-center gap-2 text-[11px]">
-              <span
-                className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[item.status] ?? 'bg-[var(--gray-600)]'}`}
-                aria-hidden
-              />
-              <span
-                className={
-                  item.status === 'done'
-                    ? 'text-[var(--color-text-tertiary)] line-through'
-                    : 'text-[var(--color-text-foreground)]'
-                }
-              >
-                {item.title}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

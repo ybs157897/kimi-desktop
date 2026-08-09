@@ -9,6 +9,7 @@
  */
 
 import type { TranscriptAttachment } from '@moonshot-ai/transcript';
+import { Paperclip } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 
 import { attachmentImageSrc, isImageAttachment } from '#/lib/attachmentImage';
@@ -138,10 +139,11 @@ function FileChip({
 }) {
   return (
     <span
-      className="rounded border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-foreground)] opacity-70"
+      className="inline-flex items-center gap-1 rounded border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-foreground)] opacity-70"
       title={attachment?.mediaType}
     >
-      📎 {attachment?.name ?? attachment?.mediaType ?? id}
+      <Paperclip size={12} weight="regular" className="shrink-0 text-[var(--color-text-secondary)]" aria-hidden />
+      {attachment?.name ?? attachment?.mediaType ?? id}
     </span>
   );
 }

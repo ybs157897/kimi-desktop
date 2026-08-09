@@ -1,7 +1,9 @@
 import type {
   ToolCallFrame,
+  TranscriptFrame,
   TranscriptItem,
   TranscriptTask,
+  TranscriptTurn,
   TurnState,
 } from '@moonshot-ai/transcript';
 import type { ApprovalDecision } from '@moonshot-ai/protocol';
@@ -11,7 +13,7 @@ import type { SourcedPendingInteraction } from './sessionInteractions';
 /** Timeline items currently exposed by the transcript projection. */
 export function visibleTimelineItems(items: readonly TranscriptItem[]): readonly TranscriptItem[] {
   return items.filter(
-    (item) => item.kind !== 'marker' || item.marker === 'compact' || item.marker === 'swarm.enter',
+    (item) => item.kind !== 'marker' || item.marker === 'compact',
   );
 }
 
@@ -29,6 +31,35 @@ export function liveTailFrameId(turn: {
   for (let i = turn.steps.length - 1; i >= 0; i--) {
     const frames = turn.steps[i]!.frames;
     if (frames.length > 0) return frames[frames.length - 1]!.frameId;
+  }
+  return undefined;
+}
+
+/** The assistant text that should remain visible when the rest of a turn is
+ * folded into its process disclosure. A settled turn exposes its last
+ * non-empty assistant message; a live turn only exposes text while that text
+ * is the streaming tail, so commentary disappears again when a tool starts. */
+export function resultTextFrameId(
+  turn: Pick<TranscriptTurn, 'state' | 'steps'>,
+): string | undefined {
+  if (turn.state === 'running' || turn.state === 'queued') {
+    const tailId = liveTailFrameId(turn);
+    if (tailId === undefined) return undefined;
+    for (let stepIndex = turn.steps.length - 1; stepIndex >= 0; stepIndex -= 1) {
+      const frame = turn.steps[stepIndex]!.frames.find((candidate) => candidate.frameId === tailId);
+      if (frame?.kind === 'text' && frame.role === 'assistant') return frame.frameId;
+    }
+    return undefined;
+  }
+
+  for (let stepIndex = turn.steps.length - 1; stepIndex >= 0; stepIndex -= 1) {
+    const frames = turn.steps[stepIndex]!.frames;
+    for (let frameIndex = frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
+      const frame = frames[frameIndex]!;
+      if (frame.kind === 'text' && frame.role === 'assistant' && frame.text.trim() !== '') {
+        return frame.frameId;
+      }
+    }
   }
   return undefined;
 }
@@ -94,4 +125,25 @@ export function shouldAbortAfterApproval(
 /** Whether the live thinking affordance has meaningful content to expose. */
 export function hasThinkingContent(text: string): boolean {
   return text.trim() !== '';
+}
+
+/** User-facing type label for a single subagent call. Prefer the raw input's
+ * explicit type because older producers may only emit a generic display name. */
+export function agentCallTypeLabel(
+  frame: Pick<ToolCallFrame, 'name' | 'input'>,
+  displayName?: string,
+): string {
+  const input =
+    frame.input !== null && typeof frame.input === 'object' && !Array.isArray(frame.input)
+      ? (frame.input as Record<string, unknown>)
+      : undefined;
+  const explicitType = input?.['subagent_type'] ?? input?.['subagent_name'];
+  const raw =
+    (typeof explicitType === 'string' && explicitType.trim() !== '' ? explicitType : undefined) ??
+    (typeof displayName === 'string' && displayName.trim() !== '' ? displayName : undefined) ??
+    frame.name;
+
+  if (/^coder[\s_-]*agent$/i.test(raw) || /^coder$/i.test(raw)) return 'Coder Agent';
+  if (/^tidal$/i.test(raw)) return 'Tidal';
+  return raw;
 }

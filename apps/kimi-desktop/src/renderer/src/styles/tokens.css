@@ -1,12 +1,13 @@
 /*
  * Design tokens for Kimi Code Desktop.
  *
- * Values follow the Codex Desktop design-token tables in
- * docs/zh/reference/desktop-app.md (「设计 token」节), extracted from the
- * Codex webview CSS bundle. Component code references them through Tailwind
- * arbitrary values, e.g. `bg-[var(--color-background-surface)]`, so the
- * variable names below are part of the public contract — keep them in sync
- * with the doc tables.
+ * Variable names follow the Codex Desktop design-token tables in
+ * docs/zh/reference/desktop-app.md (「设计 token」节) and are the public
+ * contract: component code references them through Tailwind arbitrary
+ * values, e.g. `bg-[var(--color-background-surface)]` — rename nothing.
+ * Brand/accent values follow the App Shell UI dual-theme pairing: one
+ * `--primary` per theme (#007aff light / #0a84ff dark), with selected and
+ * accent washes derived from `--primary` via color-mix in both themes.
  *
  * Structure (mirrors Codex):
  *   1. named palette (gray / blue / green / red / orange / purple)
@@ -52,21 +53,40 @@
 
   /* ------------------------------- typography ------------------------------ */
 
-  /* Match Codex's native UI stacks exactly. On macOS `-apple-system` resolves
-     to the current San Francisco UI face selected by the OS. */
-  --font-sans:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono:
-    ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono',
-    'Courier New', monospace;
+  /* App Shell UI + desktop-cc-gui: PingFang-first system stack with
+     CJK-aware mono fallbacks. */
+  --ui-font-family:
+    'PingFang SC', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Hiragino Sans GB',
+    'Segoe UI', system-ui, sans-serif;
+  --code-font-family:
+    'SF Mono', 'SFMono-Regular', Menlo, Monaco, 'Sarasa Mono SC', 'Noto Sans Mono CJK SC',
+    'Microsoft YaHei Mono', monospace;
+  --font-sans: var(--ui-font-family);
+  --font-mono: var(--code-font-family);
+  --sidebar-width: 240px;
+  --content-padding: 24px;
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.06);
 
-  /* Codex preferences defaults: 14px UI and 12px code. */
-  --codex-chat-font-size: 14px;
-  --codex-code-font-size: 12px;
+  /* desktop-cc-gui client typography scale (sidebar-shell / buttons.css /
+     messages shells). Control = default hand-rolled button size. */
+  --client-caption-font-size: 10px;
+  --client-meta-font-size: 12px;
+  --client-control-font-size: 13px;
+  --client-content-font-size: 14px;
+  --client-title-font-size: 14px;
+  --client-display-font-size: clamp(20px, 2.4vw, 34px);
+  --code-font-size: 11px;
+  --code-font-weight: 400;
+  --code-line-height: 1.28;
+  --tracking-display-tight: -0.03em;
 
-  --font-size-xs: 11px;
-  --font-size-sm: 12px;
-  --font-size-base: 14px;
+  /* Chat defaults follow the client content size; code matches cc-gui. */
+  --codex-chat-font-size: var(--client-content-font-size);
+  --codex-code-font-size: var(--code-font-size);
+
+  --font-size-xs: var(--client-caption-font-size);
+  --font-size-sm: var(--client-meta-font-size);
+  --font-size-base: var(--client-content-font-size);
   --font-size-lg: 16px;
   --font-size-xl: 28px;
   --font-size-2xl: 36px;
@@ -91,14 +111,13 @@
 
   /* ------------------------------ corner radius ---------------------------- */
 
-  /* Desktop windows use scale = 1; the scale knob exists for future
-     form-factor variants (compact / cozy). */
+  /* App Shell ladder: 8 / 12 / 16 / 999. Desktop windows use scale = 1. */
   --corner-radius-scale: 1;
   --radius-2xs: 2px;
   --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
   --radius-xl: 12px;
   --radius-2xl: 16px;
   --radius-3xl: 20px;
@@ -133,7 +152,7 @@
 
   /* ---------------------------- markdown prose ----------------------------- */
 
-  --markdown-inline-code-border-radius: 5px;
+  --markdown-inline-code-border-radius: 4px;
   --markdown-inline-code-padding: 1px 6px;
   --markdown-inline-code-font-size: 0.9em;
   --markdown-code-block-border-radius: 12px;
@@ -141,53 +160,65 @@
   --markdown-code-block-line-height: 1.55;
   --markdown-list-padding-inline-start: 1.35rem;
   --markdown-paragraph-spacing: 0.75rem;
+  /* Long code block: line budget before the fold kicks in, and the folded
+     body's max height (matches the ~16rem preview window). */
+  --markdown-code-fold-threshold: 20;
+  --markdown-code-folded-height: 16rem;
 }
 
 /* -------------------------- semantic layer (dark) --------------------------
    Dark is the default theme; `[data-theme='light']` on <html> switches. */
 :root,
 [data-theme='dark'] {
-  --color-background-surface: var(--gray-900); /* #181818 */
-  --color-background-surface-under: #000000;
-  --color-background-editor-opaque: var(--gray-800); /* #212121 */
-  --color-background-panel: #202020;
+  /* App Shell surface ladder: soft charcoal canvas → darker sidebar → raised card.
+     Never pure #000 page + pure #fff cards. */
+  --primary: #0a84ff;
+  --primary-foreground: #ffffff;
+  /* Consumed by toggle ON tracks; resolves per theme via `--primary`. */
+  --color-accent: var(--primary);
+  --color-background-surface: #1c1c1e;
+  --color-background-surface-under: #161617;
+  --color-background-editor-opaque: #2c2c2e;
+  --color-background-panel: #2c2c2e;
+  --color-background-muted: #3a3a3c;
   --color-terminal-shell: #151515;
-  --color-background-accent: var(--blue-900); /* #00284d */
+  --color-background-accent: color-mix(in srgb, var(--primary) 22%, #2c2c2e);
   --color-user-bubble: rgb(255 255 255 / 0.08);
-  --color-composer-fill: rgb(33 33 33 / 0.92);
+  --color-composer-fill: rgb(44 44 46 / 0.96);
   --shadow-composer:
-    0 0 0 1px rgb(255 255 255 / 0.04), 0 12px 36px -12px rgb(0 0 0 / 0.55),
-    0 2px 10px rgb(0 0 0 / 0.28);
+    0 0 0 1px rgb(255 255 255 / 0.06), 0 8px 28px -10px rgb(0 0 0 / 0.55),
+    0 2px 8px rgb(0 0 0 / 0.28);
   --shadow-composer-focus:
-    0 0 0 1px rgb(255 255 255 / 0.08), 0 14px 40px -12px rgb(0 0 0 / 0.62),
-    0 3px 12px rgb(0 0 0 / 0.32);
+    0 0 0 1px color-mix(in srgb, var(--primary) 45%, transparent),
+    0 10px 32px -10px rgb(0 0 0 / 0.6), 0 3px 10px rgb(0 0 0 / 0.3);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.45);
 
-  --color-button-primary-background: var(--gray-0);
-  --color-button-primary-foreground: var(--gray-1000);
-  --color-background-button-secondary: rgb(255 255 255 / 0.05);
-  --color-background-button-secondary-hover: rgb(255 255 255 / 0.08);
+  --color-button-primary-background: var(--primary);
+  --color-button-primary-foreground: var(--primary-foreground);
+  --color-background-button-secondary: rgb(255 255 255 / 0.06);
+  --color-background-button-secondary-hover: rgb(255 255 255 / 0.1);
   --color-background-button-tertiary: rgb(255 255 255 / 0.03);
   --color-background-button-tertiary-hover: rgb(255 255 255 / 0.07);
 
-  --color-text-foreground: var(--gray-0);
-  --color-text-secondary: rgb(255 255 255 / 0.65);
-  --color-text-tertiary: rgb(255 255 255 / 0.45);
-  --color-text-on-accent: var(--gray-1000);
-  --color-text-accent: var(--blue-300);
-  --color-text-success: var(--green-400);
-  --color-text-danger: var(--red-400);
-  --color-text-warning: var(--orange-400);
+  --color-text-foreground: #f5f5f7;
+  --color-text-secondary: #a1a1a6;
+  --color-text-tertiary: #6c6c70;
+  --color-text-on-accent: var(--primary-foreground);
+  --color-text-accent: var(--primary);
+  --color-text-success: #30d158;
+  --color-text-danger: #ff453a;
+  --color-text-warning: #ffd60a;
 
-  /* border: 8% / 16% / 4% white mixes */
   --color-border: rgb(255 255 255 / 0.08);
-  --color-border-heavy: rgb(255 255 255 / 0.16);
-  --color-border-light: rgb(255 255 255 / 0.04);
-  --color-border-focus: rgb(51 156 255 / 0.7); /* blue-300 @ 70% */
-  --color-border-error: rgb(250 66 62 / 0.4); /* red-400 @ 40% */
-  --color-border-warning: rgb(255 133 73 / 0.4); /* orange @ 40% */
+  --color-border-heavy: rgb(255 255 255 / 0.14);
+  --color-border-light: rgb(255 255 255 / 0.06);
+  --color-border-focus: color-mix(in srgb, var(--primary) 70%, transparent);
+  --color-border-error: rgb(255 69 58 / 0.4);
+  --color-border-warning: rgb(255 214 10 / 0.35);
 
-  --color-list-hover: rgb(255 255 255 / 0.08);
-  --color-list-active: rgb(255 255 255 / 0.12);
+  --color-list-hover: rgb(255 255 255 / 0.06);
+  --color-list-active: color-mix(in srgb, var(--primary) 22%, #2c2c2e);
+  --color-list-active-foreground: var(--primary);
 
   /* Busy-pill sweep highlight (`.ui-shimmer` overlay). */
   --color-shimmer-highlight: rgb(255 255 255 / 0.22);
@@ -195,9 +226,39 @@
   /* Lighter floating-panel shadow (Apple-style). */
   --shadow-floating-panel: 0 4px 16px rgb(0 0 0 / 0.2), 0 1px 4px rgb(0 0 0 / 0.12);
 
-  /* accent（背景 / 文本）: blue-900 / blue-100 */
-  --color-accent-background: var(--blue-900);
-  --color-accent-text: var(--blue-100);
+  --color-accent-background: color-mix(in srgb, var(--primary) 22%, #2c2c2e);
+  --color-accent-text: var(--primary);
+  /* Thinking-frame side bar: a calmer accent than the full selected wash so a
+     long reasoning chain reads as quiet marginalia, not a primary action. */
+  --color-thinking-bar: color-mix(in srgb, var(--primary) 55%, transparent);
+  --color-thinking-fill: color-mix(in srgb, var(--primary) 8%, transparent);
+
+  /* ---------------- entity tag palette (zcode node palette parity) ----------
+     Per-block type identity colors. Each kind exposes a foreground (fg) for
+     text/icon tinting and a fill (~12% alpha) for pill backgrounds. Drives the
+     `.ui-tag-pill` chrome so a tool's family is readable at a glance, mirroring
+     zcode's session-graph node colors (file=sky, skill=violet, command=slate,
+     subagent=olive, session=teal, plugin=amber). */
+  --color-tag-file: #339cff;
+  --color-tag-file-fill: color-mix(in srgb, var(--color-tag-file) 14%, transparent);
+  --color-tag-shell: #98a4b3;
+  --color-tag-shell-fill: color-mix(in srgb, var(--color-tag-shell) 14%, transparent);
+  --color-tag-search: #34c7be;
+  --color-tag-search-fill: color-mix(in srgb, var(--color-tag-search) 14%, transparent);
+  --color-tag-skill: #b79cff;
+  --color-tag-skill-fill: color-mix(in srgb, var(--color-tag-skill) 14%, transparent);
+  --color-tag-plan: #f0a85a;
+  --color-tag-plan-fill: color-mix(in srgb, var(--color-tag-plan) 14%, transparent);
+  --color-tag-todo: #5ab0ff;
+  --color-tag-todo-fill: color-mix(in srgb, var(--color-tag-todo) 14%, transparent);
+  --color-tag-agent: #c8cd90;
+  --color-tag-agent-fill: color-mix(in srgb, var(--color-tag-agent) 14%, transparent);
+  --color-tag-swarm: #f0c46a;
+  --color-tag-swarm-fill: color-mix(in srgb, var(--color-tag-swarm) 14%, transparent);
+  --color-tag-context: #34c7be;
+  --color-tag-context-fill: color-mix(in srgb, var(--color-tag-context) 14%, transparent);
+  --color-tag-generic: var(--color-text-secondary);
+  --color-tag-generic-fill: var(--color-background-button-secondary);
 
   /* ------------------ token compatibility layer (prose) ------------------- */
   --color-token-text-primary: var(--color-text-foreground);
@@ -227,23 +288,26 @@
 
 [data-theme='light'] {
   /* Cool-neutral canvas: sidebar recessed, main stage lifted. */
+  --primary: #007aff;
   --color-background-surface: #F5F5F7;
   --color-background-surface-under: #ECECF0;
   --color-background-editor-opaque: #ffffff;
   --color-background-panel: #ffffff;
+  --color-background-muted: #F7F8FA;
   --color-terminal-shell: #171717;
-  --color-background-accent: var(--blue-50); /* #e5f3ff */
+  --color-background-accent: color-mix(in srgb, var(--primary) 12%, white);
   --color-user-bubble: #ececea;
   --color-composer-fill: rgb(255 255 255 / 0.92);
   --shadow-composer:
     0 0 0 1px rgb(0 0 0 / 0.03), 0 8px 28px -10px rgb(15 18 22 / 0.14),
     0 2px 8px rgb(15 18 22 / 0.04);
   --shadow-composer-focus:
-    0 0 0 1px rgb(0 0 0 / 0.05), 0 10px 32px -10px rgb(15 18 22 / 0.18),
+    0 0 0 1px color-mix(in srgb, var(--primary) 45%, transparent),
+    0 10px 32px -10px rgb(15 18 22 / 0.18),
     0 3px 10px rgb(15 18 22 / 0.05);
 
-  --color-button-primary-background: #1a1c1f;
-  --color-button-primary-foreground: var(--gray-0);
+  --color-button-primary-background: var(--primary);
+  --color-button-primary-foreground: var(--primary-foreground);
   --color-background-button-secondary: rgb(26 28 31 / 0.055);
   --color-background-button-secondary-hover: rgb(26 28 31 / 0.09);
   --color-background-button-tertiary: transparent;
@@ -252,8 +316,8 @@
   --color-text-foreground: #14161a;
   --color-text-secondary: rgb(20 22 26 / 0.62);
   --color-text-tertiary: rgb(20 22 26 / 0.42);
-  --color-text-on-accent: var(--gray-1000);
-  --color-text-accent: var(--blue-500);
+  --color-text-on-accent: var(--primary-foreground);
+  --color-text-accent: var(--primary);
   --color-text-success: var(--green-500);
   --color-text-danger: var(--red-500);
   --color-text-warning: var(--orange-400);
@@ -262,12 +326,13 @@
   --color-border: rgb(20 22 26 / 0.1);
   --color-border-heavy: rgb(20 22 26 / 0.16);
   --color-border-light: rgb(20 22 26 / 0.06);
-  --color-border-focus: var(--blue-300);
+  --color-border-focus: color-mix(in srgb, var(--primary) 70%, transparent);
   --color-border-error: rgb(224 46 42 / 0.15); /* red-500 @ 15% */
   --color-border-warning: rgb(226 85 7 / 0.15); /* orange @ 15% */
 
   --color-list-hover: rgb(20 22 26 / 0.05);
-  --color-list-active: rgb(20 22 26 / 0.09);
+  --color-list-active: color-mix(in srgb, var(--primary) 12%, white);
+  --color-list-active-foreground: var(--primary);
 
   /* Busy-pill sweep highlight (`.ui-shimmer` overlay). */
   --color-shimmer-highlight: rgb(255 255 255 / 0.5);
@@ -275,9 +340,37 @@
   /* Lighter floating-panel shadow (Apple-style). */
   --shadow-floating-panel: 0 4px 16px rgb(0 0 0 / 0.06), 0 1px 4px rgb(0 0 0 / 0.04);
 
-  /* accent（背景 / 文本）: blue-50 / blue-300 */
-  --color-accent-background: var(--blue-50);
-  --color-accent-text: var(--blue-300);
+  /* accent 系（背景 / 文本）统一从 --primary 派生，与深色层观感一致。 */
+  --color-accent-background: color-mix(in srgb, var(--primary) 12%, white);
+  --color-accent-text: var(--primary);
+  /* Thinking-frame side bar (light): softer so it sits beside body text without
+     shouting. */
+  --color-thinking-bar: color-mix(in srgb, var(--primary) 45%, transparent);
+  --color-thinking-fill: color-mix(in srgb, var(--primary) 6%, transparent);
+
+  /* ---------------- entity tag palette (light) -------------------------------
+     Deeper, more saturated foregrounds so the ~12% fills stay legible on a
+     light canvas. Same kinds as the dark layer; only the values shift. */
+  --color-tag-file: #0a6adb;
+  --color-tag-file-fill: color-mix(in srgb, var(--color-tag-file) 12%, transparent);
+  --color-tag-shell: #566270;
+  --color-tag-shell-fill: color-mix(in srgb, var(--color-tag-shell) 12%, transparent);
+  --color-tag-search: #14807a;
+  --color-tag-search-fill: color-mix(in srgb, var(--color-tag-search) 12%, transparent);
+  --color-tag-skill: #7453b0;
+  --color-tag-skill-fill: color-mix(in srgb, var(--color-tag-skill) 12%, transparent);
+  --color-tag-plan: #b87a1a;
+  --color-tag-plan-fill: color-mix(in srgb, var(--color-tag-plan) 12%, transparent);
+  --color-tag-todo: #1a6fd0;
+  --color-tag-todo-fill: color-mix(in srgb, var(--color-tag-todo) 12%, transparent);
+  --color-tag-agent: #6f7a2f;
+  --color-tag-agent-fill: color-mix(in srgb, var(--color-tag-agent) 12%, transparent);
+  --color-tag-swarm: #b8861a;
+  --color-tag-swarm-fill: color-mix(in srgb, var(--color-tag-swarm) 12%, transparent);
+  --color-tag-context: #14807a;
+  --color-tag-context-fill: color-mix(in srgb, var(--color-tag-context) 12%, transparent);
+  --color-tag-generic: var(--color-text-secondary);
+  --color-tag-generic-fill: var(--color-background-button-secondary);
 
   /* ------------------ token compatibility layer (prose) ------------------- */
   --color-token-text-primary: var(--color-text-foreground);
@@ -288,7 +381,7 @@
     var(--color-background-surface-under) 82%,
     var(--color-background-panel)
   );
-  --color-token-text-link-foreground: var(--blue-500);
+  --color-token-text-link-foreground: var(--primary);
   --color-token-border: var(--color-border);
   --color-token-border-light: var(--color-border-light);
   --color-token-border-heavy: var(--color-border-heavy);

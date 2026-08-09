@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from 'react';
 
+import { MagnifyingGlass } from '@phosphor-icons/react';
+
 import type { SearchHit } from '#/lib/api';
 import { useSearch } from '#/lib/queries';
 
@@ -63,7 +65,7 @@ function Highlighted({ text, query }: { text: string; query: string }) {
     parts.push(
       <mark
         key={index}
-        className="rounded-[2px] bg-[var(--blue-500)] px-0.5 text-[var(--color-text-foreground)]"
+        className="rounded-[var(--radius-2xs)] bg-[var(--color-background-accent)] px-0.5 text-[var(--color-text-accent)]"
       >
         {text.slice(start, end)}
       </mark>,
@@ -134,6 +136,12 @@ export const SidebarSearch = forwardRef<SidebarSearchHandle, SidebarSearchProps>
 
   return (
     <div className="relative">
+      <MagnifyingGlass
+        size={14}
+        weight="regular"
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-[var(--color-text-secondary)]"
+      />
       <input
         ref={inputRef}
         type="search"
@@ -172,23 +180,23 @@ export const SidebarSearch = forwardRef<SidebarSearchHandle, SidebarSearchProps>
           setOpen(false);
           setHighlightedIndex(-1);
         }}
-        className="w-full rounded-xl border border-transparent bg-[var(--color-background-button-secondary)] px-3 py-2 text-[13px] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)] outline-none transition-[border-color,background-color,box-shadow] duration-[var(--duration-hover)] ease placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-heavy)] focus:bg-[var(--color-background-panel)] focus:shadow-[var(--shadow-sm)]"
+        className="h-9 w-full rounded-[var(--radius-sm)] border border-transparent bg-transparent py-0 pr-2.5 pl-9 text-[length:var(--client-content-font-size)] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)] outline-none transition-[border-color,background-color] duration-[var(--duration-hover)] ease placeholder:text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] focus:border-[var(--color-border-focus)] focus:bg-[var(--color-list-hover)]"
       />
       {open && debouncedQuery.trim() !== '' ? (
         <div
           onMouseDown={(event) => event.preventDefault()}
-          className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-background-surface)] shadow-xl"
+          className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] shadow-[var(--shadow-floating-panel)]"
         >
           {!currentQueryIsDebounced || search.isLoading ? (
-            <div className="px-3 py-2 text-[12px] text-[var(--gray-500)]">搜索中…</div>
+            <div className="px-3 py-2 text-[length:var(--client-meta-font-size)] text-[var(--color-text-tertiary)]">搜索中…</div>
           ) : search.isError ? (
-            <div className="px-3 py-2 text-[12px] text-[var(--red-400)]">搜索失败</div>
+            <div className="px-3 py-2 text-[length:var(--client-meta-font-size)] text-[var(--color-text-danger)]">搜索失败</div>
           ) : results.length === 0 ? (
-            <div className="px-3 py-2 text-[12px] text-[var(--gray-500)]">无匹配结果</div>
+            <div className="px-3 py-2 text-[length:var(--client-meta-font-size)] text-[var(--color-text-tertiary)]">无匹配结果</div>
           ) : (
             <ul id={listboxId} role="listbox" className="max-h-80 overflow-y-auto py-1">
               {search.data?.indexState.state === 'building' ? (
-                <li className="px-3 py-1 text-[10px] text-[var(--gray-600)]">
+                <li className="px-3 py-1 text-[length:var(--client-caption-font-size)] text-[var(--color-text-tertiary)]">
                   索引构建中（{search.data.indexState.indexedSessions}/{search.data.indexState.totalSessions}），结果可能不完整
                 </li>
               ) : null}
@@ -209,12 +217,12 @@ export const SidebarSearch = forwardRef<SidebarSearchHandle, SidebarSearchProps>
                       tabIndex={-1}
                       onMouseEnter={() => setHighlightedIndex(index)}
                       onClick={() => choose(hit)}
-                      className={`block w-full px-3 py-1.5 text-left hover:bg-[var(--color-list-hover)] ${highlighted ? 'bg-[var(--color-list-hover)]' : ''}`}
+                      className={`block w-full px-3 py-2 text-left hover:bg-[var(--color-list-hover)] ${highlighted ? 'bg-[var(--color-list-hover)]' : ''}`}
                     >
-                      <div className="truncate text-[12px] font-medium text-[var(--color-text-foreground)]">
+                      <div className="truncate text-[length:var(--client-content-font-size)] font-medium text-[var(--color-text-foreground)]">
                         {hit.sessionTitle !== '' ? hit.sessionTitle : '（无标题会话）'}
                       </div>
-                      <div className="line-clamp-2 text-[11px] leading-snug text-[var(--gray-500)]">
+                      <div className="line-clamp-2 text-[length:var(--client-caption-font-size)] leading-snug text-[var(--color-text-tertiary)]">
                         <Highlighted text={hit.snippet} query={debouncedQuery} />
                       </div>
                     </button>

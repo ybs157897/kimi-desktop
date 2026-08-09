@@ -8,7 +8,9 @@
  * code block for highlighting via the response's `language_id`.
  */
 
+import { ArrowUpRight, CaretDown, CaretRight, File, FileArchive, FileImage, FileVideo, Folder } from '@phosphor-icons/react';
 import type { FsEntry } from '@moonshot-ai/protocol';
+import type { ReactElement } from 'react';
 import { useMemo, useState } from 'react';
 
 import { useFsList, useFsRead, useFsOpen } from '#/lib/queries';
@@ -28,9 +30,9 @@ export function FileTreePanel({ sessionId }: FileTreePanelProps) {
     <div className="flex min-h-0 flex-1">
       <div className="min-h-0 w-[42%] min-w-[140px] max-w-[240px] shrink-0 overflow-y-auto border-r border-[var(--color-border-light)] py-1">
         {root.isLoading ? (
-          <div className="px-3 py-2 text-[11px] text-[var(--gray-500)]">加载中…</div>
+          <div className="px-3 py-2 text-[11px] text-[var(--color-text-tertiary)]">加载中…</div>
         ) : root.isError ? (
-          <div className="px-3 py-2 text-[11px] text-[var(--red-400)]">读取目录失败</div>
+          <div className="px-3 py-2 text-[11px] text-[var(--color-text-danger)]">读取目录失败</div>
         ) : (
           <ul>
             {(root.data?.items ?? []).map((entry) => (
@@ -49,13 +51,13 @@ export function FileTreePanel({ sessionId }: FileTreePanelProps) {
 
       <div className="min-h-0 flex-1 overflow-auto">
         {selected === null ? (
-          <div className="flex h-full items-center justify-center px-4 text-center text-[11px] text-[var(--gray-500)]">
+          <div className="flex h-full items-center justify-center px-4 text-center text-[11px] text-[var(--color-text-tertiary)]">
             选择一个文件查看内容
           </div>
         ) : read.isLoading ? (
-          <div className="px-4 py-3 text-[11px] text-[var(--gray-500)]">读取文件…</div>
+          <div className="px-4 py-3 text-[11px] text-[var(--color-text-tertiary)]">读取文件…</div>
         ) : read.isError ? (
-          <div className="px-4 py-3 text-[11px] text-[var(--red-400)]">读取失败</div>
+          <div className="px-4 py-3 text-[11px] text-[var(--color-text-danger)]">读取失败</div>
         ) : read.data?.is_binary === true || read.data?.encoding === 'base64' ? (
           <BinaryPlaceholder
             path={selected}
@@ -114,23 +116,23 @@ function TreeRow({
         }`}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
-        <span aria-hidden className="w-3 shrink-0 text-[var(--gray-500)]">
-          {isDir ? (expanded ? '▾' : '▸') : ''}
+        <span aria-hidden className="flex w-3 shrink-0 items-center justify-center text-[var(--color-text-tertiary)]">
+          {isDir ? (expanded ? <CaretDown size={12} weight="bold" /> : <CaretRight size={12} weight="bold" />) : null}
         </span>
-        <span aria-hidden className="shrink-0 text-[var(--gray-500)]">
-          {isDir ? '📁' : fileGlyph(entry.name)}
+        <span aria-hidden className="flex shrink-0 items-center text-[var(--color-text-secondary)]">
+          {isDir ? <Folder size={16} /> : fileIcon(entry.name)}
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-[var(--color-text-foreground)]">
           {entry.name}
         </span>
         {entry.git_status !== undefined && entry.git_status !== 'clean' ? (
-          <span className="shrink-0 text-[10px] text-[var(--orange-400)]">{entry.git_status[0]?.toUpperCase()}</span>
+          <span className="shrink-0 text-[10px] text-[var(--color-text-warning)]">{entry.git_status[0]?.toUpperCase()}</span>
         ) : null}
       </button>
       {expanded && isDir ? (
         <ul>
           {children.isLoading ? (
-            <li className="py-0.5 text-[10px] text-[var(--gray-500)]" style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>
+            <li className="py-0.5 text-[10px] text-[var(--color-text-tertiary)]" style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>
               加载中…
             </li>
           ) : (
@@ -174,16 +176,16 @@ function FileViewer({
           type="button"
           onClick={onOpen}
           title="打开"
-          className="shrink-0 rounded px-1.5 py-0.5 text-[var(--gray-500)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
         >
-          ↗
+          <ArrowUpRight size={14} aria-hidden />
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
         <MarkdownCodeBlock code={content} language={language ?? guessLanguage(path)} />
       </div>
       {truncated ? (
-        <div className="shrink-0 border-t border-[var(--color-border-light)] px-3 py-1 text-[10px] text-[var(--orange-400)]">
+        <div className="shrink-0 border-t border-[var(--color-border-light)] px-3 py-1 text-[10px] text-[var(--color-text-warning)]">
           文件过大，已截断
         </div>
       ) : null}
@@ -201,7 +203,7 @@ function BinaryPlaceholder({
   readonly onOpen: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-[11px] text-[var(--gray-500)]">
+    <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-[11px] text-[var(--color-text-tertiary)]">
       <span className="font-mono">{path}</span>
       <span>二进制文件{size !== undefined ? `（${formatSize(size)}）` : ''}</span>
       <button
@@ -225,11 +227,19 @@ function sortEntries(items: readonly FsEntry[]): FsEntry[] {
   });
 }
 
-function fileGlyph(name: string): string {
-  if (/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(name)) return '🖼️';
-  if (/\.(mp[34]|mov|webm|wav|ogg|flac|m4a|aac)$/i.test(name)) return '🎬';
-  if (/\.(zip|tar|gz|bz2|7z|rar)$/i.test(name)) return '🗜️';
-  return '📄';
+/** Phosphor file icon by extension; directories get a Folder in TreeRow. */
+function fileIcon(name: string): ReactElement {
+  const className = 'shrink-0 text-[var(--color-text-tertiary)]';
+  if (/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(name)) {
+    return <FileImage size={16} className={className} aria-hidden />;
+  }
+  if (/\.(mp[34]|mov|webm|wav|ogg|flac|m4a|aac)$/i.test(name)) {
+    return <FileVideo size={16} className={className} aria-hidden />;
+  }
+  if (/\.(zip|tar|gz|bz2|7z|rar)$/i.test(name)) {
+    return <FileArchive size={16} className={className} aria-hidden />;
+  }
+  return <File size={16} className={className} aria-hidden />;
 }
 
 function guessLanguage(path: string): string {

@@ -18,16 +18,13 @@ import type { PromptPermissionMode, PromptSubmission } from '@moonshot-ai/protoc
 import {
   ArrowRight,
   ArrowUp,
-  CaretDown,
-  Check,
-  Folder,
-  GitBranch,
   Paperclip,
   Plus,
   PushPin,
   Stop,
   Strategy,
   Target,
+  UsersThree,
   X,
 } from '@phosphor-icons/react';
 import { createEditor, Editor, Element as SlateElement, Range, type Descendant } from 'slate';
@@ -40,12 +37,9 @@ import { isImageMediaType } from '#/lib/attachmentImage';
 import { compressImageDataUrl } from '#/lib/clipboardImage';
 import {
   useAbortPrompt,
+  useAbortSession,
   useActivateSkill,
   useConfig,
-  useFsGitBranches,
-  useFsGitCheckout,
-  useFsGitStatus,
-  useFsHome,
   useFsList,
   useGoal,
   useModels,
@@ -65,7 +59,6 @@ import { ModelSelect, ThinkingEffortSelect } from './ModelSelect';
 import { PermissionModeSelect } from './PermissionModeSelect';
 import { ImageLightbox } from '../chat/attachments/ImageLightbox';
 import { ComposerAddMenu } from '../session/ModeBar';
-import { FolderPicker } from '../sidebar/FolderPicker';
 import { MentionMenu, type MentionCandidate } from './MentionMenu';
 import {
   createEmptyValue,
@@ -80,7 +73,6 @@ import {
 
 export interface ComposerProps {
   readonly sessionId: string;
-  readonly onSwitchWorkspace?: (cwd: string) => void;
   /** Agent the prompt targets; defaults to the main agent. Side-channel
    *  (btw) composers pass the `agent-<N>` id — the prompt body then carries
    *  `agent_id`. */
@@ -130,8 +122,8 @@ export function Composer(props: ComposerProps) {
   return <TargetComposer key={target} {...props} />;
 }
 
-function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }: ComposerProps) {
-  const { baseUrl, token } = useConnection();
+function TargetComposer({ sessionId, agentId, empty = false }: ComposerProps) {
+  const { api, baseUrl, token } = useConnection();
   const [editor] = useState<Editor>(() => withReact(createEditor()));
   const [value, setValue] = useState<ComposerNode[]>(createEmptyValue);
   const [permissionModeOverride, setPermissionModeOverride] = useState<PromptPermissionMode | undefined>(
@@ -148,25 +140,20 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
   const [dragging, setDragging] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [planModeOverride, setPlanModeOverride] = useState<boolean | undefined>(undefined);
+  const [swarmModeOverride, setSwarmModeOverride] = useState<boolean | undefined>(undefined);
   const [goalModeArmed, setGoalModeArmed] = useState(false);
-  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
-  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
-  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
 
   const submit = useSubmitPrompt(sessionId);
   const steer = useSteerPrompt(sessionId);
   const updateSessionProfile = useUpdateSessionProfile(sessionId);
   const abort = useAbortPrompt(sessionId);
+  const abortSession = useAbortSession();
   const activate = useActivateSkill(sessionId);
   const upload = useUploadFile();
   const models = useModels();
   const config = useConfig();
   const sessionQuery = useSession(sessionId);
   const goalQuery = useGoal(sessionId);
-  const gitStatus = useFsGitStatus(sessionId);
-  const gitBranches = useFsGitBranches(sessionId, branchMenuOpen);
-  const gitCheckout = useFsGitCheckout(sessionId);
-  const fsHome = useFsHome();
   const session = sessionQuery.data;
 
   // Mention candidates: skills for `$` and `/`; workspace files for `@`.
@@ -181,6 +168,8 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
   const goalOn = goalActive || goalModeArmed;
   const sessionPlanMode = session?.agent_config.plan_mode === true;
   const planOn = planModeOverride ?? sessionPlanMode;
+  const sessionSwarmMode = session?.agent_config.swarm_mode === true;
+  const swarmOn = swarmModeOverride ?? sessionSwarmMode;
   const configuredPermissionMode =
     session?.agent_config.permission_mode !== undefined
       ? normalizePermissionMode(session.agent_config.permission_mode)
@@ -195,6 +184,51 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
     setError(null);
     setPermissionModeOverride(mode);
   }, []);
+
+  const changePlanMode = useCallback(
+    (nextPlanMode: boolean) => {
+      if (updateSessionProfile.isPending) return;
+      const previousPlanMode = planOn;
+      setError(null);
+      setPlanModeOverride(nextPlanMode);
+      updateSessionProfile.mutate(agentConfigPatch({ plan_mode: nextPlanMode }), {
+        onError: (mutationError) => {
+          setPlanModeOverride(previousPlanMode);
+          setError(mutationError);
+        },
+      });
+    },
+    [planOn, updateSessionProfile],
+  );
+
+  const changeSwarmMode = useCallback(
+    (nextSwarmMode: boolean) => {
+      if (updateSessionProfile.isPending) return;
+      const previousSwarmMode = swarmOn;
+      setError(null);
+      setSwarmModeOverride(nextSwarmMode);
+      updateSessionProfile.mutate(agentConfigPatch({ swarm_mode: nextSwarmMode }), {
+        onError: (mutationError) => {
+          setSwarmModeOverride(previousSwarmMode);
+          setError(mutationError);
+        },
+      });
+    },
+    [swarmOn, updateSessionProfile],
+  );
+
+  const disableGoalMode = useCallback(() => {
+    setAddMenuOpen(false);
+    if (!goalActive) {
+      setGoalModeArmed(false);
+      return;
+    }
+    if (updateSessionProfile.isPending) return;
+    setError(null);
+    updateSessionProfile.mutate(agentConfigPatch({ goal_control: 'cancel' }), {
+      onError: setError,
+    });
+  }, [goalActive, updateSessionProfile]);
 
   const resetInput = useCallback(() => {
     const empty = createEmptyValue();
@@ -217,6 +251,10 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
   useEffect(() => {
     if (planModeOverride === sessionPlanMode) setPlanModeOverride(undefined);
   }, [planModeOverride, sessionPlanMode]);
+
+  useEffect(() => {
+    if (swarmModeOverride === sessionSwarmMode) setSwarmModeOverride(undefined);
+  }, [swarmModeOverride, sessionSwarmMode]);
 
   useEffect(() => {
     const socket = createActivitySocket({
@@ -257,7 +295,7 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
           value: skill.name,
           label: skill.name,
           description: skill.description,
-          glyph: '🧩',
+          glyph: 'puzzle',
         })),
       );
     }
@@ -268,7 +306,7 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
           value: skill.name,
           label: skill.name,
           description: skill.description,
-          glyph: '⌘',
+          glyph: 'command',
         })),
       );
     }
@@ -277,7 +315,7 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
         value: entry.path,
         label: entry.name,
         description: entry.path,
-        glyph: entry.kind === 'directory' ? '📁' : '📄',
+        glyph: entry.kind === 'directory' ? 'folder' : 'file',
       })),
     );
   }, [mention, skills.data, files.data]);
@@ -540,12 +578,41 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
     resetInput,
   ]);
 
+  /** Stop everything the session is doing, not just the tracked prompt.
+   *
+   * The prompt-scoped abort alone breaks down once work is delegated: an
+   * expert team / swarm runs as subagent tasks, and the main agent's prompt
+   * settles right after delegating — `current_prompt_id` empties while the
+   * session stays busy, so the old "abort the prompt" stop had nothing to
+   * abort and clicks did nothing. Escalate instead: abort the tracked prompt
+   * when one is live, cancel the main agent's active turn (safe no-op when
+   * idle), then cancel every running subagent task. Detached shell tasks
+   * (dev servers) are deliberately left alone.
+   */
+  const stopBusyRef = useRef(false);
   const stop = useCallback(() => {
-    const promptId = activePromptId ?? session?.current_prompt_id;
-    if (promptId === undefined || abort.isPending) return;
+    if (stopBusyRef.current) return;
+    stopBusyRef.current = true;
     setError(null);
-    abort.mutate(promptId, { onError: setError });
-  }, [activePromptId, session?.current_prompt_id, abort]);
+    const promptId = activePromptId ?? session?.current_prompt_id;
+    void (async () => {
+      if (promptId !== undefined) {
+        // Already-completed prompts answer 40904 — that just means the turn
+        // moved on to delegated work; the follow-up cancellations handle it.
+        await abort.mutateAsync(promptId).catch(() => undefined);
+      }
+      await abortSession.mutateAsync(sessionId).catch(() => undefined);
+      const tasks = await api.listTasks(sessionId, { status: 'running' }).catch(() => undefined);
+      const running = (tasks?.items ?? []).filter((task) => task.kind === 'subagent');
+      await Promise.all(
+        running.map((task) => api.cancelTask(sessionId, task.id).catch(() => undefined)),
+      );
+    })()
+      .catch(setError)
+      .finally(() => {
+        stopBusyRef.current = false;
+      });
+  }, [activePromptId, session?.current_prompt_id, abort, abortSession, api, sessionId]);
 
   useEffect(() => {
     if (!busy) return;
@@ -563,7 +630,10 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [busy, stop]);
 
-  const canStop = (activePromptId ?? session?.current_prompt_id) !== undefined;
+  // The session is busy whenever ANY agent holds a turn (subagents included),
+  // and the escalating stop can always act on a busy session — so the button
+  // stays actionable even after the main prompt has settled.
+  const canStop = busy || (activePromptId ?? session?.current_prompt_id) !== undefined;
   const text = serializeContent(value);
   const sendDisabled =
     (text.trim() === '' && attachments.length === 0) ||
@@ -576,76 +646,20 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
     <div className="px-6 pb-4 pt-0">
       <div className="mx-auto w-full max-w-[var(--layout-thread-max-width)]">
         {error !== null ? (
-          <div className="mb-2 flex items-center gap-3 rounded-xl border border-[var(--color-border-error)] bg-[color-mix(in_srgb,var(--red-500)_6%,transparent)] px-3 py-2 text-[12px] text-[var(--color-text-danger)]">
+          <div className="mb-2 flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-error)] bg-[color-mix(in_srgb,var(--red-500)_6%,transparent)] px-3 py-2 text-[12px] text-[var(--color-text-danger)]">
             <span className="min-w-0 flex-1">{friendlyComposerError(error)}</span>
             <button
               type="button"
               onClick={() => setError(null)}
-              className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+              className="shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
             >
               关闭
             </button>
           </div>
         ) : null}
-        <div className="relative flex h-10 items-center gap-1 rounded-t-2xl bg-[var(--color-background-surface-under)] px-3 pb-0.5 text-[12px] text-[var(--color-text-secondary)]">
-          <button
-            type="button"
-            aria-label="选择项目目录"
-            aria-expanded={workspaceMenuOpen}
-            title={session?.metadata.cwd}
-            disabled={onSwitchWorkspace === undefined}
-            onClick={() => setWorkspaceMenuOpen((value) => !value)}
-            className="ui-pressable flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:pointer-events-none"
-          >
-            <Folder size={14} weight="regular" className="shrink-0" aria-hidden />
-            <span className="max-w-48 truncate">{workspaceLabel(session?.metadata.cwd)}</span>
-            <CaretDown size={10} weight="bold" className="shrink-0 opacity-50" aria-hidden />
-          </button>
-          {gitStatus.data?.branch ? (
-            <button
-              type="button"
-              aria-label="切换 Git 分支"
-              aria-expanded={branchMenuOpen}
-              onClick={() => setBranchMenuOpen((value) => !value)}
-              className="ui-pressable flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
-            >
-              <GitBranch size={14} weight="regular" className="shrink-0" aria-hidden />
-              <span className="max-w-32 truncate">{gitStatus.data.branch}</span>
-              <CaretDown size={10} weight="bold" className="shrink-0 opacity-50" aria-hidden />
-            </button>
-          ) : null}
-          {workspaceMenuOpen ? (
-            <>
-              <button type="button" aria-label="关闭项目目录菜单" className="fixed inset-0 z-10 cursor-default" onClick={() => setWorkspaceMenuOpen(false)} />
-              <div className="ui-popover absolute left-3 top-full z-20 mt-1.5 w-80 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-background-panel)] py-1.5 shadow-[var(--shadow-xl)]">
-                <div className="px-3 py-1 text-[10px] font-semibold tracking-[var(--tracking-label)] text-[var(--color-text-tertiary)] uppercase">最近项目</div>
-                {[...new Set([session?.metadata.cwd, ...(fsHome.data?.recent_roots ?? [])].filter((value): value is string => typeof value === 'string' && value !== ''))].map((root) => (
-                  <button key={root} type="button" onClick={() => { setWorkspaceMenuOpen(false); if (root !== session?.metadata.cwd) onSwitchWorkspace?.(root); }} className={`block w-full px-3 py-1.5 text-left hover:bg-[var(--color-list-hover)] ${root === session?.metadata.cwd ? 'bg-[var(--color-list-active)]' : ''}`}>
-                    <div className="flex items-center gap-2 text-[12.5px] font-medium text-[var(--color-text-foreground)]"><span className="min-w-0 flex-1 truncate">{workspaceLabel(root)}</span>{root === session?.metadata.cwd ? <Check size={12} weight="bold" aria-hidden /> : null}</div>
-                    <div className="truncate font-mono text-[10.5px] text-[var(--color-text-tertiary)]">{root}</div>
-                  </button>
-                ))}
-                <button type="button" onClick={() => { setWorkspaceMenuOpen(false); setFolderPickerOpen(true); }} className="mt-1 block w-full border-t border-[var(--color-border-light)] px-3 py-2 text-left text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]">浏览其它目录…</button>
-              </div>
-            </>
-          ) : null}
-          {branchMenuOpen ? (
-            <>
-              <button type="button" aria-label="关闭分支菜单" className="fixed inset-0 z-10 cursor-default" onClick={() => setBranchMenuOpen(false)} />
-              <div className="ui-popover absolute left-40 top-full z-20 mt-1.5 w-64 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-background-panel)] py-1.5 shadow-[var(--shadow-xl)]">
-                <div className="px-3 py-1 text-[10px] font-semibold tracking-[var(--tracking-label)] text-[var(--color-text-tertiary)] uppercase">切换分支</div>
-                {gitBranches.isLoading ? <div className="px-3 py-2 text-[12px] text-[var(--color-text-tertiary)]">正在加载…</div> : gitBranches.isError ? <div className="px-3 py-2 text-[12px] text-[var(--color-text-danger)]">无法读取分支</div> : gitBranches.data?.branches.map((branch) => (
-                  <button key={branch} type="button" disabled={gitCheckout.isPending} onClick={() => { if (branch === gitBranches.data.current) { setBranchMenuOpen(false); return; } gitCheckout.mutate(branch, { onSuccess: () => setBranchMenuOpen(false), onError: setError }); }} className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] hover:bg-[var(--color-list-hover)] disabled:opacity-50 ${branch === gitBranches.data.current ? 'bg-[var(--color-list-active)] text-[var(--color-text-foreground)]' : 'text-[var(--color-text-secondary)]'}`}>
-                    <span className="min-w-0 flex-1 truncate">{branch}</span>{branch === gitBranches.data.current ? <Check size={12} weight="bold" aria-hidden /> : null}
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : null}
-        </div>
         <div
           ref={containerRef}
-          className={`relative -mt-px rounded-2xl border bg-[var(--color-composer-fill)] shadow-[var(--shadow-composer)] backdrop-blur-xl transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease focus-within:border-[var(--color-border-heavy)] focus-within:shadow-[var(--shadow-composer-focus)] ${
+          className={`relative rounded-[var(--radius-xl)] border bg-[var(--color-composer-fill)] shadow-[var(--shadow-composer)] backdrop-blur-xl transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease focus-within:border-[var(--color-border-focus)] focus-within:shadow-[var(--shadow-composer-focus)] ${
             dragging ? 'border-[var(--color-border-focus)]' : 'border-[var(--color-border)]'
           }`}
           onDragOver={(event) => {
@@ -693,28 +707,24 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
           {addMenuOpen ? (
             <>
               <div className="fixed inset-0 z-30" onMouseDown={() => setAddMenuOpen(false)} />
-              <div className="absolute bottom-full left-0 right-0 z-40 mb-2">
+              <div className="absolute bottom-11 left-3 z-40 w-36">
                 <ComposerAddMenu
                   sessionId={sessionId}
                   planMode={planOn}
-                  onPlanModeChange={setPlanModeOverride}
+                  onPlanModeChange={changePlanMode}
                   goalMode={goalOn}
                   onGoalModeChange={setGoalModeArmed}
-                  onFiles={(files) => {
-                    for (const file of files) void stageFile(file);
-                  }}
-                  onInsertText={(nextText) => {
-                    editor.insertText(nextText);
-                    ReactEditor.focus(editor);
-                  }}
+                  swarmMode={swarmOn}
+                  onSwarmModeChange={changeSwarmMode}
+                  disabled={updateSessionProfile.isPending}
                   onClose={() => setAddMenuOpen(false)}
                 />
               </div>
             </>
           ) : null}
-          <div className="flex flex-col gap-1 px-3.5 pb-2 pt-3">
+          <div className="flex flex-col gap-1 px-4 pb-2 pt-3">
             {attachments.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-2">
                 {attachments.map((attachment) => (
                   <StagedAttachmentChip
                     key={attachment.id}
@@ -753,7 +763,7 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
                       else send();
                     }
                   }}
-                  className="composer-editor max-h-[28dvh] min-h-6 w-full flex-1 text-[14px] leading-[var(--leading-chat)] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)] outline-none"
+                  className="composer-editor max-h-[36dvh] min-h-6 w-full flex-1 text-[length:var(--client-content-font-size)] leading-[var(--leading-chat)] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)] outline-none"
                 />
               </Slate>
               {busy ? (
@@ -763,7 +773,7 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
                   disabled={!canStop || abort.isPending}
                   title="停止（Esc）"
                   aria-label="停止"
-                  className="ui-pressable mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-background-panel)] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)] disabled:opacity-35"
+                  className="ui-pressable mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-full)] border border-[var(--color-border-error)] bg-[var(--color-background-panel)] text-[var(--color-text-danger)] hover:bg-[color-mix(in_srgb,var(--color-text-danger)_10%,transparent)] disabled:opacity-35"
                 >
                   <Stop size={11} weight="fill" aria-hidden />
                 </button>
@@ -777,7 +787,7 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
                 disabled={busy ? sendDisabled || steer.isPending : sendDisabled}
                 title={busy ? '插入当前任务' : '发送'}
                 aria-label={busy ? '插入' : '发送'}
-                className={`ui-pressable mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-100 ${
+                className={`ui-pressable mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-full)] transition-colors disabled:opacity-100 ${
                   busy
                     ? sendDisabled || steer.isPending
                       ? 'bg-[var(--color-background-button-secondary)] text-[var(--color-text-tertiary)]'
@@ -794,14 +804,14 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
                 )}
               </button>
             </div>
-            <div className="flex h-8 items-center gap-0.5">
+            <div className="flex h-8 items-center gap-1">
               <button
                 type="button"
                 aria-label="添加"
                 title="添加"
                 aria-expanded={addMenuOpen}
                 onClick={() => setAddMenuOpen((open) => !open)}
-                className={`ui-pressable flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                className={`ui-pressable flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] ${
                   addMenuOpen
                     ? 'bg-[var(--color-list-active)] text-[var(--color-text-foreground)]'
                     : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]'
@@ -818,17 +828,27 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
                 <ModeChip
                   icon={<Strategy size={14} weight="regular" />}
                   label="计划"
-                  onClick={() => setAddMenuOpen(true)}
+                  disabled={updateSessionProfile.isPending}
+                  onClick={() => changePlanMode(false)}
                 />
               ) : null}
               {goalOn ? (
                 <ModeChip
                   icon={<Target size={14} weight="regular" />}
                   label="目标"
-                  onClick={() => setAddMenuOpen(true)}
+                  disabled={updateSessionProfile.isPending}
+                  onClick={disableGoalMode}
                 />
               ) : null}
-              <div className="ml-auto flex min-w-0 items-center gap-0.5">
+              {swarmOn ? (
+                <ModeChip
+                  icon={<UsersThree size={14} weight="regular" />}
+                  label="蜂群"
+                  disabled={updateSessionProfile.isPending}
+                  onClick={() => changeSwarmMode(false)}
+                />
+              ) : null}
+              <div className="ml-auto flex min-w-0 items-center gap-1">
                 <ModelSelect
                   value={effectiveModel}
                   models={models.data?.items}
@@ -848,7 +868,7 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
                     disabled={submit.isPending || updateSessionProfile.isPending}
                     title="设为本会话默认模型"
                     aria-label="设为本会话默认模型"
-                    className="ui-pressable flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-60"
+                    className="ui-pressable flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-60"
                   >
                     <PushPin size={14} weight="regular" aria-hidden />
                   </button>
@@ -878,33 +898,34 @@ function TargetComposer({ sessionId, agentId, empty = false, onSwitchWorkspace }
           onClose={() => setMention(null)}
         />
       ) : null}
-      {folderPickerOpen ? (
-        <FolderPicker
-          onPick={(cwd) => {
-            setFolderPickerOpen(false);
-            if (cwd !== session?.metadata.cwd) onSwitchWorkspace?.(cwd);
-          }}
-          onClose={() => setFolderPickerOpen(false)}
-        />
-      ) : null}
     </div>
   );
 }
 
-function workspaceLabel(cwd: string | undefined): string {
-  if (cwd === undefined) return '工作区';
-  return cwd.split('/').filter(Boolean).at(-1) ?? cwd;
-}
-
-function ModeChip({ icon, label, onClick }: { readonly icon: ReactNode; readonly label: string; readonly onClick: () => void }) {
+function ModeChip({
+  icon,
+  label,
+  disabled = false,
+  onClick,
+}: {
+  readonly icon: ReactNode;
+  readonly label: string;
+  readonly disabled?: boolean;
+  readonly onClick: () => void;
+}) {
+  const closeLabel = `关闭${label}模式`;
   return (
     <button
       type="button"
+      aria-label={closeLabel}
+      title={closeLabel}
+      disabled={disabled}
       onClick={onClick}
-      className="ui-pressable flex h-8 items-center gap-1.5 rounded-lg px-2 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+      className="ui-pressable flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-45"
     >
       {icon}
       {label}
+      <X size={11} weight="bold" className="opacity-55" aria-hidden />
     </button>
   );
 }
@@ -936,7 +957,7 @@ function MentionView({
       <span
         {...(attributes as React.HTMLAttributes<HTMLSpanElement>)}
         contentEditable={false}
-        className="mx-0.5 inline-flex items-center rounded-[4px] bg-[var(--color-accent-background)] px-1 text-[12px] text-[var(--color-accent-text)]"
+        className="mx-1 inline-flex items-center rounded-[var(--radius-xs)] bg-[var(--color-accent-background)] px-1 text-[12px] text-[var(--color-accent-text)]"
       >
         <span aria-hidden className="mr-0.5 opacity-70">{glyph}</span>
         {element.value}
@@ -974,7 +995,7 @@ function StagedAttachmentChip({
       type="button"
       aria-label="移除附件"
       onClick={onRemove}
-      className="ml-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--red-400)]"
+      className="ml-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-danger)]"
     >
       <X size={11} weight="bold" aria-hidden />
     </button>
@@ -984,14 +1005,14 @@ function StagedAttachmentChip({
     return (
       <>
         <span
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] p-1 pr-2 text-[11.5px] text-[var(--color-text-foreground)]"
+          className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] p-1 pr-2 text-[11.5px] text-[var(--color-text-foreground)]"
           title={attachment.name}
         >
           <button
             type="button"
             aria-label={`预览图片 ${attachment.name}`}
             onClick={() => setLightboxOpen(true)}
-            className="ui-pressable relative h-9 w-9 shrink-0 overflow-hidden rounded-md border border-[var(--color-border-light)] bg-[var(--color-background-surface)]"
+            className="ui-pressable relative h-9 w-9 shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-[var(--color-border-light)] bg-[var(--color-background-surface)]"
           >
             <img
               src={previewUrl}
@@ -1020,7 +1041,7 @@ function StagedAttachmentChip({
 
   return (
     <span
-      className="flex items-center gap-1 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-2 py-1 text-[11.5px] text-[var(--color-text-foreground)]"
+      className="flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-2 py-1 text-[11.5px] text-[var(--color-text-foreground)]"
       title={attachment.name}
     >
       <Paperclip size={13} weight="regular" aria-hidden />

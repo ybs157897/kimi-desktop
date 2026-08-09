@@ -161,10 +161,14 @@ export class SessionSwarmService implements ISessionSwarmService {
         details: { agentId: callerAgentId },
       });
     }
-    const binding = options.binding ?? {
-      model: callerData.modelAlias,
-      thinking: callerData.thinkingLevel,
-    };
+    const binding =
+      options.binding ??
+      ({
+        model: callerData.modelAlias,
+        thinking: callerData.thinkingLevel,
+        displayModel: subagentDisplayModel(this.config, callerData.modelAlias),
+        source: { kind: 'caller' },
+      } as const);
     let child: IAgentScopeHandle;
     try {
       this.modelCatalog.get(binding.model);
@@ -177,7 +181,7 @@ export class SessionSwarmService implements ISessionSwarmService {
         labels: subagentLabels(callerAgentId, { swarmItem: options.swarmItem }),
       });
     } catch (error) {
-      throw wrapSubagentModelError(error, binding.model, callerData.modelAlias);
+      throw wrapSubagentModelError(error, binding, callerData.modelAlias);
     }
     child.accessor
       .get(IAgentPermissionModeService)
@@ -192,7 +196,7 @@ export class SessionSwarmService implements ISessionSwarmService {
       description: options.description,
       swarmIndex: options.swarmIndex,
       runInBackground: options.runInBackground,
-      model: subagentDisplayModel(this.config, binding.model),
+      model: binding.displayModel,
     });
     const promptText = await applyProfilePromptPrefix(profile, options.prompt, {
       cwd: this.sessionContext.cwd,

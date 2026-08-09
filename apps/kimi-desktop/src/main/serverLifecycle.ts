@@ -7,8 +7,14 @@
  */
 
 import type { ServerStartOptions } from '@moonshot-ai/kap-server';
+import type { Klient } from '@moonshot-ai/klient';
+import { createKlient } from '@moonshot-ai/klient/memory';
+import type { ScopeLike } from '@moonshot-ai/klient/memory';
 
-import type { DesktopConnectionInfo, DesktopServerMode } from '../shared/connection';
+import type {
+  DesktopConnectionInfo,
+  DesktopServerMode,
+} from '../shared/connection';
 import type { LiveServerInfo } from './serverDiscovery';
 
 export const DESKTOP_SERVER_MODE_ENV = 'KIMI_CODE_DESKTOP_SERVER_MODE';
@@ -17,11 +23,14 @@ interface OwnedDesktopServer {
   readonly host: string;
   readonly port: number;
   readonly authTokenService: { getToken(): string };
+  readonly core?: ScopeLike;
   close(): Promise<void>;
 }
 
 interface DesktopServerLifecycleDependencies {
-  readonly startServer: (options: ServerStartOptions) => Promise<OwnedDesktopServer>;
+  readonly startServer: (
+    options: ServerStartOptions,
+  ) => Promise<OwnedDesktopServer>;
   readonly findLiveServer: (homeDir: string) => Promise<LiveServerInfo | null>;
   readonly readServerToken: (homeDir: string) => Promise<string | undefined>;
 }
@@ -39,7 +48,12 @@ export function resolveDesktopServerMode(
   if (argv.includes('--attach')) return 'attach';
 
   const configured = env[DESKTOP_SERVER_MODE_ENV];
-  if (configured === undefined || configured === '' || configured === 'embedded') return 'embedded';
+  if (
+    configured === undefined ||
+    configured === '' ||
+    configured === 'embedded'
+  )
+    return 'embedded';
   if (configured === 'attach') return 'attach';
   throw new Error(`${DESKTOP_SERVER_MODE_ENV} must be "embedded" or "attach".`);
 }
@@ -48,6 +62,7 @@ export class DesktopServerLifecycle {
   private serverPromise: Promise<OwnedDesktopServer> | undefined;
   private closePromise: Promise<void> | undefined;
   private closed = false;
+  private klient: Klient | undefined;
 
   constructor(
     private readonly options: DesktopServerLifecycleOptions,
@@ -56,7 +71,8 @@ export class DesktopServerLifecycle {
 
   async start(): Promise<void> {
     if (this.options.mode === 'attach') return;
-    if (this.closed) throw new Error('Desktop server lifecycle is already closed.');
+    if (this.closed)
+      throw new Error('Desktop server lifecycle is already closed.');
     await this.embeddedServer();
   }
 
@@ -72,6 +88,14 @@ export class DesktopServerLifecycle {
       token: server.authTokenService.getToken(),
       serverId: 'embedded',
     };
+  }
+
+  async getKlient(): Promise<Klient | undefined> {
+    if (this.options.mode === 'attach' || this.closed) return undefined;
+    const server = await this.embeddedServer();
+    if (server.core === undefined) return undefined;
+    this.klient ??= createKlient({ scope: server.core });
+    return this.klient;
   }
 
   close(): Promise<void> {
@@ -113,7 +137,8 @@ export class DesktopServerLifecycle {
   }
 
   private async closeEmbeddedServer(): Promise<void> {
-    if (this.options.mode === 'attach' || this.serverPromise === undefined) return;
+    if (this.options.mode === 'attach' || this.serverPromise === undefined)
+      return;
     let server: OwnedDesktopServer;
     try {
       server = await this.serverPromise;
@@ -121,6 +146,7 @@ export class DesktopServerLifecycle {
       // A failed start already cleans up kap-server's partial boot resources.
       return;
     }
+    await this.klient?.close();
     await server.close();
   }
 }

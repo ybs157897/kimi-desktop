@@ -4,9 +4,10 @@
  *
  *  1. REST baseline: `GET .../transcript` (newest page, replace) — the only
  *     source of FULL state.
- *  2. WS `subscribe_v2` with grade `block` and the `transcript_since` cursor
+ *  2. WS `subscribe_v2` with grade `delta` and the `transcript_since` cursor
  *     (our op-batch watermark), applied as `transcript.ops` increments onto
- *     the same store.
+ *     the same store — `append` chunks included, so thinking / assistant
+ *     text streams live.
  *  3. Seq gaps (a batch with `seq > watermark + 1`), `resync_required`, the
  *     post-reconnect subscribe ack, and append-placement gaps trigger a
  *     point-to-point catch-up (`GET .../transcript/ops?since_seq=`); a

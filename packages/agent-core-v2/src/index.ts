@@ -204,6 +204,8 @@ export { parseAgentFileText } from '#/workspace/workspaceAgentProfileLoader/inte
 export { resolveAgentPath } from '#/workspace/workspaceAgentProfileLoader/internal/paths';
 export * from '#/workspace/workspaceAgentProfileLoader/userAgentProfileLoader';
 export * from '#/workspace/workspaceAgentProfileLoader/userAgentProfileLoaderService';
+export * from '#/workspace/workspaceAgentProfileLoader/userAgentProfileStore';
+export * from '#/workspace/workspaceAgentProfileLoader/userAgentProfileStoreService';
 export * from '#/app/plugin/types';
 export * from '#/app/plugin/commands';
 export * from '#/app/plugin/manifest';
@@ -393,7 +395,7 @@ export * from '#/session/subagent/secondaryModelWarningService';
 export * from '#/agent/tools/agent/subagent-task';
 export { AGENT_RUN_PROMPT_ORIGIN } from '#/session/subagent/runAgentTurn';
 export * from '#/session/subagent/mirrorAgentRun';
-import '#/session/subagent/configSection';
+export * from '#/session/subagent/configSection';
 export * from '#/agent/tools/agent/agent';
 import '#/agent/tools/agent/agentTool';
 export * from '#/app/workspaceLifecycle/workspaceLifecycle';

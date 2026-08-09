@@ -8,6 +8,7 @@
  * subdirectories, and resolves with the highlighted directory on "Choose".
  */
 
+import { ArrowLeft, Folder } from '@phosphor-icons/react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 import { useFsBrowse } from '#/lib/queries';
@@ -56,7 +57,7 @@ export function FolderPicker({ onPick, onClose }: FolderPickerProps) {
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-[color-mix(in_srgb,var(--color-terminal-shell)_40%,transparent)]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -68,33 +69,34 @@ export function FolderPicker({ onPick, onClose }: FolderPickerProps) {
         aria-label="选择工作区目录"
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
-        className="flex max-h-[70vh] w-[560px] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
+        className="flex max-h-[70vh] w-[560px] flex-col overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-[var(--shadow-floating-panel)]"
       >
-        <div className="flex items-center gap-2 border-b border-[var(--color-border-light)] px-4 py-2.5">
-          <span className="text-[12px] font-medium text-[var(--color-text-foreground)]">选择工作区目录</span>
-          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--gray-500)]" title={current?.path}>
+        <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">
+          <span className="text-[length:var(--client-meta-font-size)] font-medium text-[var(--color-text-foreground)]">选择工作区目录</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--code-font-size)] text-[var(--color-text-tertiary)]" title={current?.path}>
             {current?.path ?? '加载中…'}
           </span>
           {parent !== undefined ? (
             <button
               type="button"
               onClick={() => setPath(parent)}
-              className="rounded-md px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+              className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
             >
-              ‹ 上级
+              <ArrowLeft size={12} weight="bold" aria-hidden />
+              上级
             </button>
           ) : null}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
           {browse.isLoading ? (
-            <div className="px-4 py-3 text-[12px] text-[var(--gray-500)]">加载中…</div>
+            <div className="px-4 py-3 text-[length:var(--client-meta-font-size)] text-[var(--color-text-tertiary)]">加载中…</div>
           ) : browse.isError ? (
-            <div className="px-4 py-3 text-[12px] text-[var(--red-400)]">
+            <div className="px-4 py-3 text-[length:var(--client-meta-font-size)] text-[var(--color-text-danger)]">
               无法读取目录{browse.error instanceof Error ? `：${browse.error.message}` : ''}
             </div>
           ) : listing.length === 0 ? (
-            <div className="px-4 py-3 text-[12px] text-[var(--gray-500)]">没有子目录</div>
+            <div className="px-4 py-3 text-[length:var(--client-meta-font-size)] text-[var(--color-text-tertiary)]">没有子目录</div>
           ) : (
             <ul
               ref={listRef}
@@ -132,12 +134,15 @@ export function FolderPicker({ onPick, onClose }: FolderPickerProps) {
                     onMouseEnter={() => setActiveIndex(index)}
                     onClick={() => setPath(entry.path)}
                     onDoubleClick={() => onPick(entry.path)}
-                    className={`flex w-full items-center gap-2 px-4 py-1.5 text-left hover:bg-[var(--color-list-hover)] ${index === activeIndex ? 'bg-[var(--color-list-hover)]' : ''}`}
+                    className={`flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-[var(--color-list-hover)] ${index === activeIndex ? 'bg-[var(--color-list-hover)]' : ''}`}
                   >
-                    <span aria-hidden className="shrink-0 text-[var(--gray-500)]">
-                      📁
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--color-text-foreground)]">
+                    <Folder
+                      size={16}
+                      weight="regular"
+                      aria-hidden
+                      className="shrink-0 text-[var(--color-text-secondary)]"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[length:var(--client-meta-font-size)] text-[var(--color-text-foreground)]">
                       {entry.name}
                     </span>
                   </button>
@@ -147,7 +152,7 @@ export function FolderPicker({ onPick, onClose }: FolderPickerProps) {
           )}
         </div>
 
-        <div className="flex items-center gap-2 border-t border-[var(--color-border-light)] px-4 py-2.5">
+        <div className="flex items-center gap-2 border-t border-[var(--color-border)] px-4 py-2">
           <input
             ref={inputRef}
             type="text"
@@ -161,20 +166,20 @@ export function FolderPicker({ onPick, onClose }: FolderPickerProps) {
                 setPath(pathInput === '' ? undefined : pathInput);
               }
             }}
-            className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-2 py-1 font-mono text-[11px] text-[var(--color-text-foreground)] outline-none focus:border-[var(--color-border-heavy)]"
+            className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-2 py-1 font-mono text-[length:var(--code-font-size)] text-[var(--color-text-foreground)] outline-none focus:border-[var(--color-border-heavy)]"
           />
           <button
             type="button"
             disabled={pathInput === '' || pathInput === current?.path}
             onClick={() => setPath(pathInput)}
-            className="rounded-md px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-40"
+            className="rounded-[var(--radius-sm)] px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-40"
           >
             前往
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+            className="rounded-[var(--radius-sm)] px-3 py-1 text-[length:var(--client-meta-font-size)] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
           >
             取消
           </button>
@@ -184,7 +189,7 @@ export function FolderPicker({ onPick, onClose }: FolderPickerProps) {
             onClick={() => {
               if (current?.path !== undefined) onPick(current.path);
             }}
-            className="rounded-md bg-[var(--gray-1000)] px-3 py-1 text-[12px] font-medium text-[var(--color-text-foreground)] hover:bg-[var(--gray-900)] disabled:opacity-40"
+            className="rounded-[var(--radius-sm)] bg-[var(--color-button-primary-background)] px-3 py-1 text-[length:var(--client-meta-font-size)] font-medium text-[var(--color-button-primary-foreground)] hover:opacity-90 disabled:opacity-40"
           >
             选择「{current ? basename(current.path) : ''}」
           </button>

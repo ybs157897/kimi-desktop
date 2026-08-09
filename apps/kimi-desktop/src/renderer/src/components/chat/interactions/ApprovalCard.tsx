@@ -6,12 +6,14 @@ import {
   type ToolInputDisplay,
 } from '@moonshot-ai/protocol';
 import type { TranscriptInteraction } from '@moonshot-ai/transcript';
+import { Warning } from '@phosphor-icons/react';
 import { useState, type ReactNode } from 'react';
 
 import { detectDangerousCommand } from '#/lib/dangerousCommand';
 import { diffBeforeAfter, type DiffLine } from '#/lib/diffRender';
 import { approvalInteractionPresentation } from '#/lib/approvalInteraction';
 import { MarkdownCodeBlock } from '../../markdown/MarkdownCodeBlock';
+import type { OpenPlanDoc } from '../PlanDocViewer';
 import { DiffLines, FullscreenPreview } from './FullscreenPreview';
 import { PlanReviewCard, type PlanReviewDisplay } from './PlanReviewCard';
 
@@ -25,6 +27,8 @@ export interface ApprovalCardProps {
     options?: ApprovalResolveOptions,
   ) => void | Promise<void>;
   readonly busy?: boolean;
+  /** Open a plan-review's plan in the plan-document dock tab. */
+  readonly onOpenPlanDoc?: OpenPlanDoc;
 }
 
 /** Extra resolve fields beyond the decision (plan review's revision note and
@@ -52,7 +56,7 @@ type PreviewState =
  *  Shimmers while an answer is in flight; renders the settled result once the
  *  interaction is no longer pending. Shell commands get dangerous-pattern
  *  highlighting and diff/file displays open a fullscreen preview. */
-export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalCardProps) {
+export function ApprovalCard({ interaction, onResolve, busy = false, onOpenPlanDoc }: ApprovalCardProps) {
   const [inFlight, setInFlight] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const request = approvalInteractionPresentation(interaction);
@@ -69,7 +73,7 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
 
   if (!pending) {
     return (
-      <div className="mb-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-4 py-3">
+      <div className="mb-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-4 py-3">
         <div className="flex items-center gap-2 text-[12px] text-[var(--color-text-foreground)]">
           <span className={RESOLVED_TONE[interaction.state]}>
             {resolvedLabel(interaction.state)}
@@ -92,6 +96,20 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
         options={planReview.options}
         busy={isBusy}
         onResolve={(decision, options) => run(() => onResolve(decision, options))}
+        onOpenDoc={
+          onOpenPlanDoc !== undefined
+            ? () =>
+                onOpenPlanDoc({
+                  initialId: request.toolCallId,
+                  doc: {
+                    id: request.toolCallId,
+                    plan: planReview.plan,
+                    state: 'pending',
+                    path: planReview.path,
+                  },
+                })
+            : undefined
+        }
       />
     );
   }
@@ -108,7 +126,7 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
   );
   return (
     <div
-      className={`rounded-2xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] px-3 py-2.5 ${
+      className={`rounded-[var(--radius-lg)] border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] px-3.5 py-3 shadow-[var(--shadow-md)] ${
         isBusy ? 'opacity-70' : ''
       }`}
       onKeyDown={(event) => {
@@ -131,7 +149,7 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
           autoFocus
           disabled={isBusy}
           onClick={() => run(() => onResolve('approved'))}
-          className="cursor-pointer rounded-md bg-[var(--gray-1000)] px-3 py-1 text-[12px] font-medium text-[var(--color-text-foreground)] hover:bg-[var(--gray-900)] disabled:cursor-default disabled:opacity-50"
+          className="ui-pressable cursor-pointer rounded-[var(--radius-sm)] bg-[var(--color-button-primary-background)] px-3 py-1 text-[12px] font-medium text-[var(--color-button-primary-foreground)] hover:opacity-90 disabled:cursor-default disabled:opacity-50"
         >
           仅允许本次
         </button>
@@ -139,7 +157,7 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
           type="button"
           disabled={isBusy}
           onClick={() => run(() => onResolve('approved', { scope: 'session' }))}
-          className="cursor-pointer rounded-md border border-[var(--color-border-heavy)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
+          className="ui-pressable cursor-pointer rounded-[var(--radius-sm)] border border-[var(--color-border-heavy)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
         >
           本会话始终允许
         </button>
@@ -147,12 +165,12 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
           type="button"
           disabled={isBusy}
           onClick={() => run(() => onResolve('rejected'))}
-          className="cursor-pointer rounded-md border border-[var(--color-border)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] opacity-70 hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
+          className="ui-pressable cursor-pointer rounded-[var(--radius-sm)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] opacity-70 hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
         >
           拒绝
         </button>
       </div>
-      <div className="mt-2 text-[10px] text-[var(--color-text-foreground)] opacity-40">
+      <div className="ui-label mt-2 opacity-70">
         Enter 允许 · Esc 拒绝
       </div>
       {preview !== null ? (
@@ -170,8 +188,9 @@ export function ApprovalCard({ interaction, onResolve, busy = false }: ApprovalC
 
 /** A `plan_review` ToolInputDisplay carries the plan text plus optional path /
  *  Accept-Revise options. Returns undefined when the display is not a plan
- *  review (a normal approval stays a normal card). */
-function parsePlanReview(display: unknown): PlanReviewDisplay | undefined {
+ *  review (a normal approval stays a normal card). Exported so the chat view
+ *  can recognize a pending plan review (panel auto-switch) without rendering. */
+export function parsePlanReview(display: unknown): PlanReviewDisplay | undefined {
   if (display === null || typeof display !== 'object' || Array.isArray(display)) return undefined;
   const value = display as Record<string, unknown>;
   if (value['kind'] !== 'plan_review') return undefined;
@@ -194,8 +213,8 @@ function isPlanOptionEntry(value: unknown): value is { label: string; descriptio
 }
 
 const RESOLVED_TONE: Record<string, string> = {
-  approved: 'text-[var(--green-400)]',
-  rejected: 'text-[var(--red-400)]',
+  approved: 'text-[var(--color-text-success)]',
+  rejected: 'text-[var(--color-text-danger)]',
   cancelled: 'opacity-50',
 };
 
@@ -247,7 +266,7 @@ function renderDetail(
             {header}
             {danger !== undefined ? (
               <div className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-error)] px-2 py-1 text-[11px] text-[var(--color-text-danger)]">
-                <span aria-hidden>⚠</span>
+                <Warning size={14} weight="fill" className="shrink-0 text-[var(--color-text-warning)]" aria-hidden />
                 <span>危险命令：{danger}</span>
               </div>
             ) : null}

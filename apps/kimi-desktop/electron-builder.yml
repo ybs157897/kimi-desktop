@@ -22,6 +22,10 @@ files:
   - package.json
   - '!**/*.map'
 
+extraResources:
+  - from: resources/expert-manager
+    to: expert-manager
+
 # Ship the workspace contract packages + kap-server build output so the bundled
 # engine resolves its own imports without a workspace symlink.
 extraMetadata:

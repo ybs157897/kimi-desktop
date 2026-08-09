@@ -7,7 +7,7 @@
  * git status; "Open" reveals a path in the file manager.
  */
 
-import { CaretDown, CaretRight } from '@phosphor-icons/react';
+import { ArrowClockwise, ArrowUpRight, CaretDown, CaretRight } from '@phosphor-icons/react';
 import type { FsGitStatusResponse } from '@moonshot-ai/protocol';
 import { useMemo, useState } from 'react';
 
@@ -20,14 +20,14 @@ export interface DiffPanelProps {
 }
 
 const STATUS_TONE: Record<string, string> = {
-  modified: 'text-[var(--orange-400)]',
-  added: 'text-[var(--green-400)]',
-  deleted: 'text-[var(--red-400)]',
-  renamed: 'text-[var(--blue-300)]',
-  untracked: 'text-[var(--gray-300)]',
-  conflicted: 'text-[var(--red-400)]',
-  clean: 'text-[var(--gray-500)]',
-  ignored: 'text-[var(--gray-600)]',
+  modified: 'text-[var(--color-text-warning)]',
+  added: 'text-[var(--color-text-success)]',
+  deleted: 'text-[var(--color-text-danger)]',
+  renamed: 'text-[var(--color-text-accent)]',
+  untracked: 'text-[var(--color-text-secondary)]',
+  conflicted: 'text-[var(--color-text-danger)]',
+  clean: 'text-[var(--color-text-tertiary)]',
+  ignored: 'text-[var(--color-text-tertiary)]',
 };
 
 export function DiffPanel({ sessionId }: DiffPanelProps) {
@@ -68,7 +68,7 @@ export function DiffPanel({ sessionId }: DiffPanelProps) {
           {git.data?.branch ?? '…'}
         </span>
         {git.data !== undefined ? (
-          <span className="text-[var(--gray-500)]">
+          <span className="text-[var(--color-text-tertiary)]">
             ↑{git.data.ahead} ↓{git.data.behind}
           </span>
         ) : null}
@@ -76,9 +76,9 @@ export function DiffPanel({ sessionId }: DiffPanelProps) {
           type="button"
           onClick={() => void git.refetch()}
           title="刷新"
-          className="ml-auto rounded px-1.5 py-0.5 text-[var(--gray-500)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+          className="ml-auto rounded px-1.5 py-0.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
         >
-          ↻
+          <ArrowClockwise size={14} aria-hidden />
         </button>
       </div>
 
@@ -86,9 +86,9 @@ export function DiffPanel({ sessionId }: DiffPanelProps) {
         {/* changed-files list */}
         <div className="min-h-0 w-[62%] min-w-[220px] max-w-[320px] shrink-0 overflow-y-auto border-r border-[var(--color-border-light)] px-1.5 py-2">
           {git.isLoading ? (
-            <div className="px-3 py-2 text-[11px] text-[var(--gray-500)]">加载中…</div>
+            <div className="px-3 py-2 text-[11px] text-[var(--color-text-tertiary)]">加载中…</div>
           ) : entries.length === 0 ? (
-            <div className="px-3 py-2 text-[11px] text-[var(--gray-500)]">无变更</div>
+            <div className="px-3 py-2 text-[11px] text-[var(--color-text-tertiary)]">无变更</div>
           ) : (
             <ChangeTree nodes={tree} selected={selected} onSelect={setSelected} />
           )}
@@ -97,11 +97,11 @@ export function DiffPanel({ sessionId }: DiffPanelProps) {
         {/* diff viewer */}
         <div className="min-h-0 flex-1 overflow-auto">
           {selected === null ? (
-            <div className="flex h-full items-center justify-center px-4 text-center text-[11px] text-[var(--gray-500)]">
+            <div className="flex h-full items-center justify-center px-4 text-center text-[11px] text-[var(--color-text-tertiary)]">
               选择一个文件查看差异
             </div>
           ) : diff.isLoading ? (
-            <div className="px-4 py-3 text-[11px] text-[var(--gray-500)]">加载差异…</div>
+            <div className="px-4 py-3 text-[11px] text-[var(--color-text-tertiary)]">加载差异…</div>
           ) : diff.isError ? (
             <div className="m-3 rounded-xl bg-[var(--color-background-button-secondary)] px-3 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
               {friendlyDiffError(diff.error)}
@@ -246,7 +246,7 @@ function DiffViewer({
   const { adds, dels } = countChanges(lines);
   if (lines.length === 0) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-[11px] text-[var(--gray-500)]">
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-[11px] text-[var(--color-text-tertiary)]">
         <span>无文本差异（二进制文件或未跟踪）</span>
         <button
           type="button"
@@ -265,16 +265,16 @@ function DiffViewer({
           {path}
         </span>
         <span className="shrink-0 font-mono">
-          <span className="text-[var(--green-400)]">+{adds}</span>{' '}
-          <span className="text-[var(--red-400)]">−{dels}</span>
+          <span className="text-[var(--color-text-success)]">+{adds}</span>{' '}
+          <span className="text-[var(--color-text-danger)]">−{dels}</span>
         </span>
         <button
           type="button"
           onClick={onOpen}
           title="在文件管理器中显示"
-          className="shrink-0 rounded px-1.5 py-0.5 text-[var(--gray-500)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
         >
-          ↗
+          <ArrowUpRight size={14} aria-hidden />
         </button>
       </div>
       <pre className="min-h-0 flex-1 overflow-auto py-1 font-mono text-[11px] leading-5">
@@ -286,7 +286,7 @@ function DiffViewer({
         ))}
       </pre>
       {truncated ? (
-        <div className="shrink-0 border-t border-[var(--color-border-light)] px-3 py-1 text-[10px] text-[var(--orange-400)]">
+        <div className="shrink-0 border-t border-[var(--color-border-light)] px-3 py-1 text-[10px] text-[var(--color-text-warning)]">
           差异内容已截断
         </div>
       ) : null}

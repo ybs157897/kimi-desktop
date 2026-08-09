@@ -5,6 +5,7 @@
  * renderer used for before/after and unified diff content.
  */
 
+import { X } from '@phosphor-icons/react';
 import { useRef, type ReactNode } from 'react';
 
 import { diffLineTone, diffPrefix, type DiffLine } from '#/lib/diffRender';
@@ -40,9 +41,9 @@ export function FullscreenPreview({ title, children, onClose }: FullscreenPrevie
           type="button"
           aria-label="关闭预览"
           onClick={onClose}
-          className="rounded-md px-2 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+          className="rounded-md p-1.5 text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
         >
-          ✕
+          <X size={16} weight="bold" aria-hidden />
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-4 py-3">{children}</div>

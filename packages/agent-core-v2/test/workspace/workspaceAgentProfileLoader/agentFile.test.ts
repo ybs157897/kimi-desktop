@@ -19,6 +19,7 @@ const FULL_FILE = `---
 name: code-reviewer
 description: 严格的代码审查 agent
 whenToUse: 代码评审、PR 检查
+color: violet
 override: true
 tools:
   - Read
@@ -46,6 +47,7 @@ describe('parseAgentFileText', () => {
     expect(def.name).toBe('code-reviewer');
     expect(def.description).toBe('严格的代码审查 agent');
     expect(def.whenToUse).toBe('代码评审、PR 检查');
+    expect(def.color).toBe('violet');
     expect(def.override).toBe(true);
     expect(def.tools).toEqual(['Read', 'Grep', 'mcp__github__*']);
     expect(def.disallowedTools).toEqual(['Bash']);
@@ -57,13 +59,21 @@ describe('parseAgentFileText', () => {
   it('leaves optional fields undefined when omitted', () => {
     const def = parse('---\nname: solo\ndescription: d\n---\n\nbody\n');
 
+    expect(def.enabled).toBe(true);
     expect(def.override).toBe(false);
     expect(def.modelPreference).toBeUndefined();
     expect(def.tools).toBeUndefined();
     expect(def.disallowedTools).toBeUndefined();
     expect(def.subagents).toBeUndefined();
     expect(def.whenToUse).toBeUndefined();
+    expect(def.color).toBeUndefined();
     expect(def.prompt).toBe('body');
+  });
+
+  it('marks the profile disabled when enabled is false', () => {
+    const def = parse('---\nname: solo\ndescription: d\nenabled: false\n---\n\nbody\n');
+
+    expect(def.enabled).toBe(false);
   });
 
   it('parses a symbolic model preference', () => {
@@ -203,6 +213,7 @@ describe('agentProfileFromFile', () => {
     name: 'reviewer',
     description: 'd',
     whenToUse: 'reviews',
+    enabled: true,
     override: false,
     prompt: 'PROMPT_BODY',
     path: '/tmp/agents/reviewer.md',

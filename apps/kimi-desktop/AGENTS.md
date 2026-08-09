@@ -38,7 +38,8 @@ baseline, all in `src/renderer/src/lib/`:
   does NOT suppress `agent.status.updated` / `goal.updated`, which merge into
   the `['session', id]` / `['goal', id]` caches (the mode bar's live state).
 - **Transcript socket** (`ws.ts` `createTranscriptSocket`): serves the open
-  session via `subscribe_v2` (grade `block`), with seq-watermark catch-up +
+  session via `subscribe_v2` (grade `delta` — `append` chunks included, so
+  thinking / assistant text streams live), with seq-watermark catch-up +
   resync fallback. Wired by `TranscriptSync`.
 - **Terminal socket** (`ws.ts` `createTerminalSocket`): PTY I/O
   (`terminal_attach` / `_input` / `_resize`, `terminal_output` / `_exit`);

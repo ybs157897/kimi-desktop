@@ -83,6 +83,7 @@ export function parseAgentFileText(options: ParseAgentFileOptions): AgentFileDef
     options.path,
   );
 
+  const enabled = parseBooleanWithDefault(frontmatter['enabled'], 'enabled', options.path, true);
   const override = parseBoolean(frontmatter['override'], 'override', options.path);
   const rawTools = parseStringList(frontmatter['tools'], 'tools', options.path);
   const tools = rawTools?.length === 1 && rawTools[0] === '*' ? undefined : rawTools;
@@ -105,6 +106,8 @@ export function parseAgentFileText(options: ParseAgentFileOptions): AgentFileDef
     name,
     description,
     whenToUse: nonEmptyString(frontmatter['whenToUse']),
+    color: nonEmptyString(frontmatter['color']),
+    enabled,
     override,
     tools,
     disallowedTools,
@@ -128,7 +131,16 @@ function parseModelPreference(
 }
 
 function parseBoolean(value: unknown, field: string, filePath: string): boolean {
-  if (value === undefined || value === null) return false;
+  return parseBooleanWithDefault(value, field, filePath, false);
+}
+
+function parseBooleanWithDefault(
+  value: unknown,
+  field: string,
+  filePath: string,
+  defaultValue: boolean,
+): boolean {
+  if (value === undefined || value === null) return defaultValue;
   if (typeof value === 'boolean') return value;
   throw new AgentFileParseError(
     `Frontmatter field "${field}" in ${filePath} must be a boolean`,

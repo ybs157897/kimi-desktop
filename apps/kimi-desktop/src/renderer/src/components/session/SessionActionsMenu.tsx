@@ -1,10 +1,11 @@
 /**
- * SessionActionsMenu — the header ⋯ dropdown with session-level actions
+ * SessionActionsMenu — the header overflow dropdown with session-level actions
  * (M7): undo (y/N confirm → transcript refresh), compact (y/N confirm),
  * fork (switches to the copy), btw side chat, and the task browser. All ride
  * the REST session-action surface (`POST ...:undo|:compact|:fork|:btw`).
  */
 
+import { DotsThree } from '@phosphor-icons/react';
 import { useState, type RefObject } from 'react';
 
 import type { Session } from '@moonshot-ai/protocol';
@@ -101,17 +102,17 @@ export function SessionActionsMenu({
         onClick={() => setOpen((value) => !value)}
         aria-label="会话操作"
         title="会话操作"
-        className="flex h-7 w-7 items-center justify-center rounded-lg text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+        className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
       >
-        ⋯
+        <DotsThree size={16} weight="bold" />
       </button>
       {open ? (
         <>
           <div className="fixed inset-0 z-30" onMouseDown={close} />
-          <div className="absolute right-0 top-full z-40 mt-1 w-56 rounded-md border border-[var(--color-border)] bg-[var(--color-background-surface)] py-1 shadow-xl">
+          <div className="absolute right-0 top-full z-40 mt-1 w-56 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-surface)] py-1 shadow-[var(--shadow-floating-panel)]">
             {confirming === 'undo' ? (
               <div className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-[var(--color-text-foreground)]">
-                <span className="opacity-70">撤销上一条？</span>
+                <span className="text-[var(--color-text-secondary)]">撤销上一条？</span>
                 <button
                   type="button"
                   disabled={pending}
@@ -142,7 +143,7 @@ export function SessionActionsMenu({
             )}
             {confirming === 'compact' ? (
               <div className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-[var(--color-text-foreground)]">
-                <span className="opacity-70">压缩上下文？</span>
+                <span className="text-[var(--color-text-secondary)]">压缩上下文？</span>
                 <button
                   type="button"
                   disabled={pending}
@@ -202,7 +203,7 @@ export function SessionActionsMenu({
               任务…
             </button>
             {mutationError !== null ? (
-              <p className="border-t border-[var(--color-border-light)] px-3 py-1.5 text-[10.5px] text-[var(--red-400)]">
+              <p className="border-t border-[var(--color-border-light)] px-3 py-1.5 text-[10.5px] text-[var(--color-text-danger)]">
                 {mutationError instanceof Error ? mutationError.message : '操作失败'}
               </p>
             ) : null}

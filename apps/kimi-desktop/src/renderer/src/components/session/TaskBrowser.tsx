@@ -6,6 +6,7 @@
  * already-finished tasks, which is treated as success.
  */
 
+import { X } from '@phosphor-icons/react';
 import { useRef, useState } from 'react';
 
 import type { Task, TaskStatus } from '@moonshot-ai/protocol';
@@ -65,7 +66,7 @@ export function TaskBrowser({ sessionId, onClose }: TaskBrowserProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--color-terminal-shell)_40%,transparent)]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -77,7 +78,7 @@ export function TaskBrowser({ sessionId, onClose }: TaskBrowserProps) {
         aria-label="后台任务"
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
-        className="flex w-[680px] max-h-[85vh] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
+        className="flex w-[680px] max-h-[85vh] flex-col overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-[var(--shadow-floating-panel)]"
       >
         <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-4 py-2.5">
           <span className="text-[13px] font-medium text-[var(--color-text-foreground)]">后台任务</span>
@@ -85,26 +86,26 @@ export function TaskBrowser({ sessionId, onClose }: TaskBrowserProps) {
             type="button"
             aria-label="关闭"
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+            className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
           >
-            ✕
+            <X size={14} weight="bold" />
           </button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
           {tasks.isLoading ? (
-            <div className="px-3 py-3 text-[12px] text-[var(--gray-500)]">加载中…</div>
+            <div className="px-3 py-3 text-[12px] text-[var(--color-text-tertiary)]">加载中…</div>
           ) : items.length === 0 ? (
-            <div className="px-3 py-3 text-[12px] text-[var(--gray-500)]">没有后台任务。</div>
+            <div className="px-3 py-3 text-[12px] text-[var(--color-text-tertiary)]">没有后台任务。</div>
           ) : (
             <ul className="space-y-1">
               {items.map((task) => (
-                <li key={task.id} className="rounded-lg border border-[var(--color-border-light)]">
+                <li key={task.id} className="rounded-[var(--radius-sm)] border border-[var(--color-border-light)]">
                   <div className="flex items-center gap-3 px-3 py-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span
-                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          className="h-1.5 w-1.5 shrink-0 rounded-[var(--radius-full)]"
                           style={{ backgroundColor: STATUS_TONES[task.status] }}
                           aria-hidden
                         />
@@ -112,16 +113,16 @@ export function TaskBrowser({ sessionId, onClose }: TaskBrowserProps) {
                           {task.description}
                         </span>
                         <span
-                          className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                          className="shrink-0 rounded-[var(--radius-full)] px-1.5 py-0.5 text-[10px] font-medium"
                           style={{ color: STATUS_TONES[task.status], backgroundColor: 'var(--color-list-hover)' }}
                         >
                           {STATUS_LABELS[task.status]}
                         </span>
-                        <span className="shrink-0 text-[10px] text-[var(--gray-500)]">
+                        <span className="shrink-0 text-[10px] text-[var(--color-text-tertiary)]">
                           {KIND_LABELS[task.kind]}
                         </span>
                       </div>
-                      <p className="mt-0.5 truncate text-[10.5px] text-[var(--gray-500)]">
+                      <p className="mt-0.5 truncate text-[10.5px] text-[var(--color-text-tertiary)]">
                         {task.kind === 'bash' && task.command !== undefined ? `$ ${task.command}` : ''}
                         {task.model !== undefined ? ` · ${task.model}` : ''}
                         {taskDuration(task) !== undefined ? ` · ${taskDuration(task)}` : ''}
@@ -140,7 +141,7 @@ export function TaskBrowser({ sessionId, onClose }: TaskBrowserProps) {
                         type="button"
                         disabled={cancelTask.isPending}
                         onClick={() => setExpandedId((current) => (current === task.id ? null : task.id))}
-                        className="rounded-md px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-50"
+                        className="rounded-[var(--radius-sm)] px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-50"
                       >
                         {expandedId === task.id ? '收起' : '输出'}
                       </button>
@@ -150,7 +151,7 @@ export function TaskBrowser({ sessionId, onClose }: TaskBrowserProps) {
                           disabled={cancelTask.isPending}
                           onClick={() => cancelTask.mutate(task.id)}
                           title="取消该任务"
-                          className="rounded-md px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-danger)] disabled:opacity-50"
+                          className="rounded-[var(--radius-sm)] px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-danger)] disabled:opacity-50"
                         >
                           取消
                         </button>
@@ -160,13 +161,13 @@ export function TaskBrowser({ sessionId, onClose }: TaskBrowserProps) {
                   {expandedId === task.id ? (
                     <div className="border-t border-[var(--color-border-light)] px-3 py-2">
                       {detail.isLoading ? (
-                        <div className="text-[11px] text-[var(--gray-500)]">加载输出…</div>
+                        <div className="text-[11px] text-[var(--color-text-tertiary)]">加载输出…</div>
                       ) : detail.data !== undefined ? (
                         <pre className="max-h-[40vh] overflow-auto whitespace-pre-wrap text-[10.5px] leading-relaxed text-[var(--color-text-secondary)]">
                           {detail.data.output_preview ?? '（无输出）'}
                         </pre>
                       ) : (
-                        <div className="text-[11px] text-[var(--red-400)]">无法读取输出</div>
+                        <div className="text-[11px] text-[var(--color-text-danger)]">无法读取输出</div>
                       )}
                     </div>
                   ) : null}
@@ -175,7 +176,7 @@ export function TaskBrowser({ sessionId, onClose }: TaskBrowserProps) {
             </ul>
           )}
           {cancelTask.isError ? (
-            <p className="px-3 pt-2 text-[11px] text-[var(--red-400)]">取消失败</p>
+            <p className="px-3 pt-2 text-[11px] text-[var(--color-text-danger)]">取消失败</p>
           ) : null}
         </div>
 
@@ -183,7 +184,7 @@ export function TaskBrowser({ sessionId, onClose }: TaskBrowserProps) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+            className="rounded-[var(--radius-sm)] px-3 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
           >
             关闭
           </button>

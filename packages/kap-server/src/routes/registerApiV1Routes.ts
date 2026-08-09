@@ -19,6 +19,7 @@ import { type IConnectionRegistry } from '../transport/ws/connectionRegistry';
 import { type SessionEventBroadcaster } from '../transport/ws/v1/sessionEventBroadcaster';
 import type { TranscriptService } from '../services/transcript/transcriptService';
 import { registerApprovalsRoutes } from './approvals';
+import { registerAgentProfilesRoute } from './agentProfiles';
 import { registerAuthRoute } from './auth';
 import { registerConfigRoutes } from './config';
 import { registerConnectionsRoutes } from './connections';
@@ -118,6 +119,10 @@ export async function registerApiV1Routes(
       registerAuthRoute(apiV1 as unknown as Parameters<typeof registerAuthRoute>[0], core);
       registerOAuthRoutes(apiV1 as unknown as Parameters<typeof registerOAuthRoutes>[0], core);
       registerConfigRoutes(apiV1 as unknown as Parameters<typeof registerConfigRoutes>[0], core);
+      registerAgentProfilesRoute(
+        apiV1 as unknown as Parameters<typeof registerAgentProfilesRoute>[0],
+        core,
+      );
       registerModelCatalogRoutes(
         apiV1 as unknown as Parameters<typeof registerModelCatalogRoutes>[0],
         core,

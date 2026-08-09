@@ -12,6 +12,7 @@
  * colors follow the design tokens via the terminal theme option.
  */
 
+import { Plus, X } from '@phosphor-icons/react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -263,19 +264,35 @@ function TerminalPanelSession({ sessionId }: TerminalPanelProps) {
     return () => window.clearTimeout(timer);
   }, [activeTab]);
 
+  // Re-skin every live xterm when the app theme flips (`data-theme` on <html>).
+  useEffect(() => {
+    const applyTheme = (): void => {
+      const theme = terminalTheme();
+      for (const tab of tabsRef.current) {
+        tab.term.options.theme = theme;
+      }
+    };
+    const observer = new MutationObserver(applyTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-white/8 px-2.5 text-white">
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-[var(--color-border-light)] px-2.5 text-[var(--color-text-foreground)]">
         {tabs.length === 0 ? (
-          <span className="px-1 text-[11px] text-white/40">尚未打开终端</span>
+          <span className="px-1 text-[11px] text-[var(--color-text-tertiary)]">尚未打开终端</span>
         ) : (
           tabs.map((tab) => (
             <div
               key={tab.terminalId}
               className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] ${
                 tab.terminalId === activeId
-                  ? 'bg-white/10 text-white'
-                  : 'text-white/55 hover:bg-white/8'
+                  ? 'bg-[var(--color-list-active)] text-[var(--color-text-foreground)]'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)]'
               }`}
             >
               <button
@@ -290,9 +307,9 @@ function TerminalPanelSession({ sessionId }: TerminalPanelProps) {
                 aria-label="关闭终端"
                 title="关闭终端"
                 onClick={() => closeTab(tab)}
-                className="rounded p-0.5 text-white/35 hover:bg-white/8 hover:text-white"
+                className="rounded p-0.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
               >
-                ✕
+                <X size={12} aria-hidden />
               </button>
             </div>
           ))
@@ -302,26 +319,26 @@ function TerminalPanelSession({ sessionId }: TerminalPanelProps) {
           onClick={() => void mountTab()}
           disabled={creating}
           title="新建终端"
-          className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-[13px] text-white/55 hover:bg-white/8 hover:text-white disabled:opacity-40"
+          className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-40"
         >
-          ＋
+          <Plus size={14} aria-hidden />
         </button>
       </div>
       {creationError !== null ? (
         <div
           role="alert"
-          className="mx-2 mt-2 flex shrink-0 items-start gap-3 rounded-md border border-red-400/25 bg-red-400/10 px-3 py-2 text-[11px] text-red-100"
+          className="mx-2 mt-2 flex shrink-0 items-start gap-3 rounded-md border border-[var(--color-border-error)] bg-[color-mix(in_srgb,var(--color-text-danger)_10%,transparent)] px-3 py-2 text-[11px] text-[var(--color-text-danger)]"
         >
           <div className="min-w-0 flex-1">
             <div className="font-medium">无法创建或连接终端</div>
-            <div className="mt-0.5 break-words text-red-100/75">{creationError.message}</div>
-            <div className="mt-1 text-red-100/60">请检查服务器连接，然后重试。</div>
+            <div className="mt-0.5 break-words text-[var(--color-text-secondary)]">{creationError.message}</div>
+            <div className="mt-1 text-[var(--color-text-tertiary)]">请检查服务器连接，然后重试。</div>
           </div>
           <button
             type="button"
             onClick={() => void mountTab(creationError.cwd)}
             disabled={creating}
-            className="shrink-0 rounded-md border border-red-100/20 px-2 py-1 font-medium text-red-50 hover:bg-red-100/10 disabled:opacity-40"
+            className="shrink-0 rounded-md border border-[var(--color-border-error)] px-2 py-1 font-medium text-[var(--color-text-danger)] hover:bg-[color-mix(in_srgb,var(--color-text-danger)_10%,transparent)] disabled:opacity-40"
           >
             {creating ? '正在重试…' : '重试'}
           </button>
@@ -332,29 +349,39 @@ function TerminalPanelSession({ sessionId }: TerminalPanelProps) {
   );
 }
 
-/** Dark-on-dark terminal theme aligned with the design tokens. */
+/**
+ * Terminal theme read at runtime from the CSS design tokens so xterm follows
+ * the app theme. The terminal shell stays dark in both themes
+ * (`--color-terminal-shell` is dark in light mode too), so the foreground and
+ * ANSI palette come from theme-stable named-palette tokens; the fallbacks
+ * below only kick in if a token is missing.
+ */
 function terminalTheme(): Record<string, string> {
+  const token = (name: string, fallback: string): string => {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value === '' ? fallback : value;
+  };
   return {
-    background: '#171717',
-    foreground: '#ffffff',
-    cursor: '#ffffff',
-    cursorAccent: '#171717',
-    selectionBackground: 'rgba(255,255,255,0.16)',
-    black: '#000000',
-    red: '#fa423e',
-    green: '#04b84c',
-    yellow: '#fb6a22',
-    blue: '#339cff',
-    magenta: '#924ff7',
-    cyan: '#0285ff',
-    white: '#d0d0d0',
-    brightBlack: '#5d5d5d',
-    brightRed: '#ff6a66',
-    brightGreen: '#3ed473',
-    brightYellow: '#ff8c4d',
-    brightBlue: '#5ab2ff',
-    brightMagenta: '#b07cff',
-    brightCyan: '#4da3ff',
-    brightWhite: '#ffffff',
+    background: token('--color-terminal-shell', '#171717'),
+    foreground: token('--gray-0', '#ffffff'),
+    cursor: token('--gray-0', '#ffffff'),
+    cursorAccent: token('--color-terminal-shell', '#171717'),
+    selectionBackground: 'rgba(255,255,255,0.16)', // no white-alpha token; terminal canvas is dark in both themes
+    black: token('--gray-1000', '#000000'),
+    red: token('--red-400', '#fa423e'),
+    green: token('--green-400', '#04b84c'),
+    yellow: token('--orange-400', '#fb6a22'),
+    blue: token('--blue-300', '#339cff'),
+    magenta: token('--purple-400', '#924ff7'),
+    cyan: token('--blue-400', '#0285ff'),
+    white: token('--gray-100', '#d0d0d0'),
+    brightBlack: token('--gray-500', '#5d5d5d'),
+    brightRed: token('--red-400', '#ff6a66'),
+    brightGreen: token('--green-400', '#3ed473'),
+    brightYellow: token('--orange-400', '#ff8c4d'),
+    brightBlue: token('--blue-300', '#5ab2ff'),
+    brightMagenta: token('--purple-400', '#b07cff'),
+    brightCyan: token('--blue-400', '#4da3ff'),
+    brightWhite: token('--gray-0', '#ffffff'),
   };
 }

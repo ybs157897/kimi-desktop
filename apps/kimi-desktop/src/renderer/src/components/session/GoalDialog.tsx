@@ -6,6 +6,7 @@
  * + backdrop click + three-part layout.
  */
 
+import { X } from '@phosphor-icons/react';
 import { useRef, useState } from 'react';
 
 import { useUpdateSessionProfile } from '#/lib/queries';
@@ -37,7 +38,7 @@ export function GoalDialog({ sessionId, onClose }: GoalDialogProps) {
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-[color-mix(in_srgb,var(--color-terminal-shell)_40%,transparent)]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -49,7 +50,7 @@ export function GoalDialog({ sessionId, onClose }: GoalDialogProps) {
         aria-label="设定目标"
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
-        className="flex w-[520px] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
+        className="flex w-[520px] flex-col overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-[var(--shadow-floating-panel)]"
       >
         <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-4 py-2.5">
           <span className="text-[13px] font-medium text-[var(--color-text-foreground)]">设定目标</span>
@@ -57,9 +58,9 @@ export function GoalDialog({ sessionId, onClose }: GoalDialogProps) {
             type="button"
             aria-label="关闭"
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+            className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
           >
-            ✕
+            <X size={14} weight="bold" />
           </button>
         </div>
 
@@ -72,13 +73,13 @@ export function GoalDialog({ sessionId, onClose }: GoalDialogProps) {
               if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit();
             }}
             placeholder="描述你要达成的目标，例如：修复所有测试失败…"
-            className="min-h-[96px] w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-2.5 py-2 text-[12px] leading-5 text-[var(--color-text-foreground)] outline-none focus:border-[var(--color-border-heavy)]"
+            className="min-h-[96px] w-full resize-y rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-2.5 py-2 text-[12px] leading-5 text-[var(--color-text-foreground)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-focus)]"
           />
-          <p className="mt-1.5 text-[11px] leading-4 text-[var(--gray-500)]">
+          <p className="mt-1.5 text-[11px] leading-4 text-[var(--color-text-tertiary)]">
             目标会在后台持续追踪（回合 / tokens / 时间预算），可随时暂停或取消。
           </p>
           {updateProfile.isError ? (
-            <p className="mt-1.5 text-[11px] text-[var(--red-400)]">设定失败，请重试</p>
+            <p className="mt-1.5 text-[11px] text-[var(--color-text-danger)]">设定失败，请重试</p>
           ) : null}
         </div>
 
@@ -86,7 +87,7 @@ export function GoalDialog({ sessionId, onClose }: GoalDialogProps) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+            className="rounded-[var(--radius-sm)] px-3 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
           >
             取消
           </button>
@@ -94,7 +95,7 @@ export function GoalDialog({ sessionId, onClose }: GoalDialogProps) {
             type="button"
             onClick={submit}
             disabled={!canSubmit}
-            className="rounded-md bg-[var(--gray-1000)] px-3 py-1 text-[12px] font-medium text-[var(--color-text-foreground)] hover:bg-[var(--gray-900)] disabled:opacity-40"
+            className="rounded-[var(--radius-sm)] bg-[var(--color-button-primary-background)] px-3 py-1 text-[12px] font-medium text-[var(--color-button-primary-foreground)] disabled:opacity-40"
           >
             {updateProfile.isPending ? '设定中…' : '开始'}
           </button>

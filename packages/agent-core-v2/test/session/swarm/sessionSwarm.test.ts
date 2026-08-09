@@ -1153,7 +1153,12 @@ describe('SessionSwarmService metadata compatibility', () => {
     const spawnTask: SessionSwarmSpawnTask = {
       ...spawnSessionTask('src/a.ts'),
       kind: 'spawn',
-      binding: { model: 'provider/secondary', thinking: 'low' },
+      binding: {
+        model: 'provider/secondary',
+        thinking: 'low',
+        displayModel: 'provider/secondary',
+        source: { kind: 'secondary' },
+      },
     };
 
     await expect(
@@ -1194,7 +1199,12 @@ describe('SessionSwarmService metadata compatibility', () => {
     const spawnTask: SessionSwarmSpawnTask = {
       ...spawnSessionTask('src/a.ts'),
       kind: 'spawn',
-      binding: { model: '__secondary__', thinking: 'low' },
+      binding: {
+        model: '__secondary__',
+        thinking: 'low',
+        displayModel: 'provider/base',
+        source: { kind: 'secondary' },
+      },
     };
 
     await expect(
@@ -1219,7 +1229,12 @@ describe('SessionSwarmService metadata compatibility', () => {
     const spawnTask: SessionSwarmSpawnTask = {
       ...spawnSessionTask('src/a.ts'),
       kind: 'spawn',
-      binding: { model: 'provider/bad', thinking: 'low' },
+      binding: {
+        model: 'provider/bad',
+        thinking: 'low',
+        displayModel: 'provider/bad',
+        source: { kind: 'secondary' },
+      },
     };
 
     await expect(

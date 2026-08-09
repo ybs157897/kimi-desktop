@@ -1,5 +1,5 @@
 import type { ThinkingFrame as ThinkingFrameModel } from '@moonshot-ai/transcript';
-import { CaretRight } from '@phosphor-icons/react';
+import { Brain, CaretRight } from '@phosphor-icons/react';
 import { useContext, useEffect, useRef, useState } from 'react';
 
 import { TurnContext } from '../frameContext';
@@ -58,38 +58,54 @@ export function ThinkingFrame({ frame, durationMs }: ThinkingFrameProps) {
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
   };
 
+  const showBody = open && hasThinkingContent(frame.text);
   return (
-    <div className="mb-1 max-w-[46rem]">
-      <button
-        type="button"
-        onClick={() => {
-          if (live) return;
-          setExpandedByUser((value) => !value);
-        }}
-        aria-expanded={open}
-        className="ui-pressable flex h-6 w-fit cursor-pointer select-none items-center gap-1.5 rounded-md px-1 text-[11px] tracking-[var(--tracking-tight)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-secondary)]"
+    <div className="mb-1.5 max-w-[46rem]">
+      <div
+        className={`overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-thinking-fill)] ${
+          showBody ? 'border-l-2 border-l-[var(--color-thinking-bar)]' : ''
+        }`}
       >
-        <CaretRight
-          size={10}
-          weight="bold"
-          className={`thinking-caret transition-transform duration-[var(--duration-hover)] ${
-            open ? 'rotate-90' : ''
-          }`}
-          aria-hidden
-        />
-        {/* Breathing while live (web think-breathe), so a running chain stays
-            visually distinct from a settled collapsed label. */}
-        <span className={live ? 'ui-breathe' : undefined}>{label}</span>
-      </button>
-      {open && hasThinkingContent(frame.text) ? (
-        <div
-          ref={bodyRef}
-          onScroll={handleScroll}
-          className="mt-1 max-h-[7.5rem] overflow-y-auto whitespace-pre-wrap border-l border-[var(--color-border-light)] py-1 pl-3 text-[12px] leading-[var(--leading-chat)] text-[var(--color-text-tertiary)]"
+        <button
+          type="button"
+          onClick={() => {
+            if (live) return;
+            setExpandedByUser((value) => !value);
+          }}
+          aria-expanded={open}
+          className="ui-pressable flex h-7 w-full cursor-pointer select-none items-center gap-1.5 px-2.5 text-left text-[11px] tracking-[var(--tracking-tight)] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)]"
         >
-          {frame.text}
-        </div>
-      ) : null}
+          <CaretRight
+            size={10}
+            weight="bold"
+            className={`shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[var(--duration-hover)] ${
+              open ? 'rotate-90' : ''
+            }`}
+            aria-hidden
+          />
+          <Brain
+            size={13}
+            weight="regular"
+            className={`shrink-0 ${live ? 'text-[var(--color-text-accent)]' : 'text-[var(--color-text-tertiary)]'}`}
+            aria-hidden
+          />
+          {/* Live shimmer (zcode animated-gradient-text parity): a gradient sweep
+              clipped to the glyphs keeps a running chain visually distinct from a
+              settled collapsed label. Settled labels keep a quiet secondary tone. */}
+          <span className={`min-w-0 truncate ${live ? 'ui-shimmer-text text-[var(--color-text-foreground)]' : 'text-[var(--color-text-secondary)]'}`}>
+            {label}
+          </span>
+        </button>
+        {showBody ? (
+          <div
+            ref={bodyRef}
+            onScroll={handleScroll}
+            className="max-h-[10rem] overflow-y-auto whitespace-pre-wrap px-2.5 pb-2.5 pt-0.5 text-[12px] leading-[var(--leading-chat)] text-[var(--color-text-secondary)]"
+          >
+            {frame.text}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

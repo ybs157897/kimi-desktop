@@ -5,13 +5,31 @@
  * keys + Enter navigate, Esc closes.
  */
 
+import { Command, File, Folder, PuzzlePiece, type Icon } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 
 export interface MentionCandidate {
   readonly value: string;
   readonly label: string;
   readonly description?: string;
+  /** Render-layer glyph key; {@link MentionMenu} maps it to a Phosphor icon. */
   readonly glyph?: string;
+}
+
+/** Candidate glyph key → stroke icon. App Shell: one stroke family, no emoji. */
+const GLYPH_ICONS: Readonly<Record<string, Icon>> = {
+  puzzle: PuzzlePiece,
+  folder: Folder,
+  file: File,
+  command: Command,
+};
+
+function CandidateGlyph({ glyph }: { readonly glyph: string }) {
+  const GlyphIcon = GLYPH_ICONS[glyph];
+  if (GlyphIcon === undefined) return null;
+  return (
+    <GlyphIcon size={16} weight="regular" aria-hidden className="shrink-0 text-[var(--color-text-tertiary)]" />
+  );
 }
 
 export interface MentionMenuProps {
@@ -65,10 +83,10 @@ export function MentionMenu({ candidates, anchor, onPick, onClose }: MentionMenu
   if (candidates.length === 0) {
     return (
       <div
-        className="fixed z-50 max-h-64 w-72 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-background-surface)] py-1 text-[11px] text-[var(--gray-500)] shadow-xl"
+        className="fixed z-50 max-h-64 w-72 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background-surface)] py-1 text-[11px] text-[var(--color-text-tertiary)] shadow-[var(--shadow-xl)]"
         style={{ top: anchor.top, left: anchor.left }}
       >
-        <div className="px-3 py-1.5">无匹配项</div>
+        <div className="px-3 py-2">无匹配项</div>
       </div>
     );
   }
@@ -76,7 +94,7 @@ export function MentionMenu({ candidates, anchor, onPick, onClose }: MentionMenu
   return (
     <ul
       ref={listRef}
-      className="fixed z-50 max-h-64 w-72 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-background-surface)] py-1 shadow-xl"
+      className="fixed z-50 max-h-64 w-72 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background-surface)] py-1 shadow-[var(--shadow-xl)]"
       style={{ top: anchor.top, left: anchor.left }}
     >
       {candidates.map((candidate, index) => (
@@ -86,21 +104,17 @@ export function MentionMenu({ candidates, anchor, onPick, onClose }: MentionMenu
             onMouseEnter={() => setActive(index)}
             onClick={() => onPick(candidate)}
             title={candidate.description}
-            className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
+            className={`flex w-full items-center gap-2 px-3 py-2 text-left ${
               index === active ? 'bg-[var(--color-list-hover)]' : ''
             }`}
           >
-            {candidate.glyph !== undefined ? (
-              <span aria-hidden className="shrink-0 text-[12px]">
-                {candidate.glyph}
-              </span>
-            ) : null}
+            {candidate.glyph !== undefined ? <CandidateGlyph glyph={candidate.glyph} /> : null}
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[12px] font-medium text-[var(--color-text-foreground)]">
                 {candidate.label}
               </span>
               {candidate.description !== undefined && candidate.description !== '' ? (
-                <span className="block truncate text-[10px] text-[var(--gray-500)]">
+                <span className="block truncate text-[10px] text-[var(--color-text-tertiary)]">
                   {candidate.description}
                 </span>
               ) : null}

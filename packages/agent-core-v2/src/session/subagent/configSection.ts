@@ -10,13 +10,12 @@
  * timeouts resolve through `resolveSubagentTimeoutMs`, and the timeout
  * message renders with `formatSubagentTimeoutDescription`.
  *
- * The model half of the spawn binding is the secondary model (the
- * `[secondary_model]` section on disk): when its
- * experiment is enabled and the model is set, newly spawned subagents bind to
- * it by default instead of inheriting the caller's model, and the
- * `Agent`/`AgentSwarm` tools let the parent model pick per spawn via their
- * `model` parameter. When unset, spawning behavior is unchanged (subagents
- * inherit the caller's model). A recipe with patch fields binds the
+ * The model half of the spawn binding combines exact per-profile assignments
+ * from `[agent_models]` with the symbolic primary/secondary choice backed by
+ * `[secondary_model]`. An explicit `Agent`/`AgentSwarm` tool choice wins, then
+ * a concrete profile assignment, then the profile's symbolic preference;
+ * without any of those, the configured secondary model is preferred and the
+ * caller model is the final fallback. A recipe with patch fields binds the
  * synthesized derived entry (`SECONDARY_DERIVED_MODEL_ID`); a pointer-only
  * recipe binds the pointed entry directly. `default_effort` is passed as the
  * explicit subagent thinking; without it the subagent resolves thinking
@@ -65,12 +64,16 @@ import type { IModelCatalog } from '#/kosong/model/catalog';
 import { SECONDARY_MODEL_FLAG_ID } from './flag';
 
 export const SUBAGENT_SECTION = 'subagent';
+export const AGENT_MODELS_SECTION = 'agentModels';
 
 export const SubagentConfigSchema = z.object({
   timeoutMs: z.number().int().min(0).optional(),
 });
 
 export type SubagentConfig = z.infer<typeof SubagentConfigSchema>;
+
+export const AgentModelsConfigSchema = z.record(z.string(), z.string().min(1));
+export type AgentModelsConfig = z.infer<typeof AgentModelsConfigSchema>;
 
 export const DEFAULT_SUBAGENT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -96,6 +99,12 @@ registerConfigSection(SUBAGENT_SECTION, SubagentConfigSchema, {
   stripEnv: stripSubagentEnv,
 });
 
+registerConfigSection(AGENT_MODELS_SECTION, AgentModelsConfigSchema, {
+  defaultValue: {},
+  merge: (_base, patch) => AgentModelsConfigSchema.parse(patch),
+  toToml: (value) => AgentModelsConfigSchema.parse(value),
+});
+
 export function resolveSubagentTimeoutMs(config: IConfigService): number {
   return (
     config.get<SubagentConfig | undefined>(SUBAGENT_SECTION)?.timeoutMs ??
@@ -104,6 +113,32 @@ export function resolveSubagentTimeoutMs(config: IConfigService): number {
 }
 
 export type SubagentModelChoice = AgentModelPreference;
+
+export function configuredModelForAgent(
+  config: IConfigService,
+  profileName: string,
+): string | undefined {
+  return config.get<AgentModelsConfig | undefined>(AGENT_MODELS_SECTION)?.[profileName];
+}
+
+export interface ResolveSubagentBindingOptions {
+  readonly own: { readonly modelAlias: string; readonly thinkingLevel: string };
+  readonly profileName: string;
+  readonly requested?: SubagentModelChoice;
+  readonly profilePreference?: AgentModelPreference;
+}
+
+export type SubagentModelSource =
+  | { readonly kind: 'caller' }
+  | { readonly kind: 'secondary' }
+  | { readonly kind: 'profile'; readonly profileName: string };
+
+export interface ResolvedSubagentBinding {
+  readonly model: string;
+  readonly thinking?: string;
+  readonly displayModel: string;
+  readonly source: SubagentModelSource;
+}
 
 export function resolveSecondaryModel(
   config: IConfigService,
@@ -116,9 +151,18 @@ export function resolveSecondaryModel(
 export function resolveSubagentBinding(
   config: IConfigService,
   flags: IFlagService,
-  own: { modelAlias: string; thinkingLevel: string },
-  requested?: SubagentModelChoice,
-): { model: string; thinking?: string; displayModel: string } {
+  options: ResolveSubagentBindingOptions,
+): ResolvedSubagentBinding {
+  const configuredModel = configuredModelForAgent(config, options.profileName);
+  if (options.requested === undefined && configuredModel !== undefined) {
+    return {
+      model: configuredModel,
+      thinking: undefined,
+      displayModel: subagentDisplayModel(config, configuredModel),
+      source: { kind: 'profile', profileName: options.profileName },
+    };
+  }
+  const requested = options.requested ?? options.profilePreference;
   const secondary = resolveSecondaryModel(config, flags);
   if (requested !== 'primary' && secondary?.model !== undefined) {
     const model =
@@ -127,12 +171,14 @@ export function resolveSubagentBinding(
       model,
       thinking: secondary.defaultEffort,
       displayModel: subagentDisplayModel(config, model),
+      source: { kind: 'secondary' },
     };
   }
   return {
-    model: own.modelAlias,
-    thinking: own.thinkingLevel,
-    displayModel: subagentDisplayModel(config, own.modelAlias),
+    model: options.own.modelAlias,
+    thinking: options.own.thinkingLevel,
+    displayModel: subagentDisplayModel(config, options.own.modelAlias),
+    source: { kind: 'caller' },
   };
 }
 
@@ -207,16 +253,34 @@ export function stripSubagentModelParameter(
 
 export function wrapSubagentModelError(
   error: unknown,
-  boundModel: string,
+  binding: ResolvedSubagentBinding,
   callerModelAlias: string | undefined,
 ): unknown {
-  if (boundModel === callerModelAlias) return error;
+  if (binding.source.kind === 'caller' || binding.model === callerModelAlias) return error;
   if (!isError2(error) || error.code !== ErrorCodes.CONFIG_INVALID) return error;
-  if (error.details?.['model'] !== boundModel) return error;
+  if (error.details?.['model'] !== binding.model) return error;
+  if (binding.source.kind === 'profile') {
+    return new Error2(
+      error.code,
+      `${error.message} (model "${binding.model}" is assigned to agent profile "${binding.source.profileName}" by [agent_models].${binding.source.profileName} — choose a configured model or clear the override)`,
+      {
+        cause: error,
+        name: error.name,
+        details: {
+          ...error.details,
+          agentModel: binding.model,
+          agentModelConfig: {
+            section: AGENT_MODELS_SECTION,
+            profileName: binding.source.profileName,
+          },
+        },
+      },
+    );
+  }
   const displayModel =
-    boundModel === SECONDARY_DERIVED_MODEL_ID
+    binding.model === SECONDARY_DERIVED_MODEL_ID
       ? `the derived entry "${SECONDARY_DERIVED_MODEL_ID}"`
-      : `"${boundModel}"`;
+      : `"${binding.model}"`;
   return new Error2(
     error.code,
     `${error.message} (secondary model ${displayModel} comes from [secondary_model].model / ${SECONDARY_MODEL_ENV} — check that it names a valid [models] entry)`,
@@ -225,7 +289,7 @@ export function wrapSubagentModelError(
       name: error.name,
       details: {
         ...error.details,
-        secondaryModel: boundModel,
+        secondaryModel: binding.model,
         secondaryModelConfig: {
           section: 'secondaryModel.model',
           environment: SECONDARY_MODEL_ENV,

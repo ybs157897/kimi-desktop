@@ -27,6 +27,8 @@ export interface StatusBarProps {
   readonly terminalActive: boolean;
   /** Whether the right dock is currently expanded. */
   readonly workspaceActive: boolean;
+  /** Hide the terminal / workspace toggles while those panels are disabled. */
+  readonly showPanelToggles?: boolean;
 }
 
 export function StatusBar({
@@ -36,6 +38,7 @@ export function StatusBar({
   onToggleWorkspace,
   terminalActive,
   workspaceActive,
+  showPanelToggles = true,
 }: StatusBarProps) {
   const sessionQuery = useSession(sessionId);
   const statusQuery = useSessionStatus(sessionId);
@@ -66,7 +69,7 @@ export function StatusBar({
   }
 
   return (
-    <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 text-[11px] text-[var(--color-text-secondary)]">
+    <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 text-[length:var(--client-caption-font-size)] text-[var(--color-text-secondary)]">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         {model !== undefined && model !== '' ? (
           <span className="truncate font-mono" title={model}>
@@ -76,34 +79,38 @@ export function StatusBar({
         {thinkingLabel !== undefined && thinkingLabel !== '' ? <span>思考：{thinkingLabel}</span> : null}
       </div>
       <div className="flex shrink-0 items-center gap-3">
-        <button
-          type="button"
-          onClick={onToggleTerminal}
-          disabled={sessionId === null}
-          title="切换终端"
-          aria-label="切换终端"
-          className={`ui-pressable flex h-5 w-5 items-center justify-center rounded-md disabled:cursor-default disabled:opacity-35 ${
-            terminalActive
-              ? 'text-[var(--color-text-foreground)]'
-              : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-foreground)]'
-          }`}
-        >
-          <TerminalWindow size={12} weight="regular" aria-hidden />
-        </button>
-        <button
-          type="button"
-          onClick={onToggleWorkspace}
-          disabled={sessionId === null}
-          title="切换工作区面板"
-          aria-label="切换工作区面板"
-          className={`ui-pressable flex h-5 w-5 items-center justify-center rounded-md disabled:cursor-default disabled:opacity-35 ${
-            workspaceActive
-              ? 'text-[var(--color-text-foreground)]'
-              : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-foreground)]'
-          }`}
-        >
-          <SidebarSimple size={12} weight="regular" aria-hidden />
-        </button>
+        {showPanelToggles ? (
+          <>
+            <button
+              type="button"
+              onClick={onToggleTerminal}
+              disabled={sessionId === null}
+              title="切换终端"
+              aria-label="切换终端"
+              className={`ui-pressable flex h-5 w-5 items-center justify-center rounded-md disabled:cursor-default disabled:opacity-35 ${
+                terminalActive
+                  ? 'text-[var(--color-text-foreground)]'
+                  : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-foreground)]'
+              }`}
+            >
+              <TerminalWindow size={12} weight="regular" aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={onToggleWorkspace}
+              disabled={sessionId === null}
+              title="切换工作区面板"
+              aria-label="切换工作区面板"
+              className={`ui-pressable flex h-5 w-5 items-center justify-center rounded-md disabled:cursor-default disabled:opacity-35 ${
+                workspaceActive
+                  ? 'text-[var(--color-text-foreground)]'
+                  : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-foreground)]'
+              }`}
+            >
+              <SidebarSimple size={12} weight="regular" aria-hidden />
+            </button>
+          </>
+        ) : null}
         {gitBranch !== null ? (
           <span className="flex items-center gap-1" title={`git 分支 ${gitBranch}`}>
             <svg

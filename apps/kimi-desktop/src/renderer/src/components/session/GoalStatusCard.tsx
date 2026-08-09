@@ -33,14 +33,14 @@ export function GoalStatusCard({ sessionId, goal }: GoalStatusCardProps) {
   };
 
   const buttonClass =
-    'rounded-md px-2.5 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-50';
+    'rounded-[var(--radius-sm)] px-2.5 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-50';
 
   return (
-    <div className="w-72 rounded-md border border-[var(--color-border)] bg-[var(--color-background-surface)] p-3 shadow-xl">
+    <div className="w-72 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-surface)] p-3 shadow-[var(--shadow-floating-panel)]">
       <div className="flex items-center gap-2">
         <span className="text-[11px] font-semibold text-[var(--color-text-foreground)]">目标</span>
         <span
-          className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+          className="rounded-[var(--radius-full)] px-1.5 py-0.5 text-[10px] font-medium"
           style={{ color: GOAL_STATUS_TONES[goal.status], backgroundColor: 'var(--color-list-hover)' }}
         >
           {GOAL_STATUS_LABELS[goal.status]}
@@ -52,15 +52,15 @@ export function GoalStatusCard({ sessionId, goal }: GoalStatusCardProps) {
 
       <dl className="mt-2 flex gap-4 text-[11px]">
         <div>
-          <dt className="text-[var(--gray-500)]">回合</dt>
+          <dt className="text-[var(--color-text-tertiary)]">回合</dt>
           <dd className="mt-0.5 text-[var(--color-text-foreground)]">{goal.turnsUsed}</dd>
         </div>
         <div>
-          <dt className="text-[var(--gray-500)]">Tokens</dt>
+          <dt className="text-[var(--color-text-tertiary)]">Tokens</dt>
           <dd className="mt-0.5 text-[var(--color-text-foreground)]">{formatTokens(goal.tokensUsed)}</dd>
         </div>
         <div>
-          <dt className="text-[var(--gray-500)]">耗时</dt>
+          <dt className="text-[var(--color-text-tertiary)]">耗时</dt>
           <dd className="mt-0.5 text-[var(--color-text-foreground)]">{formatDuration(goal.wallClockMs)}</dd>
         </div>
       </dl>
@@ -68,16 +68,16 @@ export function GoalStatusCard({ sessionId, goal }: GoalStatusCardProps) {
       {progress !== undefined ? (
         <div className="mt-2.5">
           {progress.percent !== null ? (
-            <div className="h-1 overflow-hidden rounded-full bg-[var(--color-border)]">
-              <div className="h-full rounded-full bg-[var(--blue-400)]" style={{ width: `${progress.percent}%` }} />
+            <div className="h-1 overflow-hidden rounded-[var(--radius-full)] bg-[var(--color-border)]">
+              <div className="h-full rounded-[var(--radius-full)] bg-[var(--primary)]" style={{ width: `${progress.percent}%` }} />
             </div>
           ) : null}
-          <p className="mt-1 text-[10px] text-[var(--gray-500)]">{progress.used}</p>
+          <p className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">{progress.used}</p>
         </div>
       ) : null}
 
       {goal.terminalReason !== undefined && goal.terminalReason !== '' ? (
-        <p className="mt-1.5 text-[11px] leading-4 text-[var(--gray-500)]">{goal.terminalReason}</p>
+        <p className="mt-1.5 text-[11px] leading-4 text-[var(--color-text-tertiary)]">{goal.terminalReason}</p>
       ) : null}
 
       <div className="mt-2.5 flex items-center gap-1.5 border-t border-[var(--color-border-light)] pt-2">
@@ -97,7 +97,7 @@ export function GoalStatusCard({ sessionId, goal }: GoalStatusCardProps) {
           </button>
         ) : null}
         {updateProfile.isError ? (
-          <span className="ml-auto text-[10px] text-[var(--red-400)]">操作失败</span>
+          <span className="ml-auto text-[10px] text-[var(--color-text-danger)]">操作失败</span>
         ) : null}
       </div>
     </div>

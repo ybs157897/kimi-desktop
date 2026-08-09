@@ -1,212 +1,202 @@
 /**
- * ProviderManager — the M8 provider CRUD surface: list configured providers
- * (`GET /api/v1/providers`, credentials redacted) with per-row edit / refresh /
- * delete (inline y/N confirm), plus two add paths — manual create and
- * models.dev catalog import. Opens from Settings as a nested modal (z-50).
+ * ProviderManager — the model-settings master/detail surface. The left rail
+ * owns provider selection; the right pane owns the selected provider and its
+ * models. Model editing is the only nested modal in this flow.
  */
 
-import { useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
+
+import { Cube, Plus } from '@phosphor-icons/react';
 
 import type { ProviderCatalogItem, ProviderCatalogStatus } from '@moonshot-ai/protocol';
 
-import { ApiError } from '#/lib/api';
-import { useDeleteProvider, useProviders, useRefreshProvider } from '#/lib/queries';
-import { PROVIDER_STATUS_LABELS } from '#/lib/providers';
-import { useModalDialog } from '#/lib/useModalDialog';
+import { useProviders } from '#/lib/queries';
 
-import { CatalogImportDialog } from './CatalogImportDialog';
 import { ProviderEditDialog } from './ProviderEditDialog';
 
 export interface ProviderManagerProps {
-  readonly onClose: () => void;
+  readonly onModalOpenChange: (open: boolean) => void;
 }
 
-const STATUS_TONES: Record<ProviderCatalogStatus, string> = {
-  connected: 'var(--color-text-success)',
-  error: 'var(--color-text-danger)',
-  unconfigured: 'var(--color-text-secondary)',
+type View = 'detail' | 'add';
+
+const STATUS_DOT: Record<ProviderCatalogStatus, string> = {
+  connected: 'bg-[var(--color-text-success)]',
+  error: 'bg-[var(--color-text-danger)]',
+  unconfigured: 'bg-[var(--color-text-tertiary)]',
 };
 
-function errorMessage(error: unknown): string {
-  if (error instanceof ApiError) return `操作失败（${error.code}）`;
-  return '操作失败';
+function groupProviders(items: readonly ProviderCatalogItem[]): {
+  builtin: ProviderCatalogItem[];
+  custom: ProviderCatalogItem[];
+} {
+  const builtin: ProviderCatalogItem[] = [];
+  const custom: ProviderCatalogItem[] = [];
+  for (const item of items) {
+    if (item.type === 'kimi') builtin.push(item);
+    else custom.push(item);
+  }
+  return { builtin, custom };
 }
 
-export function ProviderManager({ onClose }: ProviderManagerProps) {
+export function ProviderManager({ onModalOpenChange }: ProviderManagerProps) {
   const providers = useProviders();
-  const deleteProvider = useDeleteProvider();
-  const refreshProvider = useRefreshProvider();
-  /** `null` = dialog closed; `{provider: null}` = create form; `{provider}` = edit. */
-  const [editing, setEditing] = useState<{ readonly provider: ProviderCatalogItem | null } | null>(null);
-  const [catalogOpen, setCatalogOpen] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
-
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useModalDialog(dialogRef, onClose, { active: editing === null && !catalogOpen });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<View>('detail');
 
   const items = providers.data?.items ?? [];
-  const pending = deleteProvider.isPending || refreshProvider.isPending;
-  const mutationError = deleteProvider.error ?? refreshProvider.error;
+  const { builtin, custom } = useMemo(() => groupProviders(items), [items]);
+  const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
+  const activeId = view === 'detail' ? selected?.id ?? null : null;
+
+  const showProvider = (id: string): void => {
+    setSelectedId(id);
+    setView('detail');
+  };
+
+  const showSavedProvider = (id: string): void => {
+    setSelectedId(id);
+    setView('detail');
+  };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      // Only the backdrop itself closes the manager — the nested dialogs
-      // (edit / catalog) render inside this overlay and must not cascade.
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Provider 管理"
-        tabIndex={-1}
-        onMouseDown={(event) => event.stopPropagation()}
-        className="flex w-[640px] max-h-[85vh] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
-      >
-        <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-4 py-2.5">
-          <span className="text-[13px] font-medium text-[var(--color-text-foreground)]">Provider 管理</span>
-          <button
-            type="button"
-            aria-label="关闭"
-            onClick={onClose}
-            className="rounded-md px-2 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
-          >
-            ✕
-          </button>
-        </div>
+    <div className="h-[min(576px,calc(100vh-190px))] min-h-[480px] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-background-panel)] shadow-[var(--shadow-card)]">
+      <div className="grid h-full min-h-0 grid-cols-[224px_minmax(0,1fr)] divide-x divide-[var(--color-border-light)]">
+        <aside className="flex min-h-0 flex-col bg-[var(--color-background-panel)]">
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+            {providers.isLoading ? (
+              <p className="px-3 py-2 text-[12px] text-[var(--color-text-tertiary)]">加载供应商…</p>
+            ) : providers.isError ? (
+              <p className="px-3 py-2 text-[12px] leading-5 text-[var(--color-text-danger)]">
+                无法读取供应商列表
+              </p>
+            ) : (
+              <>
+                <ProviderGroup
+                  label="内置供应商"
+                  providers={builtin}
+                  selectedId={activeId}
+                  onSelect={showProvider}
+                />
+                <ProviderGroup
+                  label="自定义供应商"
+                  providers={custom}
+                  selectedId={activeId}
+                  onSelect={showProvider}
+                />
+                {items.length === 0 ? (
+                  <p className="px-3 py-3 text-[12px] leading-5 text-[var(--color-text-tertiary)]">
+                    还没有配置供应商
+                  </p>
+                ) : null}
+              </>
+            )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-          {providers.isLoading ? (
-            <div className="px-3 py-3 text-[12px] text-[var(--gray-500)]">加载中…</div>
-          ) : providers.isError ? (
-            <div className="px-3 py-3 text-[12px] text-[var(--red-400)]">
-              无法读取 Provider 列表
-              {providers.error instanceof Error ? `：${providers.error.message}` : ''}
-            </div>
-          ) : items.length === 0 ? (
-            <div className="px-3 py-3 text-[12px] text-[var(--gray-500)]">
-              还没有配置任何 Provider —— 从目录导入或手动添加一个。
-            </div>
+            <button
+              type="button"
+              onClick={() => setView('add')}
+              className={`ui-pressable mt-1 flex h-9 w-full items-center gap-2 rounded-[var(--radius-sm)] border border-transparent px-3 text-left text-[14px] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] ${
+                view === 'add'
+                  ? 'border-[var(--color-border)] bg-[var(--color-background-muted)] font-medium text-[var(--color-text-foreground)]'
+                  : 'text-[var(--color-text-secondary)]'
+              }`}
+            >
+              <Plus size={15} weight="regular" aria-hidden />
+              添加供应商
+            </button>
+          </div>
+        </aside>
+
+        <section className="min-h-0 min-w-0 bg-[var(--color-background-panel)]">
+          {view === 'add' ? (
+            <ProviderEditDialog
+              key="new-provider"
+              provider={null}
+              onClose={() => setView('detail')}
+              onSaved={showSavedProvider}
+              onModalOpenChange={onModalOpenChange}
+            />
+          ) : selected !== null ? (
+            <ProviderEditDialog
+              key={selected.id}
+              provider={selected}
+              onClose={() => undefined}
+              onSaved={showSavedProvider}
+              onDeleted={() => {
+                setSelectedId(items.find((item) => item.id !== selected.id)?.id ?? null);
+              }}
+              onModalOpenChange={onModalOpenChange}
+            />
           ) : (
-            <ul className="space-y-1">
-              {items.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex items-center gap-3 rounded-lg border border-[var(--color-border-light)] px-3 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-mono text-[12px] text-[var(--color-text-foreground)]">
-                        {item.id}
-                      </span>
-                      <span
-                        className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                        style={{ color: STATUS_TONES[item.status], backgroundColor: 'var(--color-list-hover)' }}
-                      >
-                        {PROVIDER_STATUS_LABELS[item.status]}
-                      </span>
-                      <span className="shrink-0 text-[10px] text-[var(--gray-500)]">{item.type}</span>
-                    </div>
-                    <p className="mt-0.5 truncate text-[10px] text-[var(--gray-500)]">
-                      {item.base_url ?? '（默认端点）'}
-                      {item.default_model !== undefined ? ` · 默认 ${item.default_model}` : ''}
-                      {item.models !== undefined ? ` · ${item.models.length} 模型` : ''}
-                      {item.has_api_key ? ' · 已配置 Key' : ' · 无 Key'}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {confirmingDelete === item.id ? (
-                      <>
-                        <span className="text-[11px] text-[var(--color-text-secondary)]">删除？</span>
-                        <button
-                          type="button"
-                          disabled={pending}
-                          onClick={() => deleteProvider.mutate(item.id)}
-                          className="rounded-md px-2 py-1 text-[11px] font-medium text-[var(--color-text-danger)] hover:bg-[var(--color-list-hover)] disabled:opacity-50"
-                        >
-                          y
-                        </button>
-                        <button
-                          type="button"
-                          disabled={pending}
-                          onClick={() => setConfirmingDelete(null)}
-                          className="rounded-md px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] disabled:opacity-50"
-                        >
-                          N
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          disabled={pending}
-                          onClick={() => setEditing({ provider: item })}
-                          className="rounded-md px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-50"
-                        >
-                          编辑
-                        </button>
-                        <button
-                          type="button"
-                          disabled={pending}
-                          onClick={() => refreshProvider.mutate(item.id)}
-                          title="重新拉取该 Provider 的模型列表"
-                          className="rounded-md px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-50"
-                        >
-                          刷新
-                        </button>
-                        <button
-                          type="button"
-                          disabled={pending}
-                          onClick={() => setConfirmingDelete(item.id)}
-                          className="rounded-md px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-danger)] disabled:opacity-50"
-                        >
-                          删除
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <EmptyState onAdd={() => setView('add')} />
           )}
-          {mutationError !== null ? (
-            <p className="px-3 pt-2 text-[11px] text-[var(--red-400)]">{errorMessage(mutationError)}</p>
-          ) : null}
-        </div>
-
-        <div className="flex items-center gap-2 border-t border-[var(--color-border-light)] px-4 py-2.5">
-          <button
-            type="button"
-            onClick={() => setCatalogOpen(true)}
-            className="rounded-md border border-[var(--color-border-heavy)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)]"
-          >
-            从目录导入…
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditing({ provider: null })}
-            className="rounded-md border border-[var(--color-border)] px-3 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
-          >
-            手动添加…
-          </button>
-          <div className="ml-auto" />
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-3 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
-          >
-            关闭
-          </button>
-        </div>
+        </section>
       </div>
+    </div>
+  );
+}
 
-      {editing !== null ? (
-        <ProviderEditDialog provider={editing.provider} onClose={() => setEditing(null)} />
-      ) : null}
-      {catalogOpen ? <CatalogImportDialog onClose={() => setCatalogOpen(false)} /> : null}
+interface ProviderGroupProps {
+  readonly label: string;
+  readonly providers: readonly ProviderCatalogItem[];
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string) => void;
+}
+
+function ProviderGroup({ label, providers, selectedId, onSelect }: ProviderGroupProps) {
+  if (providers.length === 0) return null;
+  return (
+    <div className="mb-5">
+      <p className="mb-1.5 px-3 text-[12px] text-[var(--color-text-tertiary)]">{label}</p>
+      <ul className="space-y-0.5">
+        {providers.map((provider) => {
+          const active = selectedId === provider.id;
+          return (
+            <li key={provider.id}>
+              <button
+                type="button"
+                aria-current={active ? 'true' : undefined}
+                onClick={() => onSelect(provider.id)}
+                className={`ui-pressable flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] border px-3 text-left text-[14px] ${
+                  active
+                    ? 'border-[var(--color-border)] bg-[var(--color-background-muted)] font-medium text-[var(--color-text-foreground)]'
+                    : 'border-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]'
+                }`}
+              >
+                <Cube size={16} weight="regular" aria-hidden />
+                <span className="min-w-0 flex-1 truncate">{provider.id}</span>
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[provider.status]}`}
+                  aria-label={provider.status === 'connected' ? '已连接' : provider.status === 'error' ? '异常' : '未配置'}
+                />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function EmptyState({ onAdd }: { readonly onAdd: () => void }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-background-surface-under)] text-[var(--color-text-tertiary)]">
+        <Cube size={20} weight="regular" aria-hidden />
+      </div>
+      <div>
+        <p className="text-[13px] font-medium text-[var(--color-text-foreground)]">添加模型服务商</p>
+        <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">
+          配置 API 接入点后，再添加可用模型。
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onAdd}
+        className="ui-pressable rounded-[var(--radius-sm)] bg-[var(--color-button-primary-background)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-button-primary-foreground)] hover:brightness-110"
+      >
+        添加供应商
+      </button>
     </div>
   );
 }

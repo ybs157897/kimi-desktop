@@ -16,6 +16,7 @@ export interface ShortcutHandlers {
   readonly openTerminal?: () => void;
   readonly openFileTree?: () => void;
   readonly focusSearch?: () => void;
+  readonly toggleOffice?: () => void;
 }
 
 function isShortcut(event: KeyboardEvent, key: string, shift = false): boolean {
@@ -45,6 +46,9 @@ export function useShortcuts(handlers: ShortcutHandlers): void {
       } else if (isShortcut(event, 'e', true)) {
         event.preventDefault();
         handlers.openFileTree?.();
+      } else if (isShortcut(event, 'o', true)) {
+        event.preventDefault();
+        handlers.toggleOffice?.();
       }
     };
     window.addEventListener('keydown', onKeyDown);

@@ -10,9 +10,10 @@
  * under TaskList/TaskOutput/TaskStop when `run_in_background=true` or after
  * detach), and terminal text formatting.
  *
- * Spawn bindings use an explicit tool choice first, then the target profile's
- * symbolic model preference, before `resolveSubagentBinding` falls back to the
- * configured secondary model or the caller's model. The selected alias is
+ * Spawn bindings use an explicit tool choice first, then an exact model
+ * assigned to the target profile, then the profile's symbolic model
+ * preference, before `resolveSubagentBinding` falls back to the configured
+ * secondary model or the caller's model. The selected alias is
  * resolved through the model catalog before lifecycle allocation. A resumed
  * agent keeps the model recorded in its own wire journal — with per-subagent
  * models there is no "child follows the parent's current model" invariant to
@@ -81,6 +82,7 @@ import { emitAgentRunSpawned, mirrorAgentRun } from '#/session/subagent/mirrorAg
 import { ISessionSubagentService } from '#/session/subagent/subagent';
 import {
   buildSubagentModelDescriptions,
+  configuredModelForAgent,
   formatSubagentTimeoutDescription,
   resolveSubagentBinding,
   resolveSubagentTimeoutMs,
@@ -163,6 +165,7 @@ export class SubagentTool implements ISubagentTool {
       (profile, name, source) =>
         this.toolPolicy.isToolActiveForProfile(profile, name, source),
       this.flags.enabled(SECONDARY_MODEL_FLAG_ID),
+      (profileName) => configuredModelForAgent(this.config, profileName),
     );
     if (typeLines) {
       description += `\n\nAvailable agent types (pass via subagent_type):\n${typeLines}`;
@@ -295,8 +298,12 @@ export class SubagentTool implements ISubagentTool {
       const binding = resolveSubagentBinding(
         this.config,
         this.flags,
-        { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
-        args.model ?? profile.modelPreference,
+        {
+          own: { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
+          profileName: profile.name,
+          requested: args.model,
+          profilePreference: profile.modelPreference,
+        },
       );
       let created: IAgentScopeHandle;
       try {
@@ -310,7 +317,7 @@ export class SubagentTool implements ISubagentTool {
           labels: subagentLabels(this.callerAgentId),
         });
       } catch (error) {
-        throw wrapSubagentModelError(error, binding.model, own.modelAlias);
+        throw wrapSubagentModelError(error, binding, own.modelAlias);
       }
       created.accessor.get(IAgentPermissionModeService).setMode(this.permissionMode.mode);
       created.accessor
@@ -515,6 +522,7 @@ function buildProfileDescriptions(
     source: ToolReference['source'],
   ) => boolean,
   showModelPreferences: boolean,
+  configuredModel: (profileName: string) => string | undefined,
 ): string {
   return profiles
     .map((profile) => {
@@ -522,10 +530,13 @@ function buildProfileDescriptions(
         (part): part is string => part !== undefined && part.length > 0,
       );
       const header = details.length === 0 ? `- ${profile.name}` : `- ${profile.name}: ${details.join(' ')}`;
+      const assignedModel = configuredModel(profile.name);
       const headerLines =
-        !showModelPreferences || profile.modelPreference === undefined
-          ? header
-          : `${header}\n  Model preference: ${profile.modelPreference}`;
+        assignedModel !== undefined
+          ? `${header}\n  Configured model: ${assignedModel}`
+          : !showModelPreferences || profile.modelPreference === undefined
+            ? header
+            : `${header}\n  Model preference: ${profile.modelPreference}`;
       const activeTools = resolveActiveToolNames(profile);
       const externallyRestricted = tools.some(
         (tool) =>

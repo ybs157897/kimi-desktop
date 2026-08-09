@@ -1,5 +1,6 @@
 import type { QuestionResponse } from '@moonshot-ai/protocol';
 import type { TranscriptInteraction } from '@moonshot-ai/transcript';
+import { CheckCircle, CheckSquare, Circle, Square } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
 import {
@@ -41,9 +42,9 @@ export function QuestionCard({ interaction, onAnswer, onDismiss, busy = false }:
   if (!pending) {
     const answered = interaction.state === 'answered';
     return (
-      <div className="mb-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-4 py-3">
+      <div className="mb-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-4 py-3">
         <div className="flex items-center gap-2 text-[12px] text-[var(--color-text-foreground)]">
-          <span className={answered ? 'text-[var(--green-400)]' : 'opacity-50'}>
+          <span className={answered ? 'text-[var(--color-text-success)]' : 'opacity-50'}>
             {answered ? '已回答' : resolvedLabel(interaction.state)}
           </span>
           <span className="opacity-70">提问已结束</span>
@@ -93,7 +94,7 @@ export function QuestionCard({ interaction, onAnswer, onDismiss, busy = false }:
 
   return (
     <div
-      className={`rounded-2xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] px-3 py-2.5 ${
+      className={`rounded-[var(--radius-lg)] border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] px-3.5 py-3 shadow-[var(--shadow-md)] ${
         isBusy ? 'opacity-70' : ''
       }`}
       onKeyDown={(event) => {
@@ -128,19 +129,29 @@ export function QuestionCard({ interaction, onAnswer, onDismiss, busy = false }:
                   disabled={isBusy}
                   title={option.description}
                   onClick={() => toggleOption(question.id, option.id)}
-                  className={`block w-full cursor-pointer rounded-lg border px-2.5 py-1 text-left text-[12px] transition-colors disabled:cursor-default disabled:opacity-50 ${
+                  className={`ui-pressable block w-full cursor-pointer rounded-[var(--radius-sm)] border px-2.5 py-1 text-left text-[12px] transition-colors disabled:cursor-default disabled:opacity-50 ${
                     isSelected
-                      ? 'border-[var(--color-border-heavy)] bg-[var(--color-list-hover)] text-[var(--color-text-foreground)]'
+                      ? 'border-[var(--color-border-focus)] bg-[var(--color-accent-background)] text-[var(--color-text-foreground)]'
                       : 'border-[var(--color-border-light)] text-[var(--color-text-foreground)] opacity-80 hover:bg-[var(--color-list-hover)]'
                   }`}
                 >
-                  <span className="select-none">
-                    {question.multiSelect ? (isSelected ? '☑ ' : '☐ ') : isSelected ? '● ' : '○ '}
+                  <span className="flex select-none items-center gap-1.5">
+                    {question.multiSelect ? (
+                      isSelected ? (
+                        <CheckSquare size={16} weight="regular" className="shrink-0 text-[var(--primary)]" aria-hidden />
+                      ) : (
+                        <Square size={16} weight="regular" className="shrink-0 text-[var(--color-text-tertiary)]" aria-hidden />
+                      )
+                    ) : isSelected ? (
+                      <CheckCircle size={16} weight="regular" className="shrink-0 text-[var(--primary)]" aria-hidden />
+                    ) : (
+                      <Circle size={16} weight="regular" className="shrink-0 text-[var(--color-text-tertiary)]" aria-hidden />
+                    )}
+                    <span>{option.label}</span>
+                    {recommended ? (
+                      <span className="text-[10px] font-medium text-[var(--color-text-accent)]">推荐</span>
+                    ) : null}
                   </span>
-                  {option.label}
-                  {recommended ? (
-                    <span className="ml-1.5 text-[10px] font-medium text-[var(--blue-300)]">推荐</span>
-                  ) : null}
                   {option.description !== undefined && option.description !== '' ? (
                     <span className="mt-0.5 block opacity-60">{option.description}</span>
                   ) : null}
@@ -166,7 +177,7 @@ export function QuestionCard({ interaction, onAnswer, onDismiss, busy = false }:
           autoFocus
           disabled={isBusy || !hasAnswer}
           onClick={answer}
-          className="cursor-pointer rounded-md bg-[var(--gray-1000)] px-3 py-1 text-[12px] font-medium text-[var(--color-text-foreground)] hover:bg-[var(--gray-900)] disabled:cursor-default disabled:opacity-40"
+          className="ui-pressable cursor-pointer rounded-[var(--radius-sm)] bg-[var(--color-button-primary-background)] px-3 py-1 text-[12px] font-medium text-[var(--color-button-primary-foreground)] hover:opacity-90 disabled:cursor-default disabled:opacity-40"
         >
           回答
         </button>
@@ -174,7 +185,7 @@ export function QuestionCard({ interaction, onAnswer, onDismiss, busy = false }:
           type="button"
           disabled={isBusy}
           onClick={skip}
-          className="cursor-pointer rounded-md border border-[var(--color-border)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] opacity-70 hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
+          className="ui-pressable cursor-pointer rounded-[var(--radius-sm)] border border-[var(--color-border-heavy)] px-3 py-1 text-[12px] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)] disabled:cursor-default disabled:opacity-50"
         >
           跳过
         </button>
@@ -182,7 +193,7 @@ export function QuestionCard({ interaction, onAnswer, onDismiss, busy = false }:
           type="button"
           disabled={isBusy}
           onClick={() => void onDismiss()}
-          className="cursor-pointer rounded-md px-2 py-1 text-[11px] text-[var(--color-text-foreground)] opacity-50 underline-offset-2 hover:opacity-80 disabled:cursor-default disabled:opacity-40"
+          className="ui-pressable cursor-pointer rounded-[var(--radius-sm)] px-2 py-1 text-[11px] text-[var(--color-text-foreground)] opacity-50 underline-offset-2 hover:opacity-80 disabled:cursor-default disabled:opacity-40"
         >
           关闭提问
         </button>

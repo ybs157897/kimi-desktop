@@ -61,6 +61,12 @@ export function diffBeforeAfter(before: string, after: string): DiffLine[] {
   return lines;
 }
 
+/** A Write tool's content renders as all-added lines (new file). */
+export function addAllLines(content: string): DiffLine[] {
+  const body = content.length > 0 && content.endsWith('\n') ? content.slice(0, -1) : content;
+  return body.split('\n').map((line) => ({ type: 'add', text: line }));
+}
+
 /** Count add/del lines for summary badges. */
 export function countChanges(lines: readonly DiffLine[]): { adds: number; dels: number } {
   let adds = 0;
@@ -76,9 +82,9 @@ export function countChanges(lines: readonly DiffLine[]): { adds: number; dels: 
 export function diffLineTone(type: DiffLineType): string {
   switch (type) {
     case 'add':
-      return 'bg-[color-mix(in_srgb,var(--green-500)_12%,transparent)] text-[var(--green-400)]';
+      return 'bg-[color-mix(in_srgb,var(--color-text-success)_12%,transparent)] text-[var(--color-text-success)]';
     case 'del':
-      return 'bg-[color-mix(in_srgb,var(--red-500)_12%,transparent)] text-[var(--red-400)]';
+      return 'bg-[color-mix(in_srgb,var(--color-text-danger)_12%,transparent)] text-[var(--color-text-danger)]';
     case 'hunk':
       return 'text-[var(--blue-300)] bg-[color-mix(in_srgb,var(--blue-500)_8%,transparent)]';
     case 'meta':

@@ -33,7 +33,7 @@ export function PermissionModeSelect({
 }: PermissionModeSelectProps) {
   const current = OPTIONS.find((option) => option.value === value) ?? OPTIONS[0]!;
   return (
-    <label
+    <span
       className={
         className ??
         `composer-menu ${disabled ? 'opacity-55' : 'hover:bg-[var(--color-list-hover)]'}`
@@ -41,12 +41,15 @@ export function PermissionModeSelect({
       title={current.description}
     >
       <PermissionIcon mode={value} />
+      <span className="min-w-0 truncate text-[length:var(--client-meta-font-size)] font-medium leading-none tracking-[var(--tracking-tight)]">
+        {current.label}
+      </span>
       <select
         value={value}
         disabled={disabled}
         aria-label="权限模式"
         onChange={(event) => onChange(event.target.value as PromptPermissionMode)}
-        className="composer-menu-select"
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
       >
         {OPTIONS.map((option) => (
           <option key={option.value} value={option.value} title={option.description}>
@@ -55,16 +58,16 @@ export function PermissionModeSelect({
         ))}
       </select>
       <CaretDown size={10} weight="bold" className="shrink-0 opacity-45" aria-hidden />
-    </label>
+    </span>
   );
 }
 
 function PermissionIcon({ mode }: { mode: PromptPermissionMode }) {
   if (mode === 'yolo') {
-    return <ShieldWarning size={15} weight="fill" className="shrink-0 text-[var(--orange-400)]" aria-hidden />;
+    return <ShieldWarning size={15} weight="regular" className="shrink-0 text-[var(--color-text-warning)]" aria-hidden />;
   }
   if (mode === 'auto') {
-    return <ShieldCheck size={15} weight="fill" className="shrink-0 text-[var(--green-400)]" aria-hidden />;
+    return <ShieldCheck size={15} weight="regular" className="shrink-0 text-[var(--color-text-success)]" aria-hidden />;
   }
   return <Shield size={15} weight="regular" className="shrink-0 text-[var(--color-text-tertiary)]" aria-hidden />;
 }

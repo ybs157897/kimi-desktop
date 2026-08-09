@@ -22,6 +22,10 @@ exports[`API surface snapshot > matches the documented v2 route table and meta e
   "routes": [
     [
       "DELETE",
+      "/api/v1/agent-profiles/{name}",
+    ],
+    [
+      "DELETE",
       "/api/v1/files/{file_id}",
     ],
     [
@@ -35,6 +39,10 @@ exports[`API surface snapshot > matches the documented v2 route table and meta e
     [
       "DELETE",
       "/api/v1/workspaces/{workspace_id}",
+    ],
+    [
+      "GET",
+      "/api/v1/agent-profiles",
     ],
     [
       "GET",
@@ -262,6 +270,14 @@ exports[`API surface snapshot > matches the documented v2 route table and meta e
     ],
     [
       "POST",
+      "/api/v1/agent-profiles",
+    ],
+    [
+      "POST",
+      "/api/v1/agent-profiles/{name}/state",
+    ],
+    [
+      "POST",
       "/api/v1/config",
     ],
     [
@@ -411,6 +427,10 @@ exports[`API surface snapshot > matches the documented v2 route table and meta e
     [
       "POST",
       "/api/v1/workspaces/{workspace_id}/untrust",
+    ],
+    [
+      "PUT",
+      "/api/v1/agent-profiles/{name}",
     ],
     [
       "PUT",

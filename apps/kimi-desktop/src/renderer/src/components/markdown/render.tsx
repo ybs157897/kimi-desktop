@@ -8,7 +8,7 @@
  * crashing the message.
  */
 
-import { createElement, Fragment, type ReactNode } from 'react';
+import { createContext, createElement, Fragment, useContext, type ReactNode } from 'react';
 import type { Token, Tokens } from 'marked';
 
 import type { CitationToken, DirectiveToken } from './extensions';
@@ -16,6 +16,16 @@ import { pairStreamHtml } from './streamHtml';
 import { MarkdownCitation } from './MarkdownCitation';
 import { MarkdownCodeBlock } from './MarkdownCodeBlock';
 import { MarkdownMath } from './MarkdownMath';
+
+/**
+ * Carries the streaming flag down the render tree without threading it through
+ * the recursive `renderTokens` signature (which is also used for re-lexed
+ * directive bodies where streaming is irrelevant). Markdown.tsx provides the
+ * value; the `code` branch consumes it so a live code block shows the trailing
+ * cursor and stays unfolded.
+ */
+export const StreamingContext = createContext(false);
+const useStreaming = (): boolean => useContext(StreamingContext);
 
 /** Lexer access for recursive content (container directives). */
 export interface RenderContext {
@@ -31,6 +41,13 @@ export function renderTokens(tokens: readonly Token[], ctx: RenderContext): Reac
 
 // ------------------------------------------------------------------ renderer
 
+/** A code token rendered with the streaming flag from context (hooks cannot
+ *  be called from the recursive `renderToken` switch, so this is a dedicated
+ *  component). */
+function CodeToken({ text, lang }: { readonly text: string; readonly lang?: string }): ReactNode {
+  return <MarkdownCodeBlock code={text} language={lang} streaming={useStreaming()} />;
+}
+
 function renderToken(token: Token, key: number, ctx: RenderContext): ReactNode {
   try {
     return renderTokenUnsafe(token, key, ctx);
@@ -44,7 +61,7 @@ function renderTokenUnsafe(token: Token, key: number, ctx: RenderContext): React
     case 'space':
       return null;
     case 'code':
-      return <MarkdownCodeBlock key={key} code={token.text} language={token.lang} />;
+      return <CodeToken key={key} text={token.text} lang={token.lang} />;
     case 'heading': {
       const depth = Math.min(Math.max(token.depth, 1), 6);
       return createElement(`h${depth}`, { key }, renderTokens(token.tokens ?? [], ctx));
@@ -133,28 +150,30 @@ function renderTable(token: Tokens.Table, key: number, ctx: RenderContext): Reac
   const alignStyle = (align: Tokens.TableCell['align']) =>
     align !== null ? { textAlign: align } : undefined;
   return (
-    <table key={key}>
-      <thead>
-        <tr>
-          {token.header.map((cell, index) => (
-            <th key={index} style={alignStyle(cell.align)}>
-              {renderTokens(cell.tokens, ctx)}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {token.rows.map((row, rowIndex) => (
-          <tr key={rowIndex}>
-            {row.map((cell, cellIndex) => (
-              <td key={cellIndex} style={alignStyle(cell.align)}>
+    <div key={key} className="markdown-table-shell">
+      <table>
+        <thead>
+          <tr>
+            {token.header.map((cell, index) => (
+              <th key={index} style={alignStyle(cell.align)}>
                 {renderTokens(cell.tokens, ctx)}
-              </td>
+              </th>
             ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {token.rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {row.map((cell, cellIndex) => (
+                <td key={cellIndex} style={alignStyle(cell.align)}>
+                  {renderTokens(cell.tokens, ctx)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

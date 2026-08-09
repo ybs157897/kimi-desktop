@@ -9,6 +9,8 @@
  *
  * The theme follows `document.documentElement[data-theme]` (`light` →
  * github-light, anything else → github-dark); the shell owns the attribute.
+ * A MutationObserver re-highlights visible blocks when the attribute flips,
+ * so a code block never keeps the previous theme's token colors.
  */
 
 import { Check, Copy } from '@phosphor-icons/react';
@@ -19,6 +21,8 @@ import type { LanguageRegistration, ThemeRegistrationRaw } from 'shiki/types';
 export interface MarkdownCodeBlockProps {
   readonly code: string;
   readonly language?: string;
+  /** Stream in progress: renders a trailing cursor inside the block. */
+  readonly streaming?: boolean;
 }
 
 type ThemeName = 'github-light' | 'github-dark';
@@ -202,10 +206,27 @@ function CodeCopyButton({ code }: { readonly code: string }) {
   );
 }
 
-export function MarkdownCodeBlock({ code, language }: MarkdownCodeBlockProps) {
+/** Line budget over which a block folds to a preview window. */
+const FOLD_THRESHOLD = 20;
+
+export function MarkdownCodeBlock({ code, language, streaming = false }: MarkdownCodeBlockProps) {
   const normalized = normalizeLanguage(language);
   const importer = normalized !== null ? LANGUAGE_IMPORTERS[normalized] : undefined;
   const [highlighted, setHighlighted] = useState<string | null>(null);
+  // Theme switches flip `data-theme` on <html> without re-rendering React, so
+  // an effect dep alone would leave visible blocks stuck on the previous
+  // theme's token colors. A MutationObserver bumps this counter and the
+  // highlight effect re-runs with `currentTheme()`'s new theme.
+  const [themeTick, setThemeTick] = useState(0);
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => setThemeTick((tick) => tick + 1));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -222,22 +243,71 @@ export function MarkdownCodeBlock({ code, language }: MarkdownCodeBlockProps) {
     return () => {
       cancelled = true;
     };
-  }, [code, importer, normalized]);
+  }, [code, importer, normalized, themeTick]);
 
-  const header = normalized !== null ? <div className="markdown-code-lang">{normalized}</div> : null;
+  // Long-block fold. A streaming block stays open so the user can watch it
+  // land; settled blocks over the line budget start folded.
+  const lineCount = code === '' ? 0 : code.split('\n').length;
+  const foldable = !streaming && lineCount > FOLD_THRESHOLD;
+  const [expanded, setExpanded] = useState(!foldable);
+  // Re-evaluate when `code` changes (a streaming block that crosses the
+  // threshold mid-flight should not fold until it settles).
+  const effectiveExpanded = streaming ? true : expanded;
+  const folded = foldable && !effectiveExpanded;
+  const showLines = effectiveExpanded && highlighted === null;
+
+  const header =
+    normalized !== null ? (
+      <div className="markdown-code-lang">
+        <span className="markdown-code-lang-dot" aria-hidden />
+        <span>{normalized}</span>
+      </div>
+    ) : null;
   const body =
     highlighted !== null ? (
       <div className="markdown-shiki" dangerouslySetInnerHTML={{ __html: highlighted }} />
     ) : (
       <pre className="markdown-code-block">
-        <code>{code}</code>
+        <code>
+          {showLines
+            ? code.split('\n').map((line, index) => (
+                <span key={index} className="markdown-code-line">
+                  {line}
+                  {index < lineCount - 1 ? '\n' : ''}
+                </span>
+              ))
+            : code}
+          {streaming ? <span className="markdown-cursor" aria-hidden /> : null}
+        </code>
       </pre>
     );
   return (
-    <div className="markdown-code-shell" data-lang={normalized ?? undefined}>
+    <div
+      className="markdown-code-shell"
+      data-lang={normalized ?? undefined}
+      data-folded={folded ? 'true' : 'false'}
+      data-lines={showLines ? 'true' : 'false'}
+    >
       {header}
-      {body}
-      <CodeCopyButton code={code} />
+      <div className="markdown-code-body">{body}</div>
+      {folded ? null : <CodeCopyButton code={code} />}
+      {folded ? (
+        <button
+          type="button"
+          className="markdown-code-fold-toggle"
+          onClick={() => setExpanded(true)}
+        >
+          展开全部 {lineCount} 行
+        </button>
+      ) : foldable ? (
+        <button
+          type="button"
+          className="markdown-code-fold-toggle"
+          onClick={() => setExpanded(false)}
+        >
+          收起
+        </button>
+      ) : null}
     </div>
   );
 }

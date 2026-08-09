@@ -20,10 +20,13 @@ import {
   compactSessionRequestSchema,
   compactSessionResponseSchema,
   configResponseSchema,
+  agentProfileDescriptorSchema,
+  deleteAgentProfileResponseSchema,
   forkSessionRequestSchema,
   getTaskQuerySchema,
   getTaskResponseSchema,
   listModelsResponseSchema,
+  listAgentProfilesResponseSchema,
   listPendingApprovalsResponseSchema,
   listPendingQuestionsResponseSchema,
   listTasksQuerySchema,
@@ -46,10 +49,13 @@ import {
   type CompactSessionRequest,
   type CompactSessionResponse,
   type ConfigResponse,
+  type CreateAgentProfileRequest,
+  type DeleteAgentProfileResponse,
   type ForkSessionRequest,
   type GetTaskQuery,
   type GetTaskResponse,
   type ListModelsResponse,
+  type ListAgentProfilesResponse,
   type ListPendingApprovalsResponse,
   type ListPendingQuestionsResponse,
   type ListTasksQuery,
@@ -66,8 +72,11 @@ import {
   type SessionCreate,
   type SessionSnapshotResponse,
   type StartBtwSessionResponse,
+  type SetAgentProfileEnabledRequest,
   type UndoSessionRequest,
   type UndoSessionResponse,
+  type UpdateAgentProfileRequest,
+  type AgentProfileDescriptor,
   fsBrowseResponseSchema,
   fsDiffResponseSchema,
   fsGitBranchesResponseSchema,
@@ -509,6 +518,28 @@ export interface TranscriptPlanInfo {
     | undefined;
 }
 
+/** One live foreground subagent from the session snapshot roster (the wire
+ *  `snapshotSubagentSchema`): the base task shape plus the swarm identity
+ *  metadata that otherwise only rides the non-replayed `subagent.spawned`
+ *  event. `id` is the subagent's agent id (side-panel addressable). */
+export interface SessionSubagentSnapshot {
+  readonly id: string;
+  readonly kind: 'subagent' | 'bash' | 'tool';
+  readonly description: string;
+  readonly status: 'running' | 'completed' | 'failed' | 'cancelled';
+  readonly created_at?: string;
+  readonly started_at?: string;
+  readonly completed_at?: string;
+  readonly output_preview?: string;
+  readonly model?: string;
+  readonly subagent_phase?: 'queued' | 'working' | 'suspended' | 'completed' | 'failed';
+  readonly subagent_type?: string;
+  readonly parent_tool_call_id?: string;
+  readonly suspended_reason?: string;
+  readonly swarm_index?: number;
+  readonly run_in_background?: boolean;
+}
+
 // ------------------------------------------------------------------- client
 
 export interface ApiRequestOptions {
@@ -730,6 +761,19 @@ export class ApiClient {
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/tasks`,
       { query, schema: listTasksResponseSchema },
     );
+  }
+
+  /** `GET /api/v1/sessions/{id}/snapshot` — atomic session snapshot. Only the
+   *  `subagents` roster is consumed here: it is the sole surface that lists
+   *  live FOREGROUND subagents session-wide (expert-team / swarm members
+   *  spawned by child agents), which REST `/tasks` — main-agent scope only —
+   *  never sees. Typed loosely on purpose; the snapshot's other fields are
+   *  the WS reconnect payload and stay untouched. */
+  async sessionSubagents(sessionId: string): Promise<readonly SessionSubagentSnapshot[]> {
+    const data = await this.request<{ subagents?: SessionSubagentSnapshot[] }>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/snapshot`,
+    );
+    return data.subagents ?? [];
   }
 
   /** `GET /api/v1/sessions/{id}/tasks/{taskId}` — one task; `with_output`
@@ -974,6 +1018,52 @@ export class ApiClient {
   /** `GET /api/v1/models` — model catalog. */
   models(): Promise<ListModelsResponse> {
     return this.request<ListModelsResponse>('/api/v1/models', { schema: listModelsResponseSchema });
+  }
+
+  /** `GET /api/v1/agent-profiles` — builtin and user profiles that may run as subagents. */
+  agentProfiles(): Promise<ListAgentProfilesResponse> {
+    return this.request<ListAgentProfilesResponse>('/api/v1/agent-profiles', {
+      schema: listAgentProfilesResponseSchema,
+    });
+  }
+
+  /** `POST /api/v1/agent-profiles` — create a user agent Markdown file. */
+  createAgentProfile(body: CreateAgentProfileRequest): Promise<AgentProfileDescriptor> {
+    return this.request<AgentProfileDescriptor>('/api/v1/agent-profiles', {
+      method: 'POST',
+      body,
+      schema: agentProfileDescriptorSchema,
+    });
+  }
+
+  /** `PUT /api/v1/agent-profiles/{name}` — replace editable user agent fields. */
+  updateAgentProfile(
+    name: string,
+    body: UpdateAgentProfileRequest,
+  ): Promise<AgentProfileDescriptor> {
+    return this.request<AgentProfileDescriptor>(
+      `/api/v1/agent-profiles/${encodeURIComponent(name)}`,
+      { method: 'PUT', body, schema: agentProfileDescriptorSchema },
+    );
+  }
+
+  /** `POST /api/v1/agent-profiles/{name}/state` — enable or disable a user agent. */
+  setAgentProfileEnabled(
+    name: string,
+    body: SetAgentProfileEnabledRequest,
+  ): Promise<AgentProfileDescriptor> {
+    return this.request<AgentProfileDescriptor>(
+      `/api/v1/agent-profiles/${encodeURIComponent(name)}/state`,
+      { method: 'POST', body, schema: agentProfileDescriptorSchema },
+    );
+  }
+
+  /** `DELETE /api/v1/agent-profiles/{name}` — delete an editable user agent file. */
+  deleteAgentProfile(name: string): Promise<DeleteAgentProfileResponse> {
+    return this.request<DeleteAgentProfileResponse>(
+      `/api/v1/agent-profiles/${encodeURIComponent(name)}`,
+      { method: 'DELETE', schema: deleteAgentProfileResponseSchema },
+    );
   }
 
   // ------------------------------------------------------------- providers

@@ -7,7 +7,8 @@
  * per-subagent XML result. Reads persisted swarm item labels through the
  * Session-scoped coordinator so later `resume_agent_ids` calls relabel
  * resumed subagents like v1. When the caller has a model bound, the tool
- * resolves the explicit or target-profile model preference up front via
+ * resolves the explicit choice, exact target-profile model assignment, or
+ * symbolic target-profile preference up front via
  * `resolveSubagentBinding` (against `IConfigService`, `IFlagService`,
  * `ISessionAgentProfileCatalog`, and the caller's `IAgentProfileService`) and
  * threads it through the swarm tasks; otherwise binding is left to the
@@ -46,6 +47,7 @@ import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentSwarmService } from '#/agent/swarm/swarm';
 import {
   buildSubagentModelDescriptions,
+  type ResolvedSubagentBinding,
   resolveSubagentBinding,
   resolveSubagentTimeoutMs,
   stripSubagentModelParameter,
@@ -167,7 +169,7 @@ export class AgentSwarmTool implements IAgentSwarmTool {
     toolCallId: string,
   ): Promise<string> {
     const profileName = normalizeOptionalString(args.subagent_type) ?? DEFAULT_SUBAGENT_TYPE;
-    let binding: { model: string; thinking?: string } | undefined;
+    let binding: ResolvedSubagentBinding | undefined;
     if ((args.items?.length ?? 0) > 0) {
       await this.catalog.ready;
       const own = this.profile.data();
@@ -189,10 +191,14 @@ export class AgentSwarmTool implements IAgentSwarmTool {
         const resolved = resolveSubagentBinding(
           this.config,
           this.flags,
-          { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
-          args.model ?? targetProfile.modelPreference,
+          {
+            own: { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
+            profileName: targetProfile.name,
+            requested: args.model,
+            profilePreference: targetProfile.modelPreference,
+          },
         );
-        binding = { model: resolved.model, thinking: resolved.thinking };
+        binding = resolved;
       }
     }
     const timeoutMs = resolveSubagentTimeoutMs(this.config);

@@ -6,7 +6,7 @@
  * citation for now (opening the file lands with the fs panel milestone).
  */
 
-import type { CSSProperties } from 'react';
+import { FileText } from '@phosphor-icons/react';
 
 /** File-reference chip data (`【path†L12】` / `【path†L12-L40】` literals). */
 export interface MarkdownCitation {
@@ -29,10 +29,6 @@ export function decodeCitationPath(path: string): string {
   }
 }
 
-function fileIconStyle(): CSSProperties {
-  return { width: 11, height: 11 };
-}
-
 export function MarkdownCitation({ citation }: { citation: MarkdownCitation }) {
   const displayPath = decodeCitationPath(citation.path);
   const label = citation.label ?? displayPath;
@@ -47,20 +43,11 @@ export function MarkdownCitation({ citation }: { citation: MarkdownCitation }) {
       title={`${displayPath}${line !== undefined ? ` ${line}` : ''}`}
       className="markdown-citation mx-0.5 inline-flex max-w-full items-center gap-1 rounded-[var(--radius-xs)] border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-1.5 py-0.5 align-middle text-[var(--font-size-xs)] leading-4 text-[var(--color-text-foreground)] transition-colors hover:border-[var(--color-border-heavy)] hover:bg-[var(--color-list-hover)]"
     >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+      <FileText
+        size={14}
         aria-hidden
-        className="shrink-0 text-[var(--color-text-foreground)] opacity-50"
-        style={fileIconStyle()}
-      >
-        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-        <path d="M14 2v5h5" />
-      </svg>
+        className="shrink-0 text-[var(--color-text-secondary)]"
+      />
       <span className="truncate font-mono text-[var(--color-text-foreground)]">{label}</span>
       {line !== undefined ? (
         <span className="shrink-0 text-[var(--color-token-text-secondary)]">{line}</span>

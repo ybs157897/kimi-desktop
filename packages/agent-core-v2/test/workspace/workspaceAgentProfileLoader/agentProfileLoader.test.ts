@@ -13,7 +13,7 @@
  * test/workspace/workspaceAgentProfileLoader/agentProfileLoader.test.ts`.
  */
 
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 import { join } from 'pathe';
@@ -62,6 +62,8 @@ import { ExtraAgentProfileLoaderService } from '#/workspace/workspaceAgentProfil
 import { WorkspaceAgentProfileLoaderService } from '#/workspace/workspaceAgentProfileLoader/workspaceAgentProfileLoaderService';
 import { IWorkspaceContext } from '#/workspace/workspaceContext/workspaceContext';
 import { IUserAgentProfileLoader } from '#/workspace/workspaceAgentProfileLoader/userAgentProfileLoader';
+import { IUserAgentProfileStore } from '#/workspace/workspaceAgentProfileLoader/userAgentProfileStore';
+import { UserAgentProfileStoreService } from '#/workspace/workspaceAgentProfileLoader/userAgentProfileStoreService';
 import { IPluginAgentProfileLoader } from '#/workspace/workspaceAgentProfileLoader/pluginAgentProfileLoader';
 import { IWorkspaceAgentProfileLoader } from '#/workspace/workspaceAgentProfileLoader/workspaceAgentProfileLoader';
 import { IExtraAgentProfileLoader } from '#/workspace/workspaceAgentProfileLoader/extraAgentProfileLoader';
@@ -273,6 +275,7 @@ function makeStack(fixture: Fixture, opts?: StackOptions) {
       [IPluginService, pluginStub(opts?.pluginAgentRoots ?? [], opts?.pluginReloadEmitter)],
       [IAgentProfileRegistry, new SyncDescriptor(AgentProfileRegistryService)],
       [IBuiltinAgentProfileLoader, new SyncDescriptor(BuiltinAgentProfileLoaderService)],
+      [IUserAgentProfileStore, new SyncDescriptor(UserAgentProfileStoreService)],
       [IUserAgentProfileLoader, new SyncDescriptor(UserAgentProfileLoaderService)],
       [IPluginAgentProfileLoader, new SyncDescriptor(PluginAgentProfileLoaderService)],
       [IWorkspaceAgentProfileLoader, new SyncDescriptor(WorkspaceAgentProfileLoaderService)],
@@ -285,6 +288,7 @@ function makeStack(fixture: Fixture, opts?: StackOptions) {
     container.invokeFunction((accessor) => accessor.get(id));
   const registry = get(IAgentProfileRegistry);
   const builtinLoader = get(IBuiltinAgentProfileLoader);
+  const userStore = get(IUserAgentProfileStore);
   const userLoader = get(IUserAgentProfileLoader);
   const pluginLoader = get(IPluginAgentProfileLoader);
   const workspaceLoader = get(IWorkspaceAgentProfileLoader);
@@ -299,6 +303,7 @@ function makeStack(fixture: Fixture, opts?: StackOptions) {
   return {
     registry,
     builtinLoader,
+    userStore,
     userLoader,
     pluginLoader,
     workspaceLoader,
@@ -384,6 +389,100 @@ describe('agent profile loaders + session catalog', () => {
           priority: 10,
           reason: 'priority',
         });
+      });
+    });
+  });
+
+  it('creates a user agent file and exposes it after the user loader reloads', async () => {
+    await withFixture(async (fixture) => {
+      await withStack(fixture, undefined, async (stack) => {
+        await stack.ready();
+
+        const created = await stack.userStore.create({
+          name: 'release-notes',
+          description: 'Writes release notes',
+          whenToUse: 'When preparing a release',
+          tools: ['Read', 'Grep'],
+          prompt: 'Write concise release notes.',
+          enabled: true,
+        });
+        await stack.userLoader.reload();
+
+        expect(created.path).toBe(join(fixture.homeDir, 'agents', 'release-notes.md'));
+        expect(stack.catalog.get('release-notes')?.description).toBe('Writes release notes');
+      });
+    });
+  });
+
+  it('updates editable fields while preserving unknown frontmatter', async () => {
+    await withFixture(async (fixture) => {
+      const path = await writeAgent(
+        join(fixture.homeDir, 'agents'),
+        'reviewer.md',
+        '---\nname: reviewer\ndescription: old\ncustomField: keep-me\n---\n\nOld prompt.\n',
+      );
+      await withStack(fixture, undefined, async (stack) => {
+        await stack.ready();
+
+        await stack.userStore.replace('reviewer', {
+          description: 'Reviews risky changes',
+          whenToUse: 'Before merging',
+          color: 'coral',
+          tools: ['Read'],
+          prompt: 'Review the change carefully.',
+        });
+
+        const text = await readFile(path, 'utf8');
+        expect(text).toContain('customField: keep-me');
+        expect(text).toContain('description: Reviews risky changes');
+        expect(text).toContain('color: coral');
+        expect(text).toContain('Review the change carefully.');
+      });
+    });
+  });
+
+  it('removes a disabled user agent from the runtime catalog after reload', async () => {
+    await withFixture(async (fixture) => {
+      await withStack(fixture, undefined, async (stack) => {
+        await stack.ready();
+        await stack.userStore.create({
+          name: 'triage',
+          description: 'Triages issues',
+          prompt: 'Triage the issue.',
+          enabled: true,
+        });
+        await stack.userLoader.reload();
+        expect(stack.catalog.get('triage')).toBeDefined();
+
+        await stack.userStore.setEnabled('triage', false);
+        await stack.userLoader.reload();
+
+        expect(stack.catalog.get('triage')).toBeUndefined();
+        expect((await stack.userStore.list()).find((profile) => profile.name === 'triage')?.enabled)
+          .toBe(false);
+      });
+    });
+  });
+
+  it('removes an editable user agent file from subsequent runtime loads', async () => {
+    await withFixture(async (fixture) => {
+      await withStack(fixture, undefined, async (stack) => {
+        await stack.ready();
+        const created = await stack.userStore.create({
+          name: 'temporary-reviewer',
+          description: 'Temporary reviewer',
+          color: 'blue',
+          prompt: 'Review once.',
+          enabled: true,
+        });
+        await stack.userLoader.reload();
+        expect(stack.catalog.get('temporary-reviewer')).toBeDefined();
+
+        await stack.userStore.remove('temporary-reviewer');
+        await stack.userLoader.reload();
+
+        expect(stack.catalog.get('temporary-reviewer')).toBeUndefined();
+        await expect(readFile(created.path, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
       });
     });
   });

@@ -23,6 +23,8 @@ export interface AgentFileDefinition {
   readonly name: string;
   readonly description: string;
   readonly whenToUse?: string;
+  readonly color?: string;
+  readonly enabled: boolean;
   readonly override: boolean;
   readonly tools?: readonly string[];
   readonly disallowedTools?: readonly string[];

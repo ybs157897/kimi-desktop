@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { Marked } from 'marked';
 import type { Token, Tokens } from 'marked';
-import { isValidElement, createElement, type ReactElement, type ReactNode } from 'react';
+import {
+  isValidElement,
+  createElement,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 
 import {
   attachmentImageSrc,
@@ -15,26 +20,41 @@ import {
   splitStreamingDelta,
 } from '../src/renderer/src/components/markdown/streaming';
 import { pairStreamHtml } from '../src/renderer/src/components/markdown/streamHtml';
+import {
+  createMarkdownExtensions,
+  type MathToken,
+} from '../src/renderer/src/components/markdown/extensions';
 import { computeScaledSize } from '../src/renderer/src/lib/imageScale';
-import { groupModelCatalog, modelCatalogItemId, resolvePromptModel } from '../src/renderer/src/lib/modelCatalog';
+import {
+  groupModelCatalog,
+  modelCatalogItemId,
+  resolvePromptModel,
+} from '../src/renderer/src/lib/modelCatalog';
 import { webAppUrl } from '../src/renderer/src/lib/webUrl';
 import { buildChangeTree } from '../src/renderer/src/lib/changeTree';
 import { approvalInteractionPresentation } from '../src/renderer/src/lib/approvalInteraction';
 import { goalObjectiveForSubmission } from '../src/renderer/src/lib/sessionModes';
+import { isLiveAgentPhase } from '../src/renderer/src/office/phaseMap';
 import {
   projectAgentPendingInteractions,
   projectPendingSessionInteractions,
 } from '../src/renderer/src/lib/sessionInteractions';
 import {
+  agentCallTypeLabel,
   hasThinkingContent,
   liveTailFrameId,
   pendingInteractionForToolFrame,
   pendingComposerInteractions,
+  resultTextFrameId,
   shouldAbortAfterApproval,
   taskForToolFrame,
   visibleTimelineItems,
 } from '../src/renderer/src/lib/timelinePresentation';
-import type { TranscriptInteraction, TranscriptTask } from '@moonshot-ai/transcript';
+import type {
+  TranscriptInteraction,
+  TranscriptTask,
+  TranscriptTurn,
+} from '@moonshot-ai/transcript';
 
 describe('Codex-style streaming timeline presentation', () => {
   it('removes internal undo and plan revision markers from the visible conversation', () => {
@@ -44,30 +64,39 @@ describe('Codex-style streaming timeline presentation', () => {
       { kind: 'marker' as const, markerId: 'm3', marker: 'plan.enter' },
       { kind: 'marker' as const, markerId: 'm4', marker: 'interruption' },
       { kind: 'marker' as const, markerId: 'm5', marker: 'compact' },
+      { kind: 'marker' as const, markerId: 'm6', marker: 'swarm.enter' },
     ];
-    expect(visibleTimelineItems(items).map((item) => item.kind === 'marker' ? item.marker : item.kind))
-      .toEqual(['compact']);
+    expect(
+      visibleTimelineItems(items).map((item) =>
+        item.kind === 'marker' ? item.marker : item.kind,
+      ),
+    ).toEqual(['compact']);
   });
 
   it('docks a subagent approval from the session-level pending collection', () => {
-    const projected = projectPendingSessionInteractions([
-      {
-        approval_id: 'approval-child',
-        session_id: 'session-1',
-        agent_id: 'agent-0',
-        tool_call_id: 'tool-child',
-        tool_name: 'Bash',
-        action: '运行命令',
-        tool_input_display: { kind: 'command', command: 'ls' },
-        created_at: '2026-01-01T00:00:01.000Z',
-        expires_at: '2026-01-02T00:00:01.000Z',
-      },
-    ], []);
+    const projected = projectPendingSessionInteractions(
+      [
+        {
+          approval_id: 'approval-child',
+          session_id: 'session-1',
+          agent_id: 'agent-0',
+          tool_call_id: 'tool-child',
+          tool_name: 'Bash',
+          action: '运行命令',
+          tool_input_display: { kind: 'command', command: 'ls' },
+          created_at: '2026-01-01T00:00:01.000Z',
+          expires_at: '2026-01-02T00:00:01.000Z',
+        },
+      ],
+      [],
+    );
 
-    expect(pendingComposerInteractions(projected).map((pending) => ({
-      agentId: pending.sourceAgentId,
-      interactionId: pending.interaction.interactionId,
-    }))).toEqual([{ agentId: 'agent-0', interactionId: 'approval-child' }]);
+    expect(
+      pendingComposerInteractions(projected).map((pending) => ({
+        agentId: pending.sourceAgentId,
+        interactionId: pending.interaction.interactionId,
+      })),
+    ).toEqual([{ agentId: 'agent-0', interactionId: 'approval-child' }]);
   });
 
   it('keeps main transcript approvals visible while the session query is loading', () => {
@@ -82,7 +111,9 @@ describe('Codex-style streaming timeline presentation', () => {
       'main',
     );
 
-    expect(pendingComposerInteractions(fallback)[0]?.sourceAgentId).toBe('main');
+    expect(pendingComposerInteractions(fallback)[0]?.sourceAgentId).toBe(
+      'main',
+    );
   });
 
   it('docks the newest session interaction across approvals and questions', () => {
@@ -120,9 +151,9 @@ describe('Codex-style streaming timeline presentation', () => {
       ],
     );
 
-    expect(pendingComposerInteractions(projected)[0]?.interaction.interactionId).toBe(
-      'question-newer',
-    );
+    expect(
+      pendingComposerInteractions(projected)[0]?.interaction.interactionId,
+    ).toBe('question-newer');
   });
 
   it('stops the active prompt after rejection, except an explicit plan revision', () => {
@@ -133,7 +164,9 @@ describe('Codex-style streaming timeline presentation', () => {
   });
 
   it('does not abort the main prompt after rejecting a child agent approval', () => {
-    expect(shouldAbortAfterApproval('rejected', undefined, 'agent-0')).toBe(false);
+    expect(shouldAbortAfterApproval('rejected', undefined, 'agent-0')).toBe(
+      false,
+    );
   });
 
   it('links an Agent frame to its subagent task when frame.taskId is absent', () => {
@@ -155,19 +188,22 @@ describe('Codex-style streaming timeline presentation', () => {
   });
 
   it('links an Agent frame to its child pending approval', () => {
-    const projected = projectPendingSessionInteractions([
-      {
-        approval_id: 'approval-child',
-        session_id: 'session-1',
-        agent_id: 'agent-0',
-        tool_call_id: 'tool-child',
-        tool_name: 'Bash',
-        action: '运行命令',
-        tool_input_display: { kind: 'command', command: 'ls' },
-        created_at: '2026-01-01T00:00:01.000Z',
-        expires_at: '2026-01-02T00:00:01.000Z',
-      },
-    ], []);
+    const projected = projectPendingSessionInteractions(
+      [
+        {
+          approval_id: 'approval-child',
+          session_id: 'session-1',
+          agent_id: 'agent-0',
+          tool_call_id: 'tool-child',
+          tool_name: 'Bash',
+          action: '运行命令',
+          tool_input_display: { kind: 'command', command: 'ls' },
+          created_at: '2026-01-01T00:00:01.000Z',
+          expires_at: '2026-01-02T00:00:01.000Z',
+        },
+      ],
+      [],
+    );
 
     expect(
       pendingInteractionForToolFrame(
@@ -175,6 +211,21 @@ describe('Codex-style streaming timeline presentation', () => {
         projected,
       )?.interaction.interactionId,
     ).toBe('approval-child');
+  });
+
+  it('distinguishes Tidal and Coder Agent calls from their explicit subagent type', () => {
+    expect(
+      agentCallTypeLabel(
+        { name: 'Agent', input: { subagent_type: 'tidal' } },
+        'Agent',
+      ),
+    ).toBe('Tidal');
+    expect(
+      agentCallTypeLabel(
+        { name: 'Agent', input: { subagent_type: 'coder' } },
+        'Agent',
+      ),
+    ).toBe('Coder Agent');
   });
 
   it('does not reserve a blank streaming reasoning body', () => {
@@ -203,6 +254,83 @@ describe('Codex-style streaming timeline presentation', () => {
         steps: [{ frames: [{ frameId: 'text-only' }] }],
       }),
     ).toBe('text-only');
+  });
+
+  it('keeps only the final assistant text outside the folded process', () => {
+    const turn = {
+      kind: 'turn',
+      turnId: 'turn-1',
+      ordinal: 1,
+      state: 'completed',
+      origin: { kind: 'user' },
+      steps: [
+        {
+          kind: 'step',
+          stepId: 'step-1',
+          turnId: 'turn-1',
+          ordinal: 1,
+          state: 'completed',
+          frames: [
+            { kind: 'text', frameId: 'commentary', role: 'assistant', text: '我先检查一下。' },
+            { kind: 'tool', frameId: 'tool', toolCallId: 'tool-1', name: 'Read', state: 'done' },
+            { kind: 'text', frameId: 'result', role: 'assistant', text: '检查完成。' },
+          ],
+        },
+      ],
+    } satisfies TranscriptTurn;
+
+    expect(resultTextFrameId(turn)).toBe('result');
+    expect(resultTextFrameId({ ...turn, state: 'running' })).toBe('result');
+    expect(
+      resultTextFrameId({
+        ...turn,
+        state: 'running',
+        steps: [
+          {
+            ...turn.steps[0]!,
+            state: 'running',
+            frames: [
+              ...turn.steps[0]!.frames,
+              { kind: 'thinking', frameId: 'thinking', text: '继续' },
+            ],
+          },
+        ],
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe('AI office live roster', () => {
+  it('shows only agents participating in the current live turn', () => {
+    expect(
+      isLiveAgentPhase({
+        kind: 'running',
+        turnId: 1,
+        step: 0,
+        stepId: 'step-1',
+        since: 1,
+      }),
+    ).toBe(true);
+    expect(
+      isLiveAgentPhase({ kind: 'awaiting_approval', turnId: 1, since: 2 }),
+    ).toBe(true);
+    expect(isLiveAgentPhase({ kind: 'idle' })).toBe(false);
+    expect(
+      isLiveAgentPhase({
+        kind: 'interrupted',
+        turnId: 1,
+        reason: 'aborted',
+        at: 3,
+      }),
+    ).toBe(false);
+    expect(
+      isLiveAgentPhase({
+        kind: 'ended',
+        turnId: 1,
+        reason: 'completed',
+        at: 4,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -250,8 +378,18 @@ describe('change directory tree', () => {
             name: 'animate',
             path: '.agents/skills/animate',
             children: [
-              { kind: 'file', name: 'RECIPES.md', path: '.agents/skills/animate/RECIPES.md', status: 'modified' },
-              { kind: 'file', name: 'SKILL.md', path: '.agents/skills/animate/SKILL.md', status: 'modified' },
+              {
+                kind: 'file',
+                name: 'RECIPES.md',
+                path: '.agents/skills/animate/RECIPES.md',
+                status: 'modified',
+              },
+              {
+                kind: 'file',
+                name: 'SKILL.md',
+                path: '.agents/skills/animate/SKILL.md',
+                status: 'modified',
+              },
             ],
           },
           {
@@ -259,7 +397,12 @@ describe('change directory tree', () => {
             name: 'apple-design',
             path: '.agents/skills/apple-design',
             children: [
-              { kind: 'file', name: 'SKILL.md', path: '.agents/skills/apple-design/SKILL.md', status: 'untracked' },
+              {
+                kind: 'file',
+                name: 'SKILL.md',
+                path: '.agents/skills/apple-design/SKILL.md',
+                status: 'untracked',
+              },
             ],
           },
         ],
@@ -268,9 +411,21 @@ describe('change directory tree', () => {
         kind: 'directory',
         name: '.changeset',
         path: '.changeset',
-        children: [{ kind: 'file', name: 'desktop.md', path: '.changeset/desktop.md', status: 'added' }],
+        children: [
+          {
+            kind: 'file',
+            name: 'desktop.md',
+            path: '.changeset/desktop.md',
+            status: 'added',
+          },
+        ],
       },
-      { kind: 'file', name: 'README.md', path: 'README.md', status: 'modified' },
+      {
+        kind: 'file',
+        name: 'README.md',
+        path: 'README.md',
+        status: 'modified',
+      },
     ]);
   });
 });
@@ -279,10 +434,21 @@ describe('model catalog selection', () => {
   it('groups models into provider submenus without flattening the catalog', () => {
     expect(
       groupModelCatalog([
-        { provider: 'qwen', model: 'qwen/qwen3.8-max', max_context_size: 128_000 },
+        {
+          provider: 'qwen',
+          model: 'qwen/qwen3.8-max',
+          max_context_size: 128_000,
+        },
         { provider: 'kimi', model: 'kimi/k2.5', max_context_size: 128_000 },
-        { provider: 'qwen', model: 'qwen/qwen3.7-max', max_context_size: 128_000 },
-      ]).map((group) => [group.provider, group.entries.map((entry) => entry.model)]),
+        {
+          provider: 'qwen',
+          model: 'qwen/qwen3.7-max',
+          max_context_size: 128_000,
+        },
+      ]).map((group) => [
+        group.provider,
+        group.entries.map((entry) => entry.model),
+      ]),
     ).toEqual([
       ['qwen', ['qwen/qwen3.8-max', 'qwen/qwen3.7-max']],
       ['kimi', ['kimi/k2.5']],
@@ -300,9 +466,9 @@ describe('model catalog selection', () => {
   });
 
   it('falls back to the global default when a new session stores an empty model', () => {
-    expect(resolvePromptModel(undefined, '', 'example-provider/example-model')).toBe(
-      'example-provider/example-model',
-    );
+    expect(
+      resolvePromptModel(undefined, '', 'example-provider/example-model'),
+    ).toBe('example-provider/example-model');
   });
 
   it('prefers a per-prompt override over session and global defaults', () => {
@@ -318,9 +484,15 @@ describe('model catalog selection', () => {
 
 describe('goal composer mode', () => {
   it('creates a goal from the next submitted message only when goal mode is armed', () => {
-    expect(goalObjectiveForSubmission(true, false, '  完成桌面端修复  ')).toBe('完成桌面端修复');
-    expect(goalObjectiveForSubmission(false, false, '普通消息')).toBeUndefined();
-    expect(goalObjectiveForSubmission(true, true, '继续已有目标')).toBeUndefined();
+    expect(goalObjectiveForSubmission(true, false, '  完成桌面端修复  ')).toBe(
+      '完成桌面端修复',
+    );
+    expect(
+      goalObjectiveForSubmission(false, false, '普通消息'),
+    ).toBeUndefined();
+    expect(
+      goalObjectiveForSubmission(true, true, '继续已有目标'),
+    ).toBeUndefined();
   });
 });
 
@@ -355,11 +527,15 @@ describe('webAppUrl', () => {
   });
 
   it('encodes the session id', () => {
-    expect(webAppUrl('http://x:1', 's/1', undefined)).toBe('http://x:1/sessions/s%2F1');
+    expect(webAppUrl('http://x:1', 's/1', undefined)).toBe(
+      'http://x:1/sessions/s%2F1',
+    );
   });
 
   it('encodes the token', () => {
-    expect(webAppUrl('http://x:1', 's1', 'a b')).toBe('http://x:1/sessions/s1#token=a%20b');
+    expect(webAppUrl('http://x:1', 's1', 'a b')).toBe(
+      'http://x:1/sessions/s1#token=a%20b',
+    );
   });
 });
 
@@ -367,19 +543,31 @@ describe('webAppUrl', () => {
 
 describe('computeScaledSize', () => {
   it('keeps sizes already within the bound (no upscaling)', () => {
-    expect(computeScaledSize(800, 600, 2048)).toEqual({ width: 800, height: 600 });
+    expect(computeScaledSize(800, 600, 2048)).toEqual({
+      width: 800,
+      height: 600,
+    });
   });
 
   it('scales a wide image down to the long edge', () => {
-    expect(computeScaledSize(4096, 2048, 2048)).toEqual({ width: 2048, height: 1024 });
+    expect(computeScaledSize(4096, 2048, 2048)).toEqual({
+      width: 2048,
+      height: 1024,
+    });
   });
 
   it('scales a tall image down to the long edge', () => {
-    expect(computeScaledSize(1024, 4096, 2048)).toEqual({ width: 512, height: 2048 });
+    expect(computeScaledSize(1024, 4096, 2048)).toEqual({
+      width: 512,
+      height: 2048,
+    });
   });
 
   it('rounds fractional results', () => {
-    expect(computeScaledSize(3000, 2000, 1000)).toEqual({ width: 1000, height: 667 });
+    expect(computeScaledSize(3000, 2000, 1000)).toEqual({
+      width: 1000,
+      height: 667,
+    });
   });
 
   it('never produces a zero dimension', () => {
@@ -402,14 +590,20 @@ describe('attachmentImageSrc', () => {
     expect(isImageMediaType('IMAGE/PNG')).toBe(true);
     expect(isImageMediaType('application/pdf')).toBe(false);
     expect(isImageMediaType(undefined)).toBe(false);
-    expect(isImageAttachment({ attachmentId: 'a1', mediaType: 'image/jpeg' })).toBe(true);
+    expect(
+      isImageAttachment({ attachmentId: 'a1', mediaType: 'image/jpeg' }),
+    ).toBe(true);
     expect(isImageAttachment(undefined)).toBe(false);
   });
 
   it('uses the url source directly for image attachments', () => {
     expect(
       attachmentImageSrc(
-        { attachmentId: 'a1', mediaType: 'image/png', source: { kind: 'url', url: 'https://example.test/x.png' } },
+        {
+          attachmentId: 'a1',
+          mediaType: 'image/png',
+          source: { kind: 'url', url: 'https://example.test/x.png' },
+        },
         'http://127.0.0.1:58627',
       ),
     ).toBe('https://example.test/x.png');
@@ -418,7 +612,11 @@ describe('attachmentImageSrc', () => {
   it('resolves file-sourced images to the server download route', () => {
     expect(
       attachmentImageSrc(
-        { attachmentId: 'a1', mediaType: 'image/png', source: { kind: 'file', fileId: 'f_1' } },
+        {
+          attachmentId: 'a1',
+          mediaType: 'image/png',
+          source: { kind: 'file', fileId: 'f_1' },
+        },
         'http://127.0.0.1:58627/',
       ),
     ).toBe('http://127.0.0.1:58627/api/v1/files/f_1');
@@ -427,7 +625,11 @@ describe('attachmentImageSrc', () => {
   it('encodes the file id in the download route', () => {
     expect(
       attachmentImageSrc(
-        { attachmentId: 'a1', mediaType: 'image/png', source: { kind: 'file', fileId: 'a b/1' } },
+        {
+          attachmentId: 'a1',
+          mediaType: 'image/png',
+          source: { kind: 'file', fileId: 'a b/1' },
+        },
         'http://127.0.0.1:58627',
       ),
     ).toBe('http://127.0.0.1:58627/api/v1/files/a%20b%2F1');
@@ -436,13 +638,21 @@ describe('attachmentImageSrc', () => {
   it('rejects non-http image urls', () => {
     expect(
       attachmentImageSrc(
-        { attachmentId: 'a1', mediaType: 'image/png', source: { kind: 'url', url: 'file:///tmp/x.png' } },
+        {
+          attachmentId: 'a1',
+          mediaType: 'image/png',
+          source: { kind: 'url', url: 'file:///tmp/x.png' },
+        },
         'http://127.0.0.1:58627',
       ),
     ).toBeNull();
     expect(
       attachmentImageSrc(
-        { attachmentId: 'a1', mediaType: 'image/png', source: { kind: 'url', url: 'not-a-url' } },
+        {
+          attachmentId: 'a1',
+          mediaType: 'image/png',
+          source: { kind: 'url', url: 'not-a-url' },
+        },
         'http://127.0.0.1:58627',
       ),
     ).toBeNull();
@@ -451,11 +661,20 @@ describe('attachmentImageSrc', () => {
   it('returns null for non-image attachments or missing sources', () => {
     expect(
       attachmentImageSrc(
-        { attachmentId: 'a1', mediaType: 'application/pdf', source: { kind: 'url', url: 'https://example.test/x.pdf' } },
+        {
+          attachmentId: 'a1',
+          mediaType: 'application/pdf',
+          source: { kind: 'url', url: 'https://example.test/x.pdf' },
+        },
         'http://127.0.0.1:58627',
       ),
     ).toBeNull();
-    expect(attachmentImageSrc({ attachmentId: 'a1', mediaType: 'image/png' }, 'http://127.0.0.1:58627')).toBeNull();
+    expect(
+      attachmentImageSrc(
+        { attachmentId: 'a1', mediaType: 'image/png' },
+        'http://127.0.0.1:58627',
+      ),
+    ).toBeNull();
     expect(attachmentImageSrc(undefined, 'http://127.0.0.1:58627')).toBeNull();
   });
 });
@@ -464,41 +683,62 @@ describe('attachmentImageSrc', () => {
 
 describe('splitStreamingDelta', () => {
   it('returns none when the source did not grow', () => {
-    expect(splitStreamingDelta('hello', 'hello')).toEqual({ kind: 'none', text: '' });
+    expect(splitStreamingDelta('hello', 'hello')).toEqual({
+      kind: 'none',
+      text: '',
+    });
   });
 
   it('keeps an appended suffix as an inline continuation', () => {
-    expect(splitStreamingDelta('hello', 'hello world')).toEqual({ kind: 'inline', text: ' world' });
+    expect(splitStreamingDelta('hello', 'hello world')).toEqual({
+      kind: 'inline',
+      text: ' world',
+    });
   });
 
   it('keeps a soft-line continuation inline', () => {
-    expect(splitStreamingDelta('hello\n', 'hello\nworld')).toEqual({ kind: 'inline', text: 'world' });
+    expect(splitStreamingDelta('hello\n', 'hello\nworld')).toEqual({
+      kind: 'inline',
+      text: 'world',
+    });
   });
 
   it('opens a block wrapper after a blank line', () => {
-    expect(splitStreamingDelta('hello', 'hello\n\n# Title')).toEqual({ kind: 'block', text: '\n\n# Title' });
+    expect(splitStreamingDelta('hello', 'hello\n\n# Title')).toEqual({
+      kind: 'block',
+      text: '\n\n# Title',
+    });
   });
 
   it('flushes when the boundary sits inside an open code fence', () => {
-    expect(splitStreamingDelta('```ts\nconst a', '```ts\nconst a = 1').kind).toBe('flush');
+    expect(
+      splitStreamingDelta('```ts\nconst a', '```ts\nconst a = 1').kind,
+    ).toBe('flush');
   });
 
   it('flushes when the delta opens a fence it does not close', () => {
-    expect(splitStreamingDelta('hello', 'hello\n```ts\nconst a').kind).toBe('flush');
+    expect(splitStreamingDelta('hello', 'hello\n```ts\nconst a').kind).toBe(
+      'flush',
+    );
   });
 
   it('wraps a complete fence inside a block delta', () => {
-    expect(splitStreamingDelta('hello', 'hello\n\n```ts\nconst a = 1\n```').kind).toBe('block');
+    expect(
+      splitStreamingDelta('hello', 'hello\n\n```ts\nconst a = 1\n```').kind,
+    ).toBe('block');
   });
 
   it('flushes when the boundary sits inside an open code span', () => {
-    expect(splitStreamingDelta('use `foo', 'use `foo` here').kind).toBe('flush');
+    expect(splitStreamingDelta('use `foo', 'use `foo` here').kind).toBe(
+      'flush',
+    );
   });
 
   it('flushes inside unclosed math delimiters', () => {
     expect(splitStreamingDelta('x \\(a', 'x \\(a+b\\)').kind).toBe('flush');
     expect(splitStreamingDelta('$$', '$$\nx^2').kind).toBe('flush');
     expect(splitStreamingDelta('x \\[a', 'x \\[a+b\\]').kind).toBe('flush');
+    expect(splitStreamingDelta('x $a', 'x $a+b$').kind).toBe('flush');
   });
 
   it('flushes inside an open citation bracket', () => {
@@ -515,6 +755,31 @@ describe('splitStreamingDelta', () => {
 
   it('keeps bold markers inline (pairing degrades without artifacts)', () => {
     expect(splitStreamingDelta('**bold', '**bold**').kind).toBe('inline');
+  });
+});
+
+describe('markdown math delimiters', () => {
+  const markdown = new Marked({ gfm: true, breaks: true, silent: true });
+  markdown.use(createMarkdownExtensions());
+
+  it('parses model-authored single-dollar inline formulas', () => {
+    const paragraph = markdown.lexer(
+      '取 $x \\neq 0$，得到 $\\frac{1}{3}$。',
+    )[0] as Tokens.Paragraph;
+    const math = paragraph.tokens.filter(
+      (token): token is MathToken => token.type === 'math',
+    );
+
+    expect(math.map((token) => token.tex)).toEqual([
+      'x \\neq 0',
+      '\\frac{1}{3}',
+    ]);
+    expect(math.every((token) => token.displayMode === false)).toBe(true);
+  });
+
+  it('leaves dollar-prefixed prose alone when no closing delimiter exists', () => {
+    const paragraph = markdown.lexer('价格是 $5。')[0] as Tokens.Paragraph;
+    expect(paragraph.tokens.some((token) => token.type === 'math')).toBe(false);
   });
 });
 
@@ -560,7 +825,9 @@ describe('streaming markdown chunk accumulation', () => {
 
 describe('buildStreamedSource', () => {
   it('returns the plain source without chunks', () => {
-    expect(buildStreamedSource(createInitialStreamState('hello'))).toBe('hello');
+    expect(buildStreamedSource(createInitialStreamState('hello'))).toBe(
+      'hello',
+    );
   });
 
   it('wraps inline chunks in spans and moves trailing newlines out', () => {
@@ -586,10 +853,18 @@ describe('buildStreamedSource', () => {
     const normalize = (text: string): string =>
       text.replaceAll(/\n{2,}/g, '\n\n').replace(/\n$/, '');
     let state = createInitialStreamState('');
-    for (const src of ['Hel', 'Hello', 'Hello wor', 'Hello wor\n\nNext', 'Hello wor\n\nNext more']) {
+    for (const src of [
+      'Hel',
+      'Hello',
+      'Hello wor',
+      'Hello wor\n\nNext',
+      'Hello wor\n\nNext more',
+    ]) {
       state = advanceStreamState(state, src, true);
       const markup = buildStreamedSource(state);
-      expect(normalize(markup.replaceAll(/<\/?(?:span|div)[^>]*>/g, ''))).toBe(src);
+      expect(normalize(markup.replaceAll(/<\/?(?:span|div)[^>]*>/g, ''))).toBe(
+        src,
+      );
     }
   });
 });
@@ -598,24 +873,50 @@ describe('streamed markup lexing', () => {
   const markdown = new Marked({ gfm: true, breaks: true, silent: true });
 
   it('lexes an injected inline span as paired html tokens inside the paragraph', () => {
-    const tokens = markdown.lexer('hi<span class="markdown-stream-delta markdown-stream-delta--a">\nmore</span>');
-    const paragraph = tokens.find((token) => token.type === 'paragraph') as Tokens.Paragraph;
-    expect(paragraph.tokens.map((token) => token.type)).toEqual(['text', 'html', 'br', 'text', 'html']);
+    const tokens = markdown.lexer(
+      'hi<span class="markdown-stream-delta markdown-stream-delta--a">\nmore</span>',
+    );
+    const paragraph = tokens.find(
+      (token) => token.type === 'paragraph',
+    ) as Tokens.Paragraph;
+    expect(paragraph.tokens.map((token) => token.type)).toEqual([
+      'text',
+      'html',
+      'br',
+      'text',
+      'html',
+    ]);
   });
 
   it('lexes an injected block div as block-level html around the content', () => {
     const tokens = markdown.lexer(
       'para\n<div class="markdown-stream-delta markdown-stream-delta--a markdown-stream-delta-block">\n\nNext\n</div>',
     );
-    expect(tokens.map((token) => token.type)).toEqual(['paragraph', 'html', 'space', 'paragraph', 'html']);
+    expect(tokens.map((token) => token.type)).toEqual([
+      'paragraph',
+      'html',
+      'space',
+      'paragraph',
+      'html',
+    ]);
     expect((tokens[1] as Tokens.HTML).block).toBe(true);
     expect((tokens[4] as Tokens.HTML).block).toBe(true);
   });
 
   it('treats a mid-line closing div as inline html (graceful degradation)', () => {
-    const tokens = markdown.lexer('Paragraph</div><span class="markdown-stream-delta markdown-stream-delta--a"> more</span>');
-    const paragraph = tokens.find((token) => token.type === 'paragraph') as Tokens.Paragraph;
-    expect(paragraph.tokens.map((token) => token.type)).toEqual(['text', 'html', 'html', 'text', 'html']);
+    const tokens = markdown.lexer(
+      'Paragraph</div><span class="markdown-stream-delta markdown-stream-delta--a"> more</span>',
+    );
+    const paragraph = tokens.find(
+      (token) => token.type === 'paragraph',
+    ) as Tokens.Paragraph;
+    expect(paragraph.tokens.map((token) => token.type)).toEqual([
+      'text',
+      'html',
+      'html',
+      'text',
+      'html',
+    ]);
   });
 });
 
@@ -634,13 +935,15 @@ describe('streamHtml pairing', () => {
     if (token.type === 'html') return `<html:${token.text}>`;
     return token.type;
   };
-  const pair = (source: string): ReactNode[] => pairStreamHtml(markdown.lexer(source), renderOne);
+  const pair = (source: string): ReactNode[] =>
+    pairStreamHtml(markdown.lexer(source), renderOne);
   const childrenOf = (element: ReactElement): ReactNode[] =>
     (element.props as { children?: ReactNode }).children as ReactNode[];
   const textOf = (nodes: ReactNode[]): string =>
     nodes
       .map((node) => {
-        if (typeof node === 'string' || typeof node === 'number') return String(node);
+        if (typeof node === 'string' || typeof node === 'number')
+          return String(node);
         if (isValidElement(node)) {
           return `${String(node.type)}[${textOf(childrenOf(node))}]`;
         }
@@ -655,7 +958,9 @@ describe('streamHtml pairing', () => {
     const paragraph = nodes[0] as ReactElement;
     expect(textOf(childrenOf(paragraph))).toBe('hi|span[br|more]|span[br|and]');
     const spans = childrenOf(paragraph).filter(isValidElement);
-    expect(spans.map((span) => (span.props as { className?: string }).className)).toEqual([
+    expect(
+      spans.map((span) => (span.props as { className?: string }).className),
+    ).toEqual([
       'markdown-stream-delta markdown-stream-delta--a',
       'markdown-stream-delta markdown-stream-delta--b',
     ]);
@@ -665,16 +970,22 @@ describe('streamHtml pairing', () => {
     const nodes = pair(
       'before\n<div class="markdown-stream-delta markdown-stream-delta--a markdown-stream-delta-block">\n\n# Heading\n</div>',
     );
-    expect(nodes.map((node) => (isValidElement(node) ? node.type : 'text'))).toEqual(['div', 'div']);
+    expect(
+      nodes.map((node) => (isValidElement(node) ? node.type : 'text')),
+    ).toEqual(['div', 'div']);
     const div = nodes[1] as ReactElement;
-    expect((div.props as { className?: string }).className).toContain('markdown-stream-delta-block');
+    expect((div.props as { className?: string }).className).toContain(
+      'markdown-stream-delta-block',
+    );
     expect(textOf(childrenOf(div))).toBe('space|div[Heading]');
   });
 
   it('leaves unmatched wrappers as plain html tokens (graceful degradation)', () => {
     // The open tag sits in the first paragraph, the close in the list item:
     // neither pairs, and the text stays intact.
-    const nodes = pair('line1<span class="markdown-stream-delta markdown-stream-delta--a">\n- item</span>');
+    const nodes = pair(
+      'line1<span class="markdown-stream-delta markdown-stream-delta--a">\n- item</span>',
+    );
     expect(textOf(nodes)).toBe(
       'div[line1|<html:<span class="markdown-stream-delta markdown-stream-delta--a">>]|list',
     );

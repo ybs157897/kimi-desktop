@@ -27,7 +27,7 @@ export function ImageLightbox({ src, name, onClose }: ImageLightboxProps) {
       aria-modal="true"
       aria-label={name}
       tabIndex={-1}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(0_0_0/0.78)] backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--gray-1000)_78%,transparent)] backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -39,14 +39,14 @@ export function ImageLightbox({ src, name, onClose }: ImageLightboxProps) {
           className="max-h-[72vh] max-w-full rounded-lg object-contain shadow-[var(--shadow-xl)]"
         />
         <div className="mt-3 flex min-w-0 items-center gap-3">
-          <span className="max-w-[40vw] truncate text-[12px] text-[rgb(255_255_255/0.8)]">
+          <span className="max-w-[40vw] truncate text-[12px] text-[color-mix(in_srgb,var(--gray-0)_80%,transparent)]">
             {name}
           </span>
           <button
             type="button"
             aria-label="关闭预览"
             onClick={onClose}
-            className="ui-pressable shrink-0 rounded-md border border-[rgb(255_255_255/0.2)] bg-[rgb(255_255_255/0.06)] px-2.5 py-1 text-[11px] text-[rgb(255_255_255/0.9)] hover:bg-[rgb(255_255_255/0.14)]"
+            className="ui-pressable shrink-0 rounded-md border border-[color-mix(in_srgb,var(--gray-0)_20%,transparent)] bg-[color-mix(in_srgb,var(--gray-0)_6%,transparent)] px-2.5 py-1 text-[11px] text-[color-mix(in_srgb,var(--gray-0)_90%,transparent)] hover:bg-[color-mix(in_srgb,var(--gray-0)_14%,transparent)]"
           >
             关闭
           </button>

@@ -5,7 +5,10 @@ import { SyncDescriptor } from '#/_base/di/descriptors';
 import { DisposableStore } from '#/_base/di/lifecycle';
 import { TestInstantiationService } from '#/_base/di/test';
 import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory';
-import { DEFAULT_SUBAGENT_TIMEOUT_MS } from '#/session/subagent/configSection';
+import {
+  AGENT_MODELS_SECTION,
+  DEFAULT_SUBAGENT_TIMEOUT_MS,
+} from '#/session/subagent/configSection';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
 import { ISessionSwarmService, type SessionSwarmRunResult, type SessionSwarmTask } from '#/session/swarm/sessionSwarm';
 import { IAgentSystemReminderService } from '#/agent/systemReminder/systemReminder';
@@ -95,10 +98,12 @@ function stubConfig(section?: {
   timeoutMs?: number;
   model?: string;
   defaultEffort?: string;
+  agentModels?: Record<string, string>;
 }): IConfigService {
   return {
     _serviceBrand: undefined,
-    get: () => section,
+    get: (domain: string) =>
+      domain === AGENT_MODELS_SECTION ? section?.agentModels : section,
   } as unknown as IConfigService;
 }
 
@@ -832,8 +837,62 @@ describe('AgentSwarmTool', () => {
     expect(host.swarmService.run).toHaveBeenCalledWith(
       expect.objectContaining({
         tasks: [
-          expect.objectContaining({ binding: { model: SECONDARY_DERIVED_MODEL_ID, thinking: 'low' } }),
-          expect.objectContaining({ binding: { model: SECONDARY_DERIVED_MODEL_ID, thinking: 'low' } }),
+          expect.objectContaining({
+            binding: expect.objectContaining({
+              model: SECONDARY_DERIVED_MODEL_ID,
+              thinking: 'low',
+            }),
+          }),
+          expect.objectContaining({
+            binding: expect.objectContaining({
+              model: SECONDARY_DERIVED_MODEL_ID,
+              thinking: 'low',
+            }),
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('uses the model assigned to the selected agent profile without the secondary-model experiment', async () => {
+    const host = mockSwarmHost();
+    const tool = new AgentSwarmTool(
+      host.swarmService,
+      makeAgentScopeContext({ agentId: host.callerAgentId, agentScope: '' }),
+      mockSwarmMode(),
+      stubConfig({ agentModels: { coder: 'provider/coder' } }),
+      stubFlag(false),
+      stubSwarmCatalog(),
+      stubCallerProfile({ modelAlias: 'main-model', thinkingLevel: 'high' }),
+      stubModelCatalog(),
+    );
+
+    await executeTool(
+      tool,
+      context({
+        description: 'Review files',
+        prompt_template: 'Review {{item}}',
+        items: ['src/a.ts', 'src/b.ts'],
+      }),
+    );
+
+    expect(host.swarmService.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tasks: [
+          expect.objectContaining({
+            binding: expect.objectContaining({
+              model: 'provider/coder',
+              thinking: undefined,
+              source: { kind: 'profile', profileName: 'coder' },
+            }),
+          }),
+          expect.objectContaining({
+            binding: expect.objectContaining({
+              model: 'provider/coder',
+              thinking: undefined,
+              source: { kind: 'profile', profileName: 'coder' },
+            }),
+          }),
         ],
       }),
     );
@@ -862,8 +921,12 @@ describe('AgentSwarmTool', () => {
     expect(host.swarmService.run).toHaveBeenCalledWith(
       expect.objectContaining({
         tasks: [
-          expect.objectContaining({ binding: { model: 'main-model', thinking: 'high' } }),
-          expect.objectContaining({ binding: { model: 'main-model', thinking: 'high' } }),
+          expect.objectContaining({
+            binding: expect.objectContaining({ model: 'main-model', thinking: 'high' }),
+          }),
+          expect.objectContaining({
+            binding: expect.objectContaining({ model: 'main-model', thinking: 'high' }),
+          }),
         ],
       }),
     );

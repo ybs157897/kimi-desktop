@@ -10,7 +10,8 @@
 export const DESKTOP_GET_CONNECTION_CHANNEL = 'kimi-desktop:get-connection';
 
 /** IPC channel name for `window.kimiDesktop.readClipboardImage()`. */
-export const DESKTOP_READ_CLIPBOARD_IMAGE_CHANNEL = 'kimi-desktop:read-clipboard-image';
+export const DESKTOP_READ_CLIPBOARD_IMAGE_CHANNEL =
+  'kimi-desktop:read-clipboard-image';
 
 /** IPC channel name for `window.kimiDesktop.openExternal()`. */
 export const DESKTOP_OPEN_EXTERNAL_CHANNEL = 'kimi-desktop:open-external';
@@ -50,4 +51,6 @@ export interface KimiDesktopBridge {
    * `shell.openExternal`; http/https only).
    */
   openExternal(url: string): Promise<void>;
+  /** Manage locally persisted expert-team plugin packages. */
+  readonly expertTeams: import('./expertTeams').KimiDesktopExpertTeamBridge;
 }

@@ -56,7 +56,9 @@ export function profilesFromDiscovery(
   basePrompt: (context: AgentProfileContext) => SystemPromptRenderResult,
 ): AgentProfileContribution {
   return {
-    profiles: result.agents.map((definition) => agentProfileFromFile(definition, basePrompt)),
+    profiles: result.agents
+      .filter((definition) => definition.enabled)
+      .map((definition) => agentProfileFromFile(definition, basePrompt)),
     skipped: result.skipped,
     scannedRoots: result.scannedRoots,
   };

@@ -89,6 +89,7 @@ import {
 import { applyPrintModeConfigDefaults } from '#/agent/task/printDefaults';
 import '#/session/subagent/configSection';
 import {
+  AGENT_MODELS_SECTION,
   DEFAULT_SUBAGENT_TIMEOUT_MS,
   resolveSecondaryModel,
   resolveSubagentBinding,
@@ -96,6 +97,7 @@ import {
   SUBAGENT_SECTION,
   SUBAGENT_TIMEOUT_ENV,
   subagentDisplayModel,
+  type AgentModelsConfig,
   type SubagentConfig,
   wrapSubagentModelError,
 } from '#/session/subagent/configSection';
@@ -1730,30 +1732,39 @@ describe('subagent config section', () => {
 
   it('resolves the spawn binding: secondary by default, primary on request, inherit otherwise', async () => {
     const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+    const options = (requested?: 'primary' | 'secondary') => ({
+      own,
+      profileName: 'coder',
+      requested,
+    });
 
     const noModel = await createConfig({});
-    expect(resolveSubagentBinding(noModel.config, secondaryModelFlags(), own)).toEqual({
+    expect(resolveSubagentBinding(noModel.config, secondaryModelFlags(), options())).toEqual({
       model: 'provider/main',
       thinking: 'medium',
       displayModel: 'provider/main',
+      source: { kind: 'caller' },
     });
-    expect(resolveSubagentBinding(noModel.config, secondaryModelFlags(), own, 'secondary')).toEqual({
+    expect(resolveSubagentBinding(noModel.config, secondaryModelFlags(), options('secondary'))).toEqual({
       model: 'provider/main',
       thinking: 'medium',
       displayModel: 'provider/main',
+      source: { kind: 'caller' },
     });
     noModel.disposables.dispose();
 
     const withModel = await createConfig({}, '[secondary_model]\nmodel = "provider/secondary"\n');
-    expect(resolveSubagentBinding(withModel.config, secondaryModelFlags(), own)).toEqual({
+    expect(resolveSubagentBinding(withModel.config, secondaryModelFlags(), options())).toEqual({
       model: 'provider/secondary',
       thinking: undefined,
       displayModel: 'provider/secondary',
+      source: { kind: 'secondary' },
     });
-    expect(resolveSubagentBinding(withModel.config, secondaryModelFlags(), own, 'primary')).toEqual({
+    expect(resolveSubagentBinding(withModel.config, secondaryModelFlags(), options('primary'))).toEqual({
       model: 'provider/main',
       thinking: 'medium',
       displayModel: 'provider/main',
+      source: { kind: 'caller' },
     });
     withModel.disposables.dispose();
 
@@ -1761,15 +1772,17 @@ describe('subagent config section', () => {
       {},
       '[secondary_model]\nmodel = "provider/secondary"\ndefault_effort = "low"\n',
     );
-    expect(resolveSubagentBinding(withEffort.config, secondaryModelFlags(), own)).toEqual({
+    expect(resolveSubagentBinding(withEffort.config, secondaryModelFlags(), options())).toEqual({
       model: SECONDARY_DERIVED_MODEL_ID,
       thinking: 'low',
       displayModel: 'provider/secondary',
+      source: { kind: 'secondary' },
     });
-    expect(resolveSubagentBinding(withEffort.config, secondaryModelFlags(), own, 'primary')).toEqual({
+    expect(resolveSubagentBinding(withEffort.config, secondaryModelFlags(), options('primary'))).toEqual({
       model: 'provider/main',
       thinking: 'medium',
       displayModel: 'provider/main',
+      source: { kind: 'caller' },
     });
     withEffort.disposables.dispose();
 
@@ -1777,10 +1790,11 @@ describe('subagent config section', () => {
       {},
       '[secondary_model]\nmodel = "provider/secondary"\nmax_output_size = 8192\n',
     );
-    expect(resolveSubagentBinding(withFactPatch.config, secondaryModelFlags(), own)).toEqual({
+    expect(resolveSubagentBinding(withFactPatch.config, secondaryModelFlags(), options())).toEqual({
       model: SECONDARY_DERIVED_MODEL_ID,
       thinking: undefined,
       displayModel: 'provider/secondary',
+      source: { kind: 'secondary' },
     });
     withFactPatch.disposables.dispose();
   });
@@ -1792,10 +1806,16 @@ describe('subagent config section', () => {
       '[secondary_model]\nmodel = "provider/secondary"\ndefault_effort = "low"\n',
     );
 
-    expect(resolveSubagentBinding(config, secondaryModelFlags(false), own)).toEqual({
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(false), {
+        own,
+        profileName: 'coder',
+      }),
+    ).toEqual({
       model: 'provider/main',
       thinking: 'medium',
       displayModel: 'provider/main',
+      source: { kind: 'caller' },
     });
 
     disposables.dispose();
@@ -1822,10 +1842,16 @@ describe('subagent config section', () => {
   it('normalizes an inherited derived alias on the caller-fallback branch', async () => {
     const withRecipe = await createConfig({}, '[secondary_model]\nmodel = "provider/secondary"\n');
     const own = { modelAlias: SECONDARY_DERIVED_MODEL_ID, thinkingLevel: 'medium' };
-    expect(resolveSubagentBinding(withRecipe.config, secondaryModelFlags(false), own)).toEqual({
+    expect(
+      resolveSubagentBinding(withRecipe.config, secondaryModelFlags(false), {
+        own,
+        profileName: 'coder',
+      }),
+    ).toEqual({
       model: SECONDARY_DERIVED_MODEL_ID,
       thinking: 'medium',
       displayModel: 'provider/secondary',
+      source: { kind: 'caller' },
     });
     withRecipe.disposables.dispose();
   });
@@ -1837,7 +1863,16 @@ describe('subagent config section', () => {
       { details: { model: 'provider/bad' } },
     );
 
-    const result = wrapSubagentModelError(cause, 'provider/bad', 'provider/main');
+    const result = wrapSubagentModelError(
+      cause,
+      {
+        model: 'provider/bad',
+        thinking: undefined,
+        displayModel: 'provider/bad',
+        source: { kind: 'secondary' },
+      },
+      'provider/main',
+    );
 
     expect(toErrorPayload(result)).toMatchObject({
       code: ErrorCodes.CONFIG_INVALID,
@@ -1862,14 +1897,89 @@ describe('subagent config section', () => {
       ErrorCodes.CONFIG_INVALID,
       'Model "provider/secondary" must declare a wire protocol (config: models.<id>.protocol).',
     );
-    expect(wrapSubagentModelError(malformed, 'provider/secondary', 'provider/main')).toBe(malformed);
+    const binding = {
+      model: 'provider/secondary',
+      thinking: undefined,
+      displayModel: 'provider/secondary',
+      source: { kind: 'secondary' } as const,
+    };
+    expect(wrapSubagentModelError(malformed, binding, 'provider/main')).toBe(malformed);
 
     const unrelated = new Error2(
       ErrorCodes.CONFIG_INVALID,
       'Model "provider/other" is not configured in config.toml.',
       { details: { model: 'provider/other' } },
     );
-    expect(wrapSubagentModelError(unrelated, 'provider/secondary', 'provider/main')).toBe(unrelated);
+    expect(wrapSubagentModelError(unrelated, binding, 'provider/main')).toBe(unrelated);
+  });
+
+  it('persists exact model assignments per agent profile and lets an explicit choice override them', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[agent_models]\ncoder = "provider/coder"\nexplore = "provider/explore"\n',
+    );
+    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(false), {
+        own,
+        profileName: 'coder',
+      }),
+    ).toEqual({
+      model: 'provider/coder',
+      thinking: undefined,
+      displayModel: 'provider/coder',
+      source: { kind: 'profile', profileName: 'coder' },
+    });
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), {
+        own,
+        profileName: 'coder',
+        requested: 'primary',
+      }),
+    ).toEqual({
+      model: 'provider/main',
+      thinking: 'medium',
+      displayModel: 'provider/main',
+      source: { kind: 'caller' },
+    });
+
+    await config.set(AGENT_MODELS_SECTION, { explore: 'provider/new-explore' });
+    expect(config.inspect<AgentModelsConfig>(AGENT_MODELS_SECTION).userValue).toEqual({
+      explore: 'provider/new-explore',
+    });
+    disposables.dispose();
+  });
+
+  it('identifies a stale per-profile model assignment in the coded error', () => {
+    const cause = new Error2(
+      ErrorCodes.CONFIG_INVALID,
+      'Model "provider/missing" is not configured in config.toml.',
+      { details: { model: 'provider/missing' } },
+    );
+    const result = wrapSubagentModelError(
+      cause,
+      {
+        model: 'provider/missing',
+        thinking: undefined,
+        displayModel: 'provider/missing',
+        source: { kind: 'profile', profileName: 'explore' },
+      },
+      'provider/main',
+    );
+
+    expect(toErrorPayload(result)).toMatchObject({
+      code: ErrorCodes.CONFIG_INVALID,
+      message: expect.stringContaining('[agent_models].explore'),
+      details: {
+        model: 'provider/missing',
+        agentModel: 'provider/missing',
+        agentModelConfig: {
+          section: AGENT_MODELS_SECTION,
+          profileName: 'explore',
+        },
+      },
+    });
   });
 });
 

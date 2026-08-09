@@ -26,7 +26,9 @@
     "dist:dir": "electron-vite build && electron-builder --dir"
   },
   "dependencies": {
+    "@esotericsoftware/spine-pixi-v8": "~4.2.0",
     "@moonshot-ai/kap-server": "workspace:^",
+    "@moonshot-ai/klient": "workspace:^",
     "@moonshot-ai/protocol": "workspace:^",
     "@moonshot-ai/transcript": "workspace:^",
     "@phosphor-icons/react": "^2.1.10",
@@ -37,6 +39,7 @@
     "katex": "^0.18.1",
     "marked": "^18.0.9",
     "node-pty": "^1.1.0",
+    "pixi.js": "^8.18.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "shiki": "^4.4.2",

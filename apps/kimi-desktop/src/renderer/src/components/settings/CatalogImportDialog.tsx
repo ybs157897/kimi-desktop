@@ -7,6 +7,8 @@
 
 import { useRef, useState } from 'react';
 
+import { X } from '@phosphor-icons/react';
+
 import type { CatalogProviderItem } from '#/lib/api';
 import { useCatalogProviders, useImportCatalogProvider } from '#/lib/queries';
 import { catalogProviderFilter } from '#/lib/providers';
@@ -14,12 +16,13 @@ import { useModalDialog } from '#/lib/useModalDialog';
 
 export interface CatalogImportDialogProps {
   readonly onClose: () => void;
+  readonly onImported?: (providerId: string) => void;
 }
 
 const inputClass =
-  'min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-2 py-1 text-[11px] text-[var(--color-text-foreground)] outline-none focus:border-[var(--color-border-heavy)]';
+  'min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-2 py-1 text-[11px] text-[var(--color-text-foreground)] outline-none focus:border-[var(--color-border-heavy)]';
 
-export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
+export function CatalogImportDialog({ onClose, onImported }: CatalogImportDialogProps) {
   const catalog = useCatalogProviders();
   const importCatalog = useImportCatalogProvider();
   const [query, setQuery] = useState('');
@@ -44,7 +47,12 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
         api_key: apiKey.trim() === '' ? undefined : apiKey.trim(),
         base_url: baseUrl.trim() === '' ? undefined : baseUrl.trim(),
       },
-      { onSuccess: () => onClose() },
+      {
+        onSuccess: ({ provider }) => {
+          onImported?.(provider.id);
+          onClose();
+        },
+      },
     );
   };
 
@@ -62,9 +70,9 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
         aria-label="从 models.dev 目录导入"
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
-        className="flex w-[560px] max-h-[85vh] flex-col overflow-hidden rounded-xl border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-2xl"
+        className="flex w-[560px] max-h-[85vh] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-heavy)] bg-[var(--color-background-surface)] shadow-[var(--shadow-floating-panel)]"
       >
-        <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-4 py-2.5">
+        <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-4 py-2">
           <span className="text-[13px] font-medium text-[var(--color-text-foreground)]">
             从 models.dev 目录导入
           </span>
@@ -72,9 +80,9 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
             type="button"
             aria-label="关闭"
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+            className="rounded-[var(--radius-sm)] p-1 text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
           >
-            ✕
+            <X size={14} weight="bold" aria-hidden />
           </button>
         </div>
 
@@ -91,13 +99,13 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1">
           {catalog.isLoading ? (
-            <div className="px-3 py-3 text-[12px] text-[var(--gray-500)]">加载目录…</div>
+            <div className="px-3 py-3 text-[12px] text-[var(--color-text-tertiary)]">加载目录…</div>
           ) : catalog.isError ? (
-            <div className="px-3 py-3 text-[12px] text-[var(--red-400)]">
+            <div className="px-3 py-3 text-[12px] text-[var(--color-text-danger)]">
               目录不可用{catalog.error instanceof Error ? `：${catalog.error.message}` : ''}
             </div>
           ) : items.length === 0 ? (
-            <div className="px-3 py-3 text-[12px] text-[var(--gray-500)]">没有匹配的 Provider</div>
+            <div className="px-3 py-3 text-[12px] text-[var(--color-text-tertiary)]">没有匹配的 Provider</div>
           ) : (
             <ul>
               {items.map((item) => (
@@ -111,21 +119,21 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
                       setBaseUrl('');
                     }}
                     title={item.rejected ? item.reject_reason ?? '该条目当前不可导入' : undefined}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-[var(--color-list-hover)] disabled:cursor-not-allowed disabled:opacity-45 ${
+                    className={`flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 py-2 text-left hover:bg-[var(--color-list-hover)] disabled:cursor-not-allowed disabled:opacity-45 ${
                       selected?.id === item.id ? 'bg-[var(--color-list-active)]' : ''
                     }`}
                   >
                     <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--color-text-foreground)]">
                       {item.name}
                     </span>
-                    <span className="shrink-0 font-mono text-[10px] text-[var(--gray-500)]">{item.id}</span>
+                    <span className="shrink-0 font-mono text-[10px] text-[var(--color-text-tertiary)]">{item.id}</span>
                     {item.wire_type !== null ? (
-                      <span className="shrink-0 rounded px-1 py-0.5 text-[10px] text-[var(--color-text-secondary)]">
+                      <span className="shrink-0 rounded-[var(--radius-xs)] px-1 py-0.5 text-[10px] text-[var(--color-text-secondary)]">
                         {item.wire_type}
                       </span>
                     ) : null}
                     {item.rejected ? (
-                      <span className="shrink-0 rounded px-1 py-0.5 text-[10px] text-[var(--color-text-danger)]">
+                      <span className="shrink-0 rounded-[var(--radius-xs)] px-1 py-0.5 text-[10px] text-[var(--color-text-danger)]">
                         不可用
                       </span>
                     ) : null}
@@ -137,9 +145,9 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
         </div>
 
         {selected !== null ? (
-          <div className="space-y-2.5 border-t border-[var(--color-border-light)] px-4 py-3">
+          <div className="space-y-3 border-t border-[var(--color-border-light)] px-4 py-3">
             <div className="flex items-center gap-2">
-              <label className="w-20 shrink-0 text-[11px] text-[var(--gray-500)]">API Key</label>
+              <label className="w-20 shrink-0 text-[11px] text-[var(--color-text-tertiary)]">API Key</label>
               <input
                 type="password"
                 value={apiKey}
@@ -151,7 +159,7 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
             </div>
             {selected.needs_base_url ? (
               <div className="flex items-center gap-2">
-                <label className="w-20 shrink-0 text-[11px] text-[var(--gray-500)]">Base URL</label>
+                <label className="w-20 shrink-0 text-[11px] text-[var(--color-text-tertiary)]">Base URL</label>
                 <input
                   type="text"
                   value={baseUrl}
@@ -162,12 +170,12 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
                 />
               </div>
             ) : null}
-            <p className="text-[10px] leading-4 text-[var(--gray-500)]">
+            <p className="text-[10px] leading-4 text-[var(--color-text-tertiary)]">
               导入 {selected.name} 的全部 {selected.models.length} 个目录模型，并注册为本地
               Provider。
             </p>
             {importCatalog.isError ? (
-              <p className="text-[11px] text-[var(--red-400)]">
+              <p className="text-[11px] text-[var(--color-text-danger)]">
                 {importCatalog.error instanceof Error ? importCatalog.error.message : '导入失败'}
               </p>
             ) : null}
@@ -175,7 +183,7 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-md px-3 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+                className="rounded-[var(--radius-sm)] px-3 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
               >
                 取消
               </button>
@@ -183,7 +191,7 @@ export function CatalogImportDialog({ onClose }: CatalogImportDialogProps) {
                 type="button"
                 onClick={doImport}
                 disabled={!canImport}
-                className="rounded-md bg-[var(--gray-1000)] px-3 py-1 text-[12px] font-medium text-[var(--color-text-foreground)] hover:bg-[var(--gray-900)] disabled:opacity-40"
+                className="rounded-[var(--radius-sm)] bg-[var(--color-button-primary-background)] px-3 py-1 text-[12px] font-medium text-[var(--color-button-primary-foreground)] hover:brightness-110 disabled:opacity-40"
               >
                 {pending ? '导入中…' : '导入'}
               </button>
