@@ -80,6 +80,7 @@ export interface ChatViewProps {
   /** Report the live plan-panel summary (main agent only); `undefined` on
    *  unmount so the shell can drop the stale snapshot. */
   readonly onTranscriptSummary?: (summary: TranscriptSummary | undefined) => void;
+  readonly onOpenModelSettings?: () => void;
 }
 
 /** The live transcript slice the app shell's plan panel renders — plans, the
@@ -106,7 +107,15 @@ interface Channel {
 const noopSubscribe = () => () => {};
 
 export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
-  { sessionId, agentId = 'main', onOpenAgent, onOpenPlanDoc, introPrompt, onTranscriptSummary },
+  {
+    sessionId,
+    agentId = 'main',
+    onOpenAgent,
+    onOpenPlanDoc,
+    introPrompt,
+    onTranscriptSummary,
+    onOpenModelSettings,
+  },
   ref,
 ) {
   const { api } = useConnection();
@@ -367,6 +376,7 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
           sessionId={sessionId}
           agentId={agentId}
           empty={loaded && state.items.length === 0}
+          onOpenModelSettings={onOpenModelSettings}
         />
       )}
     </div>

@@ -1,7 +1,7 @@
 /**
  * Desktop-owned expert-team package compiler and lifecycle facade.
  *
- * Canonical packages live under `<KIMI_CODE_HOME>/experts`; the engine only
+ * Canonical packages live under `<KIMI_DESKTOP_HOME>/experts`; the engine only
  * sees the standard Kimi plugin produced here. No renderer filesystem access
  * and no expert-team REST surface are needed.
  */

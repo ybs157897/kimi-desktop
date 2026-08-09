@@ -366,7 +366,11 @@ export function Settings({
               title="模型设置"
               description="管理默认模型和自定义模型服务商，配置后可在聊天时选择使用。"
               action={
-                <label className="flex items-center gap-2 pt-0.5">
+                // Deliberately NOT a <label>: wrapping the ModelSelect in a
+                // label re-dispatches a click to the trigger button whenever a
+                // menu item is picked (label activation behavior), reopening
+                // the popover right after every selection.
+                <div className="flex items-center gap-2 pt-0.5">
                   <span className="shrink-0 text-[12px] text-[var(--color-text-tertiary)]">
                     新会话默认模型
                   </span>
@@ -380,9 +384,11 @@ export function Settings({
                     }
                     disabled={patchPending}
                     emptyLabel="未设置"
+                    placement="below"
+                    submenuSide="left"
                     className="composer-menu w-52 max-w-none justify-between rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] px-2.5"
                   />
-                </label>
+                </div>
               }
             />
             <ProviderManager onModalOpenChange={setChildModalOpen} />

@@ -41,6 +41,14 @@ body {
   -webkit-app-region: no-drag;
 }
 
+/* Window Controls Overlay exposes the Windows caption-button exclusion zone
+   through this environment variable. Keeping the renderer header inside the
+   safe width prevents session actions from sliding underneath those buttons;
+   other platforms use the 100% fallback. */
+.app-window-titlebar {
+  width: env(titlebar-area-width, 100%);
+}
+
 /* Shared interaction primitives. Motion is deliberately limited to feedback
    and occasional anchored surfaces; session switches and shortcuts stay
    instant because they are high-frequency actions. */

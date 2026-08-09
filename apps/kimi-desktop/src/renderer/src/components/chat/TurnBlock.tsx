@@ -69,7 +69,12 @@ export function TurnBlock({
   plans,
   hidePrompt = false,
 }: TurnBlockProps) {
-  const [processExpanded, setProcessExpanded] = useState(false);
+  // Live turns open the processing section by default so streaming tool calls
+  // / thinking stay visible while the agent works; settled turns default back
+  // to collapsed unless the user explicitly toggled (ThinkingFrame idiom).
+  const [userExpanded, setUserExpanded] = useState<boolean | undefined>(undefined);
+  const live = turn.state === 'queued' || turn.state === 'running';
+  const processExpanded = userExpanded ?? live;
   const resultFrameId = resultTextFrameId(turn);
   const processFrameCount = turn.steps.reduce(
     (count, step) =>
@@ -97,7 +102,7 @@ export function TurnBlock({
             expanded={processExpanded}
             state={turn.state}
             durationMs={turn.durationMs}
-            onToggle={() => setProcessExpanded((value) => !value)}
+            onToggle={() => setUserExpanded((value) => (value === undefined ? !live : !value))}
           />
         ) : null}
         {turn.steps.map((step) => (

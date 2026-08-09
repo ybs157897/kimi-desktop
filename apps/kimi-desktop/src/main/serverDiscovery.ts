@@ -36,11 +36,13 @@ export interface LiveServerInfo {
   readonly hostVersion?: string;
 }
 
-/** `KIMI_CODE_HOME` env, else `~/.kimi-code`. */
-export function resolveKimiHomeDir(env: NodeJS.ProcessEnv = process.env): string {
-  const fromEnv = env['KIMI_CODE_HOME'];
+export const KIMI_DESKTOP_HOME_ENV = 'KIMI_DESKTOP_HOME';
+
+/** `KIMI_DESKTOP_HOME` env, else `~/.kimi-desktop`. */
+export function resolveDesktopHomeDir(env: NodeJS.ProcessEnv = process.env): string {
+  const fromEnv = env[KIMI_DESKTOP_HOME_ENV];
   if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
-  return join(homedir(), '.kimi-code');
+  return join(homedir(), '.kimi-desktop');
 }
 
 /** `process.kill(pid, 0)` probe — same semantics as the server's registry:
@@ -120,7 +122,7 @@ export async function readLiveInstances(
  * read it separately with {@link readServerToken} (same home dir).
  */
 export async function findLiveServer(
-  homeDir = resolveKimiHomeDir(),
+  homeDir = resolveDesktopHomeDir(),
 ): Promise<LiveServerInfo | null> {
   const instances = await readLiveInstances(homeDir);
   return instances[0] ?? null;

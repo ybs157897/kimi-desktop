@@ -35,7 +35,10 @@
  * current-goal read hold real cross-domain adaptation);
  * the route forwards each adapter result verbatim, mirroring v1's thin handler.
  * `create`, `fork`, and child creation publish `event.session.created` on the
- * core event bus, matching v1.
+ * core event bus, matching v1. `create` also applies a present
+ * `agent_config` through `ISessionLegacyService.updateProfile` (v1 bound the
+ * create-time model via `core.rpc.createSession`); the wire response keeps the
+ * v1 `agent_config:{model:''}` placeholder either way.
  *
  * `GET /sessions/{id}/warnings` surfaces session-level notices in the v1
  * `{ code, message, severity }` wire shape: the `agents-md-oversized` warning
@@ -334,6 +337,14 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
           await handle.accessor.get(ISessionMetadata).setTitle(body.title);
         }
         const meta = await handle.accessor.get(ISessionMetadata).read();
+        if (body.agent_config !== undefined) {
+          // v1 parity: bind the create-time agent config (model / permission /
+          // plan / …) on the fresh session — the composer relies on it so the
+          // session's model does not silently fall back to the engine default.
+          await core.accessor
+            .get(ISessionLegacyService)
+            .updateProfile(meta.id, { agent_config: body.agent_config });
+        }
         const session = toWireSession(
           { ...meta, workspaceId: touched.id },
           touched.root,

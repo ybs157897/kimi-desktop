@@ -1,8 +1,7 @@
 /**
  * StatusBar — the Codex-style bottom status strip (TUI footer equivalent):
  * model + thinking effort on the left, git branch + context usage on the
- * right. The model rides the session record (`useSession`, events-merged by
- * the activity socket); thinking and context ride `useSessionStatus` (REST
+ * right. Model, thinking and context all ride `useSessionStatus` (REST
  * baseline + `agent.status.updated` event merges + 30 s poll fallback); the
  * git branch comes from the v2 session list (`include=git`).
  *
@@ -12,7 +11,7 @@
 
 import { SidebarSimple, TerminalWindow } from '@phosphor-icons/react';
 
-import { useSession, useSessionStatus } from '#/lib/queries';
+import { useSessionStatus } from '#/lib/queries';
 import { formatTokens } from '#/lib/sessionModes';
 
 export interface StatusBarProps {
@@ -40,10 +39,9 @@ export function StatusBar({
   workspaceActive,
   showPanelToggles = true,
 }: StatusBarProps) {
-  const sessionQuery = useSession(sessionId);
   const statusQuery = useSessionStatus(sessionId);
 
-  const model = sessionQuery.data?.agent_config.model;
+  const model = statusQuery.data?.model;
   const thinking = statusQuery.data?.thinking_level;
   const thinkingLabel =
     thinking === 'off'

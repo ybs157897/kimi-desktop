@@ -522,7 +522,7 @@ export function App() {
     <div className="flex h-screen flex-col overflow-hidden bg-[var(--color-background-surface)] text-[var(--color-text-foreground)]">
       {/* -------------------------------------------------- drag region (36px) */}
       <header
-        className="app-drag-region flex shrink-0 items-stretch border-b border-[var(--color-border-light)] bg-[var(--color-background-surface)]"
+        className="app-drag-region app-window-titlebar flex shrink-0 items-stretch border-b border-[var(--color-border-light)] bg-[var(--color-background-surface)]"
         style={{ height: DRAG_REGION_HEIGHT }}
       >
         <div
@@ -711,6 +711,7 @@ export function App() {
                 onOpenAgent={openSideChat}
                 onOpenPlanDoc={openPlanDoc}
                 onTranscriptSummary={setTranscriptSummary}
+                onOpenModelSettings={() => setSettingsOpen(true)}
               />
             ) : (
               <Welcome
@@ -721,6 +722,7 @@ export function App() {
                 newSessionPending={newSessionPending}
                 newSessionError={newSessionError}
                 initialPrompt={newSessionInitialPrompt}
+                onOpenModelSettings={() => setSettingsOpen(true)}
               />
             )}
           </div>

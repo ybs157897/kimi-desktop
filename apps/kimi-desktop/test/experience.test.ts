@@ -55,6 +55,34 @@ import type {
   TranscriptTask,
   TranscriptTurn,
 } from '@moonshot-ai/transcript';
+import {
+  DESKTOP_TITLEBAR_HEIGHT,
+  resolveDesktopWindowChrome,
+} from '../src/shared/windowChrome';
+
+describe('desktop window chrome', () => {
+  it('replaces both visible Windows chrome rows with the renderer title bar', () => {
+    expect(resolveDesktopWindowChrome('win32')).toEqual({
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: '#00000000',
+        symbolColor: '#7c7c7c',
+        height: DESKTOP_TITLEBAR_HEIGHT,
+      },
+      autoHideMenuBar: true,
+      hideMenuBar: true,
+    });
+  });
+
+  it('keeps the existing macOS inset traffic-light title bar', () => {
+    expect(resolveDesktopWindowChrome('darwin')).toEqual({
+      titleBarStyle: 'hiddenInset',
+      titleBarOverlay: undefined,
+      autoHideMenuBar: false,
+      hideMenuBar: false,
+    });
+  });
+});
 
 describe('Codex-style streaming timeline presentation', () => {
   it('removes internal undo and plan revision markers from the visible conversation', () => {

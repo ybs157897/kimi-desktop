@@ -26,7 +26,7 @@ import type { DesktopServerMode, KimiDesktopBridge } from '../../../shared/conne
 export interface ConnectionValue {
   /** Server base URL, e.g. `http://127.0.0.1:58627`. */
   readonly baseUrl: string;
-  /** Bearer token from `<KIMI_CODE_HOME>/server.token`. */
+  /** Bearer token from `<KIMI_DESKTOP_HOME>/server.token`. */
   readonly token: string;
   /** Instance registry id of the attached server. */
   readonly serverId: string;

@@ -347,6 +347,41 @@ describe('server-v2 /api/v1/sessions', () => {
     expect(Number.isNaN(Date.parse(body.data.created_at))).toBe(false);
   });
 
+  it('binds the create-time agent_config model to the fresh session (v1 parity)', async () => {
+    const cwd = home as string;
+    await writeFile(join(cwd, 'config.toml'), [
+      'default_model = "stub"', '', '[providers.stub]', 'type = "openai"',
+      'base_url = "http://127.0.0.1:9999"', 'api_key = "stub"', '',
+      '[models.stub]', 'provider = "stub"', 'model = "stub"', 'max_context_size = 1000', '',
+    ].join('\n'), 'utf-8');
+    // The server hot-reloads config.toml; wait until the catalog has picked
+    // up the stub model so the create-time bind can resolve it.
+    let catalogReady = false;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const { body } = await getJson<{ items?: { model?: string }[] }>('/api/v1/models');
+      if ((body.data.items ?? []).some((item) => item.model === 'stub')) {
+        catalogReady = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(catalogReady).toBe(true);
+    const { body: created } = await postJson<SessionWire>('/api/v1/sessions', {
+      metadata: { cwd },
+      agent_config: { model: 'stub' },
+    });
+    expect(created.code).toBe(0);
+    // The wire response keeps the v1 `agent_config:{model:''}` placeholder;
+    // the binding is observable through the status endpoint.
+    expect(created.data.agent_config).toEqual({ model: '' });
+    const { status, body } = await getJson<{ model?: string }>(
+      `/api/v1/sessions/${created.data.id}/status`,
+    );
+    expect(status).toBe(200);
+    expect(body.code).toBe(0);
+    expect(body.data.model).toBe('stub');
+  });
+
   it('rejects create without cwd or workspace_id (40001)', async () => {
     const { body } = await postJson<null>('/api/v1/sessions', { title: 'no cwd' });
     expect(body.code).toBe(40001);

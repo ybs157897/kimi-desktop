@@ -473,9 +473,11 @@ export function useUpdateSessionProfile(sessionId: string) {
     mutationFn: (body: UpdateSessionProfileRequest) => api.updateSessionProfile(sessionId, body),
     onSuccess: () => {
       // The session record carries agent_config; goal_control writes change
-      // the goal snapshot — refresh both.
+      // the goal snapshot; the status cache feeds the model/thinking reads —
+      // refresh all three.
       void queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
       void queryClient.invalidateQueries({ queryKey: ['goal', sessionId] });
+      void queryClient.invalidateQueries({ queryKey: ['session-status', sessionId] });
     },
   });
 }

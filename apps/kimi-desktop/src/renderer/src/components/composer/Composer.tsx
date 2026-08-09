@@ -44,6 +44,7 @@ import {
   useGoal,
   useModels,
   useSession,
+  useSessionStatus,
   useSkills,
   useSteerPrompt,
   useSubmitPrompt,
@@ -80,6 +81,7 @@ export interface ComposerProps {
   /** True when the transcript has no turns yet — drives the empty-state
    *  placeholder so the words match the moment. */
   readonly empty?: boolean;
+  readonly onOpenModelSettings?: () => void;
 }
 
 /** One staged attachment before it is folded into the prompt content. */
@@ -122,7 +124,12 @@ export function Composer(props: ComposerProps) {
   return <TargetComposer key={target} {...props} />;
 }
 
-function TargetComposer({ sessionId, agentId, empty = false }: ComposerProps) {
+function TargetComposer({
+  sessionId,
+  agentId,
+  empty = false,
+  onOpenModelSettings,
+}: ComposerProps) {
   const { api, baseUrl, token } = useConnection();
   const [editor] = useState<Editor>(() => withReact(createEditor()));
   const [value, setValue] = useState<ComposerNode[]>(createEmptyValue);
@@ -154,13 +161,20 @@ function TargetComposer({ sessionId, agentId, empty = false }: ComposerProps) {
   const config = useConfig();
   const sessionQuery = useSession(sessionId);
   const goalQuery = useGoal(sessionId);
+  const statusQuery = useSessionStatus(sessionId);
   const session = sessionQuery.data;
 
   // Mention candidates: skills for `$` and `/`; workspace files for `@`.
   const skills = useSkills(sessionId);
   const files = useFsList(sessionId, { path: '.', depth: 1, limit: 200 });
 
-  const promptModel = resolvePromptModel(model, session?.agent_config.model, config.data?.default_model);
+  // The wire `Session.agent_config` is a v1-compatible placeholder (always
+  // `model: ''`) — the truthful session model comes from the status endpoint
+  // (rest baseline + `agent.status.updated` event merges + 30 s poll). Without
+  // it, a per-prompt override would silently fall back to the global default
+  // on the very next prompt after the override resets.
+  const sessionModel = statusQuery.data?.model;
+  const promptModel = resolvePromptModel(model, sessionModel, config.data?.default_model);
   const effectiveModel = promptModel ?? '';
   const selectedModel = models.data?.items.find((entry) => entry.model === effectiveModel);
   const supportedEfforts = selectedModel?.support_efforts;
@@ -857,6 +871,7 @@ function TargetComposer({ sessionId, agentId, empty = false }: ComposerProps) {
                     setModel(nextModel);
                   }}
                   disabled={submit.isPending}
+                  onOpenModelSettings={onOpenModelSettings}
                 />
                 {model !== undefined && model !== '' ? (
                   <button

@@ -8,7 +8,8 @@
  * touches the filesystem.
  *
  * Window spec follows the desktop-app design doc: 1280×820, macOS
- * `titleBarStyle: 'hiddenInset'` + vibrancy, traffic lights at {16, 16}.
+ * `titleBarStyle: 'hiddenInset'` + vibrancy, and a Windows controls overlay
+ * that replaces the native title/menu bars with the renderer-owned header.
  */
 
 import { BrowserWindow, Menu, app, clipboard, ipcMain, shell } from 'electron';
@@ -23,6 +24,7 @@ import {
   DESKTOP_OPEN_EXTERNAL_CHANNEL,
   DESKTOP_READ_CLIPBOARD_IMAGE_CHANNEL,
 } from '../shared/connection';
+import { resolveDesktopWindowChrome } from '../shared/windowChrome';
 import {
   EXPERT_TEAM_LIST_CHANNEL,
   EXPERT_TEAM_REMOVE_CHANNEL,
@@ -36,7 +38,7 @@ import { ExpertTeamService } from './expertTeams';
 import {
   findLiveServer,
   readServerToken,
-  resolveKimiHomeDir,
+  resolveDesktopHomeDir,
 } from './serverDiscovery';
 import {
   DesktopServerLifecycle,
@@ -48,10 +50,17 @@ import {
 // Node-compatible require those libraries expect while the server is bundled.
 globalThis.require = createRequire(import.meta.url);
 
+const APP_NAME = 'Kimi Code Desktop';
 const PRELOAD_PATH = join(import.meta.dirname, '../preload/index.mjs');
+const DEVELOPMENT_APP_ICON_PATH = join(app.getAppPath(), 'build', 'icon.png');
+
+// Give Electron APIs the product name in development. The macOS host bundle is
+// still Electron.app until packaging, so its Dock artwork is overridden below.
+app.setName(APP_NAME);
 
 function createWindow(): BrowserWindow {
   const isMac = process.platform === 'darwin';
+  const chrome = resolveDesktopWindowChrome(process.platform);
   const bounds = readWindowBounds();
   const win = new BrowserWindow({
     width: bounds.width,
@@ -59,12 +68,17 @@ function createWindow(): BrowserWindow {
     x: bounds.x,
     y: bounds.y,
     show: false,
-    title: 'Kimi Code Desktop',
-    // macOS: system traffic lights over a vibrancy backdrop — no custom
-    // title bar (mirrors the Codex desktop shell).
-    titleBarStyle: isMac ? 'hiddenInset' : undefined,
+    title: APP_NAME,
+    icon: !app.isPackaged && !isMac ? DEVELOPMENT_APP_ICON_PATH : undefined,
+    // macOS keeps its traffic lights over the renderer header. Windows uses
+    // Window Controls Overlay: the native title strip disappears while the
+    // standard minimize/maximize/close controls remain available at the top
+    // right. The transparent overlay lets the renderer surface show through.
+    titleBarStyle: chrome.titleBarStyle,
+    titleBarOverlay: chrome.titleBarOverlay,
     vibrancy: isMac ? 'menu' : undefined,
     trafficLightPosition: isMac ? { x: 16, y: 16 } : undefined,
+    autoHideMenuBar: chrome.autoHideMenuBar,
     backgroundColor: '#181818',
     webPreferences: {
       preload: PRELOAD_PATH,
@@ -75,6 +89,11 @@ function createWindow(): BrowserWindow {
       sandbox: false,
     },
   });
+
+  // `autoHideMenuBar` alone does not hide a menu that is already visible.
+  // Collapse it immediately on Windows; Alt still exposes the application
+  // menu for keyboard users without reserving a permanent row in the layout.
+  if (chrome.hideMenuBar) win.setMenuBarVisibility(false);
 
   // Persist bounds across moves/resizes so the window reopens where it was
   // last left. Debounced via the timer below.
@@ -103,10 +122,14 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-const WINDOW_BOUNDS_PATH = join(
-  resolveKimiHomeDir(),
-  'desktop-window-bounds.json',
-);
+const DESKTOP_HOME_DIR = resolveDesktopHomeDir();
+
+// The embedded engine and bundled helper scripts still use KIMI_CODE_HOME for
+// a few child-process paths. Scope it to this Electron process so every
+// Desktop-owned artifact stays under the independent Desktop data directory.
+process.env['KIMI_CODE_HOME'] = DESKTOP_HOME_DIR;
+
+const WINDOW_BOUNDS_PATH = join(DESKTOP_HOME_DIR, 'desktop-window-bounds.json');
 
 interface WindowBounds {
   readonly x: number | undefined;
@@ -166,7 +189,7 @@ function writeWindowBounds(bounds: Electron.Rectangle): void {
 const serverLifecycle = new DesktopServerLifecycle(
   {
     mode: resolveDesktopServerMode(),
-    homeDir: resolveKimiHomeDir(),
+    homeDir: DESKTOP_HOME_DIR,
     desktopVersion: app.getVersion(),
   },
   { startServer, findLiveServer, readServerToken },
@@ -174,6 +197,13 @@ const serverLifecycle = new DesktopServerLifecycle(
 let expertTeamService: ExpertTeamService | undefined;
 
 void app.whenReady().then(async () => {
+  // macOS ignores BrowserWindow.icon; development runs must override the Dock
+  // icon explicitly because their host bundle is Electron.app. The packaged
+  // app reads the same artwork from electron-builder's icon.icns instead.
+  if (!app.isPackaged && process.platform === 'darwin') {
+    app.dock?.setIcon(DEVELOPMENT_APP_ICON_PATH);
+  }
+
   ipcMain.handle(DESKTOP_GET_CONNECTION_CHANNEL, () =>
     serverLifecycle.getConnection(),
   );
@@ -210,7 +240,7 @@ void app.whenReady().then(async () => {
 
   const klient = await serverLifecycle.getKlient();
   const expertTeams = new ExpertTeamService(
-    resolveKimiHomeDir(),
+    DESKTOP_HOME_DIR,
     klient === undefined
       ? undefined
       : {
@@ -246,10 +276,10 @@ void app.whenReady().then(async () => {
   // (attach mode or the same embedded server). Mirrors the Codex multi-window
   // pattern; each window is an independent renderer over the same kap-server.
   const isMac = process.platform === 'darwin';
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      role: 'appMenu',
-      submenu: [
+    const template: Electron.MenuItemConstructorOptions[] = [
+      {
+        role: 'appMenu',
+        submenu: [
         { role: 'about', label: 'About Kimi Code Desktop' },
         { type: 'separator' },
         { role: 'services' },

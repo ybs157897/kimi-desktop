@@ -566,7 +566,7 @@ export class ApiClient {
   constructor(
     /** Server base URL, e.g. `http://127.0.0.1:58627` (no trailing slash). */
     readonly baseUrl: string,
-    /** Bearer token from `<KIMI_CODE_HOME>/server.token`; absent → no auth header. */
+    /** Bearer token from `<KIMI_DESKTOP_HOME>/server.token`; absent → no auth header. */
     readonly token?: string,
   ) {}
 

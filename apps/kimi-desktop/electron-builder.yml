@@ -32,6 +32,7 @@ extraMetadata:
   main: out/main/index.js
 
 mac:
+  icon: build/icon.icns
   category: public.app-category.developer-tools
   target:
     - { target: dmg, arch: [arm64, x64] }
@@ -43,15 +44,18 @@ mac:
   darkModeSupport: true
 
 dmg:
+  icon: build/icon.icns
   contents:
     - { x: 130, y: 220 }
     - { x: 410, y: 220, type: link, path: /Applications }
 
 win:
+  icon: build/icon.ico
   target:
     - { target: nsis, arch: [x64] }
 
 linux:
+  icon: build/icon.png
   target:
     - { target: AppImage, arch: [x64] }
   category: Development

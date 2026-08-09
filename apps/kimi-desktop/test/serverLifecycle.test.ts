@@ -7,7 +7,7 @@
  */
 
 import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +20,10 @@ import {
   DesktopServerLifecycle,
   resolveDesktopServerMode,
 } from '../src/main/serverLifecycle';
+import {
+  KIMI_DESKTOP_HOME_ENV,
+  resolveDesktopHomeDir,
+} from '../src/main/serverDiscovery';
 
 const originalMode = process.env[DESKTOP_SERVER_MODE_ENV];
 let realLifecycle: DesktopServerLifecycle | undefined;
@@ -55,6 +59,18 @@ function embeddedRig() {
 }
 
 describe('desktop server lifecycle (owns embedded backend or discovers attach peer)', () => {
+  it('uses an independent Desktop home by default', () => {
+    expect(resolveDesktopHomeDir({ KIMI_CODE_HOME: '/tmp/kimi-code-native' })).toBe(
+      join(homedir(), '.kimi-desktop'),
+    );
+  });
+
+  it('allows the Desktop home to be overridden independently', () => {
+    expect(resolveDesktopHomeDir({ [KIMI_DESKTOP_HOME_ENV]: '/tmp/kimi-desktop' })).toBe(
+      '/tmp/kimi-desktop',
+    );
+  });
+
   it('returns the owned endpoint when embedded mode starts successfully', async () => {
     const { lifecycle, startServer } = embeddedRig();
 

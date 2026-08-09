@@ -1,5 +1,5 @@
 import type { ModelCatalogItem } from '@moonshot-ai/protocol';
-import { CaretDown, CaretRight, Check, CircleHalf, Globe } from '@phosphor-icons/react';
+import { CaretDown, CaretRight, Check, CircleHalf, GearSix, Globe } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { groupModelCatalog, modelCatalogItemId } from '#/lib/modelCatalog';
@@ -21,6 +21,8 @@ export interface ModelSelectProps {
   /** Keep nested provider menus inside narrow settings panes. */
   readonly submenuSide?: 'left' | 'right';
   readonly onOpenChange?: (open: boolean) => void;
+  /** Open the app's model-provider settings. Omit inside Settings itself. */
+  readonly onOpenModelSettings?: () => void;
 }
 
 function entryLabel(entry: ModelCatalogItem): string {
@@ -29,8 +31,8 @@ function entryLabel(entry: ModelCatalogItem): string {
 
 /**
  * Composer model dropdown over the model catalog. The select mirrors the
- * session's effective model — the owner passes `agent_config.model` or the
- * global default — and picking an entry is a per-prompt override only: the
+ * session's effective model — the owner passes the session status model or
+ * the global default — and picking an entry is a per-prompt override only: the
  * owner resets the override after submit, never touching the session or the
  * global default. An effective id absent from the catalog (a provider alias,
  * say) is shown verbatim so the select never falls back to a misleading entry.
@@ -46,6 +48,7 @@ export function ModelSelect({
   placement = 'above',
   submenuSide = 'right',
   onOpenChange,
+  onOpenModelSettings,
 }: ModelSelectProps) {
   const current = value ?? '';
   const list = models ?? [];
@@ -188,6 +191,23 @@ export function ModelSelect({
             <span className="w-3 shrink-0">{current === '' ? <Check size={12} weight="bold" /> : null}</span>
             <span className="min-w-0 flex-1 truncate">{emptyLabel}</span>
           </button>
+          {onOpenModelSettings !== undefined ? (
+            <>
+              <div className="my-1 h-px bg-[var(--color-border-light)]" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  changeOpen(false);
+                  onOpenModelSettings();
+                }}
+                className="flex min-h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+              >
+                <GearSix size={13} weight="regular" className="w-3 shrink-0" aria-hidden />
+                <span className="min-w-0 flex-1 truncate">模型设置</span>
+              </button>
+            </>
+          ) : null}
 
           {activeGroup !== undefined ? (
             <div

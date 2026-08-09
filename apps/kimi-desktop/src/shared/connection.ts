@@ -25,7 +25,7 @@ export interface DesktopConnectionInfo {
   /** Loopback-normalized host (kap-server binds 127.0.0.1). */
   readonly host: string;
   readonly port: number;
-  /** Bearer token read from `<KIMI_CODE_HOME>/server.token`. */
+  /** Bearer token read from `<KIMI_DESKTOP_HOME>/server.token`. */
   readonly token: string;
   /** Instance registry id (`<serverId>.json`), e.g. 'local' or a uuid. */
   readonly serverId: string;

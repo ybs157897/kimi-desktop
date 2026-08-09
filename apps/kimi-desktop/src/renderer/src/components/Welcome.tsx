@@ -38,6 +38,7 @@ export interface WelcomeProps {
   readonly newSessionPending?: boolean;
   readonly newSessionError?: string | null;
   readonly initialPrompt?: string;
+  readonly onOpenModelSettings?: () => void;
 }
 
 /** Empty-session landing page: one greeting and one fully functional composer. */
@@ -48,6 +49,7 @@ export function Welcome({
   newSessionPending = false,
   newSessionError = null,
   initialPrompt = '',
+  onOpenModelSettings,
 }: WelcomeProps) {
   const fsHome = useFsHome();
   const config = useConfig();
@@ -328,6 +330,7 @@ export function Welcome({
                 models={models.data?.items}
                 onChange={(next) => setModel(next === '' ? undefined : next)}
                 disabled={newSessionPending}
+                onOpenModelSettings={onOpenModelSettings}
               />
               {supportedEfforts?.length === 0 ? null : (
                 <ThinkingEffortSelect

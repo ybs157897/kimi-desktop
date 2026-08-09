@@ -219,8 +219,10 @@ export function Timeline({
         })}
       </div>
       {/* Floating "jump to latest": appears when the viewport drifts off the
-          bottom (so streaming follow is suspended); smooth-scrolls back. */}
-      {!atBottom && items.length > 0 ? (
+          bottom (so streaming follow is suspended); smooth-scrolls back.
+          Main thread only — child transcripts open at the top and never
+          follow the bottom, so the affordance would only ever cover content. */}
+      {variant !== 'agent' && !atBottom && items.length > 0 ? (
         <button
           type="button"
           onClick={scrollToBottom}
