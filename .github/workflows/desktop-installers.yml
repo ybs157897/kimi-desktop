@@ -1,0 +1,127 @@
+# Build Kimi Code Desktop installers (macOS DMG/ZIP + Windows NSIS) and,
+# on a `desktop-v*` tag, publish them as a GitHub Release.
+#
+# Signing is secrets-driven and off by default:
+#   - macOS: set APPLE_CERTIFICATE_P12 / APPLE_CERTIFICATE_PASSWORD /
+#     MAC_IDENTITY_NAME (cert Common Name) to sign, plus APPLE_API_KEY /
+#     APPLE_API_KEY_ID / APPLE_API_ISSUER to notarize. The identity overrides
+#     the `identity: null` in electron-builder.yml only in CI, so local
+#     `pnpm dist` stays unsigned.
+#   - Windows: set WINDOWS_CERTIFICATE_P12 / WINDOWS_CERTIFICATE_PASSWORD;
+#     electron-builder signs automatically when CSC_LINK is present.
+# Without any secrets the workflow produces unsigned installers.
+
+name: Desktop Installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'desktop-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos:
+    name: macOS (DMG + ZIP)
+    runs-on: macos-15
+    env:
+      CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+      CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      MAC_IDENTITY_NAME: ${{ secrets.MAC_IDENTITY_NAME }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build renderer and main bundles
+        run: pnpm --filter @moonshot-ai/kimi-desktop build
+
+      - name: Package unsigned installers
+        if: env.MAC_IDENTITY_NAME == ''
+        run: pnpm --filter @moonshot-ai/kimi-desktop exec electron-builder
+
+      - name: Package signed + notarized installers
+        if: env.MAC_IDENTITY_NAME != ''
+        run: pnpm --filter @moonshot-ai/kimi-desktop exec electron-builder -c.mac.identity="$MAC_IDENTITY_NAME" -c.mac.notarize=true
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: kimi-desktop-macos
+          retention-days: 14
+          path: |
+            apps/kimi-desktop/release/*.dmg
+            apps/kimi-desktop/release/*.zip
+          if-no-files-found: error
+
+  build-windows:
+    name: Windows (NSIS)
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: bash
+    env:
+      CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE_P12 }}
+      CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build renderer and main bundles
+        run: pnpm --filter @moonshot-ai/kimi-desktop build
+
+      - name: Package installer (signed automatically when CSC_LINK is set)
+        run: pnpm --filter @moonshot-ai/kimi-desktop exec electron-builder
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: kimi-desktop-windows
+          retention-days: 14
+          path: apps/kimi-desktop/release/*.exe
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download installer artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: kimi-desktop-*
+          path: dist-installers
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-installers/*
+          generate_release_notes: true
+          tag_name: ${{ github.ref_name }}
