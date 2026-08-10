@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Check, Radio, UsersThree } from '@phosphor-icons/react';
 
 import roomAsset from '#/office/assets/liubu-room.svg';
-import officialBlue from '#/office/assets/official-blue.svg';
-import officialGreen from '#/office/assets/official-green.svg';
-import officialOrange from '#/office/assets/official-orange.svg';
-import officialPink from '#/office/assets/official-pink.svg';
-import officialPurple from '#/office/assets/official-purple.svg';
-import officialRed from '#/office/assets/official-red.svg';
+import officialBlue from '#/office/assets/official-blue.svg?no-inline';
+import officialGreen from '#/office/assets/official-green.svg?no-inline';
+import officialOrange from '#/office/assets/official-orange.svg?no-inline';
+import officialPink from '#/office/assets/official-pink.svg?no-inline';
+import officialPurple from '#/office/assets/official-purple.svg?no-inline';
+import officialRed from '#/office/assets/official-red.svg?no-inline';
 import { MODE_LABEL, STATUS_LABEL } from '#/office/officeModel';
 import type { OfficeAgentView, OfficeDashboard } from '#/office/types';
 import { useOfficeAgents } from '#/office/useOfficeAgents';
@@ -73,8 +73,10 @@ function Official({ agent }: { agent: OfficeAgentView }) {
   return (
     <img
       src={source}
-      aria-hidden
+      alt=""
+      aria-hidden="true"
       className="liubu-official"
+      draggable={false}
     />
   );
 }

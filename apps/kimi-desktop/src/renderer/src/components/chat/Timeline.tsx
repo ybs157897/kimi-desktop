@@ -1,5 +1,5 @@
 import { itemId, type AgentState, type TranscriptItem } from '@moonshot-ai/transcript';
-import { ArrowDown, CaretDown, CaretUp } from '@phosphor-icons/react';
+import { ArrowDown } from '@phosphor-icons/react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { visibleTimelineItems } from '#/lib/timelinePresentation';
@@ -238,25 +238,11 @@ export function Timeline({
 }
 
 function AgentPrompt({ prompt }: { readonly prompt: string }) {
-  const [expanded, setExpanded] = useState(true);
   return (
-    <div className="ui-card-enter relative mb-8 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-user-bubble)] px-4 py-3.5 shadow-[var(--shadow-sm)]">
-      <div
-        className={`whitespace-pre-wrap text-[14px] leading-[var(--leading-chat)] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)] ${
-          expanded ? '' : 'max-h-24 overflow-hidden'
-        }`}
-      >
+    <div className="ui-card-enter mb-6 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-user-bubble)] px-4 py-3.5 shadow-[var(--shadow-sm)]">
+      <div className="whitespace-pre-wrap text-[14px] leading-[var(--leading-chat)] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)]">
         {prompt}
       </div>
-      <button
-        type="button"
-        aria-label={expanded ? '收起主智能体提示词' : '展开主智能体提示词'}
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-        className="absolute -bottom-3 left-1/2 flex h-6 w-8 -translate-x-1/2 items-center justify-center rounded-[var(--radius-full)] border border-[var(--color-border-heavy)] bg-[var(--color-background-panel)] text-[var(--color-text-tertiary)] shadow-[var(--shadow-sm)] transition-colors duration-[var(--duration-hover)] hover:text-[var(--color-text-foreground)]"
-      >
-        {expanded ? <CaretUp size={11} weight="bold" aria-hidden /> : <CaretDown size={11} weight="bold" aria-hidden />}
-      </button>
     </div>
   );
 }

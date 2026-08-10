@@ -326,6 +326,14 @@ export function App() {
     [openDocTab],
   );
 
+  const openOfficeAgent = useCallback(
+    (agentId: string) => {
+      setOfficeOpen(false);
+      openSideChat(agentId);
+    },
+    [openSideChat],
+  );
+
   const openPlanDoc = useCallback(
     (request: PlanDocRequest) => {
       const planId = request.initialId ?? request.doc?.id;
@@ -704,7 +712,7 @@ export function App() {
             {officeOpen ? (
               <OfficeView
                 sessionId={activeSessionId}
-                onOpenAgent={openSideChat}
+                onOpenAgent={openOfficeAgent}
                 onClose={() => setOfficeOpen(false)}
               />
             ) : activeSessionId !== null ? (

@@ -693,8 +693,118 @@
   .liubu-topbar { grid-template-columns: 1fr auto; }
   .liubu-session-seal { grid-column: 1 / -1; grid-row: 2; }
   .liubu-agent-chips { grid-row: 3; }
-  .liubu-main { grid-template-columns: 1fr; min-width: 620px; }
+  .liubu-main { grid-template-columns: minmax(0, 1fr); min-width: 0; }
   .liubu-side { position: static; display: grid; grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 760px) {
+  .liubu-topbar {
+    gap: 8px 10px;
+    padding: 10px 12px 8px;
+    border-bottom-width: 3px;
+  }
+
+  .liubu-brand { gap: 8px; }
+  .liubu-brand-badge {
+    padding: 3px 7px;
+    border-width: 2.5px;
+    font-size: 10px;
+  }
+  .liubu-brand h1 { font-size: 18px; }
+
+  .liubu-session-seal {
+    padding: 5px 9px;
+    border-width: 2.5px;
+  }
+  .liubu-session-seal span { font-size: 9px; }
+  .liubu-session-seal strong { font-size: 11px; }
+
+  .liubu-live,
+  .liubu-back {
+    min-height: 28px;
+    padding: 4px 7px;
+    font-size: 10px;
+  }
+
+  .liubu-agent-chips { gap: 5px; }
+  .liubu-chip {
+    gap: 5px;
+    padding: 3px 7px 3px 4px;
+    border-width: 2px;
+  }
+  .liubu-chip-face { width: 22px; height: 22px; font-size: 10px; }
+  .liubu-chip-copy b { max-width: 92px; font-size: 10px; }
+  .liubu-chip-copy small { display: none; }
+
+  .liubu-main {
+    gap: 14px;
+    padding: 16px 12px 18px;
+  }
+  .liubu-stage-frame {
+    padding: 6px;
+    border-width: 3px;
+    border-radius: 14px;
+    box-shadow: 4px 4px 0 var(--liubu-ink-soft);
+  }
+  .liubu-stage-corner {
+    top: -12px;
+    left: 14px;
+    padding: 3px 8px;
+    font-size: 9px;
+  }
+  .liubu-stage-scale { border-radius: 8px; }
+
+  .liubu-official {
+    left: -33px;
+    width: 66px;
+    height: 80px;
+  }
+  .liubu-agent-cap {
+    bottom: 84px;
+    min-width: 96px;
+    max-width: 136px;
+    padding: 4px 6px 5px;
+    border-width: 2px;
+    box-shadow: 2px 2px 0 var(--liubu-ink-soft);
+  }
+  .liubu-agent-cap::after {
+    bottom: -6px;
+    width: 8px;
+    height: 8px;
+    border-width: 0 2px 2px 0;
+  }
+  .liubu-agent-cap-title b { font-size: 9px; }
+  .liubu-agent-cap-title em { font-size: 8px; }
+  .liubu-agent-task { display: none; }
+  .liubu-emote { bottom: 67px; left: 21px; font-size: 14px; }
+
+  .liubu-legend {
+    flex-wrap: wrap;
+    gap: 5px 9px;
+    padding: 7px 5px 1px;
+    font-size: 9px;
+  }
+  .liubu-legend-hint { display: none !important; }
+
+  .liubu-side { gap: 10px; }
+  .liubu-panel {
+    border-width: 3px;
+    border-radius: 12px;
+    box-shadow: 4px 4px 0 var(--liubu-ink-soft);
+  }
+  .liubu-panel > header { padding: 7px 10px; font-size: 12px; }
+  .liubu-board-body,
+  .liubu-agent-detail { padding: 9px 10px 10px; }
+  .liubu-board-body h2 { margin-bottom: 6px; font-size: 15px; }
+  .liubu-milestones { gap: 5px; }
+  .liubu-milestones li { gap: 6px; font-size: 10px; }
+}
+
+@media (max-width: 620px) {
+  .liubu-brand-badge { display: none; }
+  .liubu-live { display: none; }
+  .liubu-side { grid-template-columns: 1fr; }
+  .liubu-agent-cap-title em { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
