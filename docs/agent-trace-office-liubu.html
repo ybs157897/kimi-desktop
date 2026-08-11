@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 三省六部 · 协作实录</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=ZCOOL+QingKe+HuangYou&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* ============ 国风官署漫画 · 令牌 ============ */
+:root{
+  --ink:        #262033;
+  --ink-soft:   rgba(38,32,51,.88);
+  --paper:      #f2e8d5;
+  --panel:      #fbf5e8;
+  --panel-warm: #f4ead4;
+  --muted:      #6f6253;   /* 面板上 ≥4.5:1，可直接用于小字 */
+  --line:       #ddcead;
+  --accent:     #c8352a;   /* 朱砂红：主 CTA / 批红 */
+  --accent-dim: #a82b22;
+  --gold:       #d9a436;   /* 鎏金：拟声爆炸星 / 腰带 */
+  --blue:       #2f7fd0;
+  --green:      #2e9e5b;
+  --st-idle:    #a29888;
+  --st-think:   #d99a26;
+  --st-work:    #2f7fd0;
+  --st-review:  #8b5fc0;
+  --st-done:    #2e9e5b;
+  --a-zhongshu: #c8352a;   /* 中书省 · 绯 */
+  --a-menxia:   #8b5fc0;   /* 门下省 · 紫 */
+  --a-shangshu: #2f7fd0;   /* 尚书省 · 蓝 */
+  --a-hubu:     #2e9e5b;   /* 户部 · 绿 */
+  --a-libu:     #c2507a;   /* 礼部 · 玫 */
+  --a-gongbu:   #cf7a24;   /* 工部 · 赭 */
+  --skin:       #ffd9b3;
+  --font-display:'ZCOOL QingKe HuangYou','PingFang SC','Microsoft YaHei',sans-serif;
+  --font-body:'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+  --shadow-pop:5px 5px 0 var(--ink-soft);
+  --shadow-sm:3px 3px 0 var(--ink-soft);
+  --motion:180ms;
+  --ease:cubic-bezier(.2,0,0,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--font-body);
+  color:var(--ink);
+  background:
+    radial-gradient(circle at 1px 1px, rgba(38,32,51,.10) 1.2px, transparent 1.3px) 0 0/22px 22px,
+    var(--paper);
+  display:flex;flex-direction:column;
+  min-height:100vh;
+  overflow-x:hidden;
+}
+button{font-family:inherit;cursor:pointer;color:inherit}
+button:focus-visible,[tabindex]:focus-visible{outline:3px solid var(--blue);outline-offset:2px;border-radius:6px}
+
+/* ============ 顶栏 ============ */
+.topbar{
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  padding:14px 22px 12px;
+  border-bottom:4px solid var(--ink);
+  background:var(--panel);
+}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-badge{
+  font-family:var(--font-display);
+  font-size:15px;letter-spacing:.06em;
+  background:var(--accent);color:#fff;
+  border:3px solid var(--ink);border-radius:10px;
+  padding:4px 10px;box-shadow:var(--shadow-sm);
+  transform:rotate(-3deg);
+}
+.logo h1{
+  font-family:var(--font-display);
+  font-size:30px;font-weight:400;line-height:1.35;letter-spacing:.02em;
+}
+.logo small{display:block;font-family:var(--font-body);font-size:12px;color:var(--muted);letter-spacing:.14em}
+.chapters{display:flex;gap:10px;margin-left:8px}
+.chapter-btn{
+  border:3px solid var(--ink);border-radius:12px;background:var(--panel-warm);
+  padding:7px 14px;text-align:left;box-shadow:var(--shadow-sm);
+  transition:transform var(--motion) var(--ease),background var(--motion) var(--ease),box-shadow var(--motion) var(--ease);
+}
+.chapter-btn:hover{transform:translate(-1px,-2px);box-shadow:4px 6px 0 var(--ink-soft)}
+.chapter-btn.active{background:var(--gold);transform:translate(1px,1px);box-shadow:2px 2px 0 var(--ink-soft)}
+.chapter-btn .c-no{font-family:var(--font-display);font-size:16px;letter-spacing:.05em;display:block;line-height:1.3}
+.chapter-btn .c-name{font-size:12px;color:var(--ink);display:block;line-height:1.4}
+.chips{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.chip{
+  display:flex;align-items:center;gap:7px;
+  border:2.5px solid var(--ink);border-radius:999px;background:var(--panel);
+  padding:5px 12px 5px 6px;font-size:13px;
+  transition:transform var(--motion) var(--ease),box-shadow var(--motion) var(--ease);
+}
+.chip:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
+.chip.sel{background:var(--panel-warm);box-shadow:var(--shadow-sm)}
+.chip .face{
+  width:26px;height:26px;border-radius:50%;
+  border:2.5px solid var(--ink);
+  display:grid;place-items:center;color:#fff;
+  font-family:var(--font-display);font-size:14px;
+}
+.chip .st{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--ink);background:var(--st-idle)}
+
+/* ============ 主区布局 ============ */
+.main{
+  flex:1;display:grid;grid-template-columns:minmax(0,1fr) 300px;
+  gap:20px;padding:20px 22px 8px;align-items:start;
+}
+/* 舞台：漫画大分镜 */
+.stage-frame{
+  border:4px solid var(--ink);border-radius:20px;
+  background:var(--panel);
+  box-shadow:8px 8px 0 var(--ink-soft);
+  padding:10px;position:relative;
+}
+.stage-corner{
+  position:absolute;top:-16px;left:22px;z-index:5;
+  font-family:var(--font-display);font-size:14px;letter-spacing:.08em;
+  background:var(--ink);color:var(--panel);
+  padding:4px 12px;border-radius:8px;transform:rotate(-2deg);
+}
+.stage-scale{position:relative;width:100%;aspect-ratio:1200/720;overflow:hidden;border-radius:12px}
+#stage{position:absolute;left:0;top:0;width:1200px;height:720px;transform-origin:0 0}
+#room{position:absolute;left:0;top:0;z-index:0}
+.agent{position:absolute;width:0;height:0;transition:left 1.05s cubic-bezier(.45,.05,.3,1),top 1.05s cubic-bezier(.45,.05,.3,1);cursor:pointer}
+.agent.notrans{transition:none}
+.char{position:absolute;bottom:0;left:-48px;width:96px;height:116px}
+.char svg{display:block;overflow:visible}
+.agent.walking .char{animation:bob .34s ease-in-out infinite alternate}
+@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-7px)}}
+.agent.selected .char svg{filter:drop-shadow(4px 4px 0 rgba(200,53,42,.55))}
+.agent:focus-visible{outline:none}
+.agent:focus-visible .char svg{filter:drop-shadow(0 0 0 var(--blue)) drop-shadow(0 0 6px rgba(47,127,208,.9))}
+/* 头顶常显卡片 */
+.cap{
+  position:absolute;bottom:122px;left:0;transform:translateX(-50%);
+  background:var(--panel);border:2.5px solid var(--ink);border-radius:10px;
+  box-shadow:var(--shadow-sm);
+  padding:5px 10px 6px;min-width:120px;max-width:180px;
+  pointer-events:none;
+}
+.cap::after{
+  content:'';position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);
+  width:12px;height:12px;background:var(--panel);
+  border-right:2.5px solid var(--ink);border-bottom:2.5px solid var(--ink);
+  rotate:45deg;
+}
+.cap-name{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;line-height:1.4}
+.cap-name .dot{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--ink);background:var(--st-idle);flex:none}
+.cap-name .st-label{font-weight:400;font-size:11px;color:var(--muted);letter-spacing:.04em}
+.cap-task{font-size:11.5px;color:var(--ink);line-height:1.45;margin-top:1px;word-break:break-all}
+/* 对话气泡 */
+.bubble{
+  position:absolute;bottom:206px;left:0;transform:translateX(-50%);
+  background:#fff;border:3px solid var(--ink);border-radius:14px;
+  box-shadow:var(--shadow-sm);
+  padding:8px 12px;font-size:13px;line-height:1.5;
+  max-width:220px;min-width:80px;pointer-events:none;
+  animation:bubblePop .25s var(--ease);
+  z-index:6;
+}
+.bubble::after{
+  content:'';position:absolute;left:38%;bottom:-11px;
+  width:16px;height:16px;background:#fff;
+  border-right:3px solid var(--ink);border-bottom:3px solid var(--ink);
+  rotate:45deg;
+}
+.bubble .b-from{font-family:var(--font-display);font-size:12px;letter-spacing:.05em;color:var(--accent);display:block;margin-bottom:2px}
+@keyframes bubblePop{from{transform:translateX(-50%) scale(.4);opacity:0}to{transform:translateX(-50%) scale(1);opacity:1}}
+.bubble.bye{transition:opacity .4s;opacity:0}
+/* 表情记号 */
+.emote{
+  position:absolute;bottom:96px;left:30px;
+  font-family:var(--font-display);font-size:20px;
+  color:var(--ink);pointer-events:none;
+  animation:emoteFloat 1.6s ease-in-out infinite alternate;
+}
+@keyframes emoteFloat{from{transform:translateY(0) rotate(-6deg)}to{transform:translateY(-5px) rotate(6deg)}}
+/* 飞行奏折 */
+.env{position:absolute;z-index:900;width:34px;height:26px;pointer-events:none;will-change:transform}
+/* 拟声爆炸星 */
+.sfx{
+  position:absolute;z-index:950;width:120px;height:120px;
+  display:grid;place-items:center;pointer-events:none;
+  background:var(--gold);
+  clip-path:polygon(100% 50%,81.4% 37%,85.4% 14.6%,63% 18.6%,50% 0%,37% 18.6%,14.6% 14.6%,18.6% 37%,0% 50%,18.6% 63%,14.6% 85.4%,37% 81.4%,50% 100%,63% 81.4%,85.4% 85.4%,81.4% 63%);
+  animation:sfxPop 1.15s var(--ease) forwards;
+}
+.sfx span{
+  font-family:var(--font-display);font-size:26px;color:var(--ink);
+  transform:rotate(-10deg);letter-spacing:.04em;
+}
+.sfx.red{background:var(--accent)}.sfx.red span{color:#fff}
+.sfx.blue{background:var(--blue)}.sfx.blue span{color:#fff}
+@keyframes sfxPop{
+  0%{transform:scale(.2) rotate(-14deg);opacity:0}
+  18%{transform:scale(1.15) rotate(4deg);opacity:1}
+  30%{transform:scale(1) rotate(0)}
+  75%{opacity:1}
+  100%{transform:scale(1.05);opacity:0}
+}
+/* 图例 */
+.legend{
+  display:flex;gap:14px;flex-wrap:wrap;align-items:center;
+  padding:9px 14px 4px;font-size:12px;color:var(--muted);
+}
+.legend i{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--ink);display:inline-block;margin-right:5px;vertical-align:-1px}
+
+/* ============ 右侧栏 ============ */
+.side{display:flex;flex-direction:column;gap:16px;position:sticky;top:16px}
+.panel{
+  border:3.5px solid var(--ink);border-radius:16px;background:var(--panel);
+  box-shadow:var(--shadow-pop);overflow:hidden;
+}
+.panel-head{
+  font-family:var(--font-display);font-size:17px;letter-spacing:.06em;
+  padding:9px 14px;border-bottom:3px solid var(--ink);
+  background:var(--panel-warm);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.panel-head .tag{
+  font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.06em;
+}
+.board-body{padding:12px 14px 14px}
+.phase-name{font-family:var(--font-display);font-size:19px;line-height:1.35;margin-bottom:8px}
+.ms-list{list-style:none;display:flex;flex-direction:column;gap:8px}
+.ms-item{display:flex;align-items:center;gap:9px;font-size:13.5px;line-height:1.4;color:var(--muted)}
+.ms-item .box{
+  width:20px;height:20px;flex:none;border:2.5px solid var(--ink);border-radius:6px;
+  background:#fff;display:grid;place-items:center;
+  font-family:var(--font-display);font-size:12px;color:#fff;
+  transition:background var(--motion) var(--ease);
+}
+.ms-item .box svg{width:12px;height:12px;opacity:0;transform:scale(.4);transition:all .22s var(--ease)}
+.ms-item.done{color:var(--ink)}
+.ms-item.done .box{background:var(--accent)}
+.ms-item.done .box svg{opacity:1;transform:scale(1)}
+.ms-progress{height:12px;border:2.5px solid var(--ink);border-radius:99px;background:#fff;margin-top:12px;overflow:hidden}
+.ms-progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .5s var(--ease)}
+/* 个人面板 */
+.agent-panel-body{padding:12px 14px 14px;min-height:180px}
+.ap-empty{font-size:13px;color:var(--muted);line-height:1.7;padding:14px 4px;text-align:center}
+.ap-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ap-face{
+  width:44px;height:44px;border-radius:50%;border:3px solid var(--ink);flex:none;
+  display:grid;place-items:center;color:#fff;
+  font-family:var(--font-display);font-size:22px;
+}
+.ap-name{font-family:var(--font-display);font-size:19px;line-height:1.3}
+.ap-role{font-size:12px;color:var(--muted)}
+.ap-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 12px}
+.ap-stat{border:2.5px solid var(--ink);border-radius:10px;background:var(--panel-warm);padding:6px 4px;text-align:center}
+.ap-stat b{font-family:var(--font-mono);font-size:17px;display:block;line-height:1.3}
+.ap-stat span{font-size:11px;color:var(--muted)}
+.ap-acts{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:210px;overflow:auto;padding-right:4px}
+.ap-acts li{
+  display:flex;gap:8px;font-size:12.5px;line-height:1.5;
+  border-left:3px solid var(--line);padding-left:8px;
+}
+.ap-acts li .t{font-family:var(--font-mono);font-size:11px;color:var(--muted);flex:none;padding-top:2px}
+.ap-acts::-webkit-scrollbar{width:6px}
+.ap-acts::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px}
+.ap-acts{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+
+/* 减弱动态：保留状态色彩变化，去掉位移/旋转类动效 */
+@media (prefers-reduced-motion: reduce){
+  .agent{transition:none}
+  .agent.walking .char{animation:none}
+  .emote{animation:none}
+  .bubble{animation:none}
+  .sfx{animation-duration:.01ms;animation-iteration-count:1}
+  .chapter-btn,.chip{transition:none}
+}
+
+/* ============ 响应式 ============ */
+@media (max-width:1100px){
+  .main{grid-template-columns:1fr}
+  .side{position:static;flex-direction:row;flex-wrap:wrap}
+  .side .panel{flex:1;min-width:280px}
+}
+@media (max-width:720px){
+  .topbar{padding:12px 14px 10px}
+  .logo h1{font-size:24px}
+  .main{padding:14px 12px 6px}
+  .chips{margin-left:0}
+}
+</style>
+</head>
+<body>
+<header class="topbar" data-od-id="topbar">
+  <div class="logo">
+    <span class="logo-badge">架空官署</span>
+    <h1>AI 三省六部<small>Agent 协作实录 · 每一卷都是真实会话回放</small></h1>
+  </div>
+  <nav class="chapters" data-od-id="chapters" aria-label="选卷"></nav>
+  <div class="chips" data-od-id="agent-chips"></div>
+</header>
+
+<main class="main">
+  <section class="stage-frame" data-od-id="stage">
+    <span class="stage-corner">皇城实录 · LIVE</span>
+    <div class="stage-scale" id="stageScale">
+      <div id="stage"></div>
+    </div>
+    <div class="legend" data-od-id="legend">
+      <span><i style="background:var(--st-think)"></i>筹谋</span>
+      <span><i style="background:var(--st-work)"></i>办事</span>
+      <span><i style="background:var(--st-review)"></i>封驳</span>
+      <span><i style="background:var(--st-done)"></i>交旨</span>
+      <span><i style="background:var(--st-idle)"></i>候令</span>
+      <span style="margin-left:auto">点官员可查看个人行迹</span>
+    </div>
+  </section>
+
+  <aside class="side">
+    <section class="panel" data-od-id="board-panel">
+      <div class="panel-head">政事堂 · 进度榜<span class="tag">敕令</span></div>
+      <div class="board-body">
+        <div class="phase-name" id="phaseName">待升堂</div>
+        <ul class="ms-list" id="msList"></ul>
+        <div class="ms-progress"><i id="msBar"></i></div>
+      </div>
+    </section>
+    <section class="panel" data-od-id="agent-panel">
+      <div class="panel-head">百官谱<span class="tag">名册</span></div>
+      <div class="agent-panel-body" id="apBody">
+        <div class="ap-empty">点击衙署中任意官员<br>查看 TA 的状态与行迹流水</div>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<script>
+/* ================= 数据模型 ================= */
+const STATUS = {
+  idle:   {label:'候令', css:'var(--st-idle)'},
+  think:  {label:'筹谋', css:'var(--st-think)'},
+  work:   {label:'办事', css:'var(--st-work)'},
+  review: {label:'封驳', css:'var(--st-review)'},
+  done:   {label:'交旨', css:'var(--st-done)'},
+};
+/* 舞台坐标系 1200 × 720 */
+const DESK_POS = [[250,300],[600,300],[950,300],[250,470],[600,470],[950,470]];
+const ZONE_PT  = { board:[372,218], meet:[985,522], lounge:[208,528] };
+const ZONE_NAME = { board:'政事堂', meet:'议事厅', lounge:'值房', desk:'公案' };
+function deskAnchor(i){ return [DESK_POS[i][0], DESK_POS[i][1] + 42]; }
+
+const AGENTS = {
+  wang: {name:'中书令', role:'中书省 · 草拟政令', css:'var(--a-zhongshu)', hex:'#c8352a', desk:0},
+  li:   {name:'户部郎', role:'户部 · 册籍调研',   css:'var(--a-hubu)',     hex:'#2e9e5b', desk:1},
+  zhou: {name:'仆射',   role:'尚书省 · 统筹执行', css:'var(--a-shangshu)', hex:'#2f7fd0', desk:2},
+  chen: {name:'礼部郎', role:'礼部 · 文辞撰述',   css:'var(--a-libu)',     hex:'#c2507a', desk:3},
+  liu:  {name:'工部郎', role:'工部 · 营缮点验',   css:'var(--a-gongbu)',   hex:'#cf7a24', desk:4},
+  zhao: {name:'侍中',   role:'门下省 · 封驳审议', css:'var(--a-menxia)',   hex:'#8b5fc0', desk:5, mark:'glasses'},
+};
+/* 事件: [t, 类型, ...]
+ * st  [t,'st',agent,status,任务描述]
+ * mv  [t,'mv',agent,zone]   zone: 'desk'|'meet'|'board'|'lounge'
+ * msg [t,'msg',from,to,文本]  to 可为 'all'
+ * ph  [t,'ph',阶段名]
+ * ms  [t,'ms',里程碑文本]
+ */
+const SESSIONS = [
+{
+  id:'s4217', no:'第 4217 卷', title:'竞品情报塘报', duration:252,
+  milestones:['信源名册用印','竞品卷宗汇总','塘报初稿拟成','门下省复核通过'],
+  events:[
+    [0,'ph','开衙议事'],
+    [1,'msg','wang','all','中书省颁令：拟一份竞品情报塘报'],
+    [3,'st','wang','think','拆解政令，分派各司'],
+    [5,'st','li','think','研判刺探方向'],
+    [7,'msg','wang','li','先查五家核心竞品的信源底册'],
+    [9,'mv','li','board'],
+    [11,'st','li','work','清点竞品信源'],
+    [14,'msg','li','wang','查得可用信源十二处'],
+    [17,'st','wang','think','核对信源名册'],
+    [19,'ms','信源名册用印'],
+    [20,'msg','wang','zhou','名册已用印，尚书省着手归类'],
+    [23,'mv','li','desk'],
+    [24,'st','zhou','think','定归类纲目'],
+    [27,'st','li','work','续查竞品新动态'],
+    [30,'msg','li','zhou','呈上原始情报四十七条'],
+    [33,'st','zhou','work','分卷归档'],
+    [37,'msg','zhou','wang','归作三卷，请中书定夺'],
+    [40,'mv','wang','meet'],
+    [42,'msg','wang','zhou','三卷可用，再补一段趋势总述'],
+    [45,'mv','wang','desk'],
+    [47,'st','zhou','work','拟趋势总述'],
+    [52,'msg','zhou','liu','卷宗齐整，工部封装'],
+    [55,'mv','zhou','meet'],
+    [57,'st','liu','think','筹划塘报形制'],
+    [60,'st','zhou','idle','候令'],
+    [62,'st','liu','work','封装塘报素材'],
+    [66,'ms','竞品卷宗汇总'],
+    [68,'msg','liu','chen','素材移交礼部，起草塘报'],
+    [71,'mv','liu','desk'],
+    [73,'st','chen','think','立塘报纲目'],
+    [77,'st','chen','work','起草塘报正文'],
+    [82,'msg','chen','wang','初稿已成六成，特来禀报'],
+    [86,'st','wang','think','审阅纲目方向'],
+    [89,'msg','wang','chen','方向稳妥，照此续写'],
+    [93,'st','chen','work','补全图表注疏'],
+    [99,'msg','li','chen','户部急递：新动态两条'],
+    [103,'st','chen','work','并入最新动态'],
+    [108,'ms','塘报初稿拟成'],
+    [110,'msg','chen','zhao','初稿呈门下省封驳'],
+    [113,'mv','chen','lounge'],
+    [115,'st','zhao','think','先核合规条例'],
+    [118,'st','chen','idle','候批'],
+    [120,'st','zhao','review','逐项封驳审议'],
+    [125,'msg','zhao','chen','第三节措辞欠妥，驳回改拟'],
+    [129,'mv','chen','desk'],
+    [131,'st','chen','work','改拟第三节'],
+    [136,'msg','chen','zhao','改拟毕，再呈复核'],
+    [140,'st','zhao','review','复核改稿'],
+    [145,'msg','zhao','wang','审议已准，可以交付'],
+    [148,'ms','门下省复核通过'],
+    [150,'mv','wang','board'],
+    [152,'st','wang','work','清点交付文卷'],
+    [156,'msg','wang','liu','将塘报并入市集周报'],
+    [160,'st','liu','work','并入市集周报'],
+    [166,'msg','liu','wang','周报已更新'],
+    [170,'msg','wang','all','塘报已交付，诸司辛苦'],
+    [174,'st','wang','done','复命交旨'],
+    [176,'st','li','done','刺探毕'],
+    [178,'st','zhou','done','归档毕'],
+    [180,'st','chen','done','撰文毕'],
+    [182,'st','liu','done','分发毕'],
+    [184,'st','zhao','done','审议毕'],
+    [190,'mv','zhou','lounge'],
+    [193,'mv','chen','lounge'],
+    [196,'mv','wang','meet'],
+    [200,'msg','wang','li','下回把坊间舆情一并呈上'],
+    [205,'st','li','think','记下改进条目'],
+    [210,'msg','li','wang','遵令，已录入刺探章程'],
+    [216,'mv','wang','desk'],
+    [220,'st','wang','idle','候令'],
+  ],
+},
+{
+  id:'s4223', no:'第 4223 卷', title:'门面焕新记', duration:224,
+  milestones:['改制定稿用印','首页图样绘成','文案誊录毕','点验过关用印'],
+  events:[
+    [0,'ph','开衙点卯'],
+    [1,'msg','wang','all','官网改版，今日须交付首页'],
+    [4,'st','wang','think','拆解改版工序'],
+    [7,'msg','wang','chen','礼部先拟三版首页文案'],
+    [10,'st','chen','think','揣摩本署文气'],
+    [13,'msg','wang','liu','工部取旧站人流册来'],
+    [16,'st','liu','work','盘点旧站人流'],
+    [20,'msg','liu','wang','册已盘毕：产品页散客最多'],
+    [24,'st','wang','think','定改版先后'],
+    [27,'ms','改制定稿用印'],
+    [29,'msg','wang','all','改制用印：首屏重建 + 文案全换'],
+    [33,'st','li','work','采集他站图样范式'],
+    [37,'st','chen','work','撰首屏文案'],
+    [41,'msg','chen','wang','乙版文案数据最佳'],
+    [45,'mv','wang','board'],
+    [47,'st','wang','think','对榜核验方向'],
+    [50,'msg','wang','chen','准乙版，续办'],
+    [54,'mv','wang','desk'],
+    [56,'msg','li','zhou','范式图谱已辑成'],
+    [59,'st','zhou','think','定图样结构'],
+    [62,'st','zhou','work','绘首页图样'],
+    [68,'ms','首页图样绘成'],
+    [71,'msg','zhou','chen','图样已就，礼部誊录文案'],
+    [75,'st','chen','work','誊录校正'],
+    [80,'msg','chen','zhao','文案誊录毕，呈门下省'],
+    [84,'ms','文案誊录毕'],
+    [86,'st','zhao','review','核文气一致'],
+    [91,'msg','zhao','chen','钮文不一，驳回'],
+    [95,'st','chen','work','一统钮文'],
+    [99,'msg','chen','zhao','已一统，再呈'],
+    [103,'st','zhao','review','复核钮文'],
+    [107,'msg','zhao','wang','审议已准'],
+    [110,'msg','wang','liu','开张前点验一遍'],
+    [113,'st','liu','work','照单点验'],
+    [118,'msg','liu','wang','掌中小屏有两处走样'],
+    [121,'mv','wang','meet'],
+    [123,'msg','wang','zhou','着尚书省修整'],
+    [126,'st','zhou','work','修整小屏格局'],
+    [131,'msg','zhou','liu','已修整，再点验一遍'],
+    [135,'st','liu','work','回头复验'],
+    [139,'msg','liu','wang','点验全数通过'],
+    [142,'ms','点验过关用印'],
+    [145,'msg','wang','all','门面焕新已成，收衙'],
+    [149,'st','wang','done','交旨复命'],
+    [151,'st','chen','done','文案告成'],
+    [153,'st','zhou','done','图样告成'],
+    [155,'st','liu','done','点验告成'],
+    [157,'st','zhao','done','审议告成'],
+    [159,'st','li','done','图谱归档'],
+    [164,'mv','chen','lounge'],
+    [167,'mv','zhou','lounge'],
+    [171,'msg','wang','zhao','门下省辑一份审议章程'],
+    [175,'st','zhao','work','辑审议章程'],
+    [180,'msg','zhao','wang','章程已归档'],
+    [185,'st','zhao','idle','候令'],
+    [189,'mv','wang','desk'],
+  ],
+},
+];
+</script>
+<script>
+/* ================= 工具 ================= */
+const $ = s => document.querySelector(s);
+const stage = $('#stage');
+const fmt = t => `${String(Math.floor(t/60)).padStart(2,'0')}:${String(Math.floor(t%60)).padStart(2,'0')}`;
+const INK = '#262033';
+const VERMILION = '#a83228';  /* 朱漆 */
+const WOOD = '#caa06a';
+const WOOD_D = '#a87f4e';
+
+/* ================= 衙署（静态 SVG） ================= */
+function plant(x, y, s){
+  return `<g transform="translate(${x},${y}) scale(${s})">
+    <ellipse cx="0" cy="2" rx="34" ry="8" fill="rgba(38,32,51,.10)"/>
+    <path d="M-16 -26 L16 -26 L11 0 L-11 0 Z" fill="#8a5a44" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+    <ellipse cx="-13" cy="-46" rx="11" ry="20" transform="rotate(-24 -13 -46)" fill="#2e6b4f" stroke="${INK}" stroke-width="2.5"/>
+    <ellipse cx="13" cy="-48" rx="11" ry="20" transform="rotate(22 13 -48)" fill="#357a5a" stroke="${INK}" stroke-width="2.5"/>
+    <ellipse cx="0" cy="-56" rx="12" ry="22" fill="#3f8a66" stroke="${INK}" stroke-width="2.5"/>
+  </g>`;
+}
+/* 公案：木案 + 展开的公文 + 笔山 + 鼓凳 */
+function deskSvg(x, y){
+  return `<g>
+    <ellipse cx="${x}" cy="${y+58}" rx="98" ry="15" fill="rgba(38,32,51,.08)"/>
+    <rect x="${x-36}" y="${y-92}" width="72" height="30" rx="8" fill="#fbf5e8" stroke="${INK}" stroke-width="3"/>
+    <circle cx="${x-36}" cy="${y-77}" r="6" fill="${WOOD_D}" stroke="${INK}" stroke-width="2.5"/>
+    <circle cx="${x+36}" cy="${y-77}" r="6" fill="${WOOD_D}" stroke="${INK}" stroke-width="2.5"/>
+    <line x1="${x-24}" y1="${y-83}" x2="${x+22}" y2="${y-83}" stroke="${INK}" stroke-width="2" opacity=".45"/>
+    <line x1="${x-24}" y1="${y-76}" x2="${x+16}" y2="${y-76}" stroke="${INK}" stroke-width="2" opacity=".45"/>
+    <line x1="${x-24}" y1="${y-69}" x2="${x+24}" y2="${y-69}" stroke="${INK}" stroke-width="2" opacity=".45"/>
+    <rect x="${x-80}" y="${y-56}" width="160" height="20" rx="8" fill="${WOOD}" stroke="${INK}" stroke-width="3"/>
+    <rect x="${x-80}" y="${y-38}" width="160" height="13" rx="6" fill="${WOOD_D}" stroke="${INK}" stroke-width="3"/>
+    <rect x="${x-71}" y="${y-26}" width="9" height="56" fill="#966f3e" stroke="${INK}" stroke-width="2.5"/>
+    <rect x="${x+62}" y="${y-26}" width="9" height="56" fill="#966f3e" stroke="${INK}" stroke-width="2.5"/>
+    <path d="M${x+44} ${y-64} L${x+56} ${y-64} L${x+50} ${y-74} Z" fill="#4a5568" stroke="${INK}" stroke-width="2.5" stroke-linejoin="round"/>
+    <line x1="${x+50}" y1="${y-74}" x2="${x+50}" y2="${y-84}" stroke="${INK}" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="${x}" cy="${y+56}" r="24" fill="#b98a54" stroke="${INK}" stroke-width="3"/>
+    <ellipse cx="${x}" cy="${y+48}" rx="20" ry="7" fill="#d9a436" stroke="${INK}" stroke-width="2.5"/>
+  </g>`;
+}
+function buildRoom(){
+  let s = `<svg id="room" viewBox="0 0 1200 720" width="1200" height="720" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">`;
+  /* 青砖地面与粉墙 */
+  s += `<rect x="0" y="0" width="1200" height="720" fill="#f6ecd6"/>
+        <rect x="0" y="0" width="1200" height="170" fill="#ecdcc0"/>
+        <rect x="0" y="164" width="1200" height="10" fill="#dfc89e" stroke="${INK}" stroke-width="2.5"/>`;
+  for (let y = 214; y < 720; y += 46)
+    s += `<line x1="0" y1="${y}" x2="1200" y2="${y}" stroke="#e6d4b0" stroke-width="2"/>`;
+  /* 朱漆立柱 */
+  for (const cx of [392, 1006]){
+    s += `<g>
+      <rect x="${cx+4}" y="34" width="26" height="136" rx="10" fill="rgba(38,32,51,.7)"/>
+      <rect x="${cx}" y="30" width="26" height="136" rx="10" fill="${VERMILION}" stroke="${INK}" stroke-width="3"/>
+      <rect x="${cx-6}" y="26" width="38" height="14" rx="7" fill="${VERMILION}" stroke="${INK}" stroke-width="3"/>
+    </g>`;
+  }
+  /* 朱漆花窗 */
+  for (const wx of [450, 660, 870]){
+    s += `<g>
+      <rect x="${wx+5}" y="${45+5}" width="150" height="96" rx="10" fill="rgba(38,32,51,.85)"/>
+      <rect x="${wx}" y="45" width="150" height="96" rx="10" fill="#cfe3ee" stroke="${INK}" stroke-width="3.5"/>
+      <line x1="${wx+50}" y1="45" x2="${wx+50}" y2="141" stroke="${VERMILION}" stroke-width="5"/>
+      <line x1="${wx+100}" y1="45" x2="${wx+100}" y2="141" stroke="${VERMILION}" stroke-width="5"/>
+      <line x1="${wx}" y1="93" x2="${wx+150}" y2="93" stroke="${VERMILION}" stroke-width="5"/>
+      <path d="M${wx+18} 70 q10 -12 20 0 q10 -12 20 0" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" opacity=".85"/>
+      <rect x="${wx}" y="45" width="150" height="96" rx="10" fill="none" stroke="${INK}" stroke-width="3.5"/>
+    </g>`;
+  }
+  /* 政事堂榜（左上） */
+  s += `<g>
+    <rect x="66" y="41" width="272" height="112" rx="12" fill="rgba(38,32,51,.85)"/>
+    <rect x="60" y="35" width="272" height="112" rx="12" fill="#fbf5e8" stroke="${INK}" stroke-width="4"/>
+    <path d="M60 47 Q60 35 72 35 L320 35 Q332 35 332 47 L332 63 L60 63 Z" fill="${VERMILION}" stroke="${INK}" stroke-width="3.5"/>
+    <text x="196" y="55" text-anchor="middle" font-family="'ZCOOL QingKe HuangYou',sans-serif" font-size="19" fill="#f2d89a" letter-spacing="4">政事堂</text>
+    <g transform="rotate(-4 100 105)"><rect x="76" y="78" width="52" height="52" fill="#fdf3d8" stroke="${INK}" stroke-width="2.5"/><line x1="84" y1="94" x2="120" y2="94" stroke="${INK}" stroke-width="2" opacity=".5"/><line x1="84" y1="106" x2="114" y2="106" stroke="${INK}" stroke-width="2" opacity=".5"/><circle cx="120" cy="122" r="5" fill="#c8352a" stroke="${INK}" stroke-width="2"/></g>
+    <g transform="rotate(3 166 105)"><rect x="140" y="76" width="52" height="52" fill="#fdf3d8" stroke="${INK}" stroke-width="2.5"/><line x1="148" y1="92" x2="184" y2="92" stroke="${INK}" stroke-width="2" opacity=".5"/><line x1="148" y1="104" x2="178" y2="104" stroke="${INK}" stroke-width="2" opacity=".5"/><circle cx="184" cy="120" r="5" fill="#c8352a" stroke="${INK}" stroke-width="2"/></g>
+    <g transform="rotate(-3 232 105)"><rect x="206" y="78" width="52" height="52" fill="#fdf3d8" stroke="${INK}" stroke-width="2.5"/><line x1="214" y1="94" x2="250" y2="94" stroke="${INK}" stroke-width="2" opacity=".5"/><line x1="214" y1="106" x2="244" y2="106" stroke="${INK}" stroke-width="2" opacity=".5"/><circle cx="250" cy="122" r="5" fill="#c8352a" stroke="${INK}" stroke-width="2"/></g>
+    <g transform="rotate(5 296 103)"><rect x="270" y="74" width="52" height="52" fill="#fdf3d8" stroke="${INK}" stroke-width="2.5"/><line x1="278" y1="90" x2="314" y2="90" stroke="${INK}" stroke-width="2" opacity=".5"/><line x1="278" y1="102" x2="308" y2="102" stroke="${INK}" stroke-width="2" opacity=".5"/><circle cx="314" cy="118" r="5" fill="#c8352a" stroke="${INK}" stroke-width="2"/></g>
+  </g>`;
+  /* 卷轴架（右墙） */
+  s += `<g>
+    <rect x="1052" y="50" width="118" height="100" rx="10" fill="#e3cba3" stroke="${INK}" stroke-width="3.5"/>
+    <line x1="1052" y1="100" x2="1170" y2="100" stroke="${INK}" stroke-width="3"/>
+    <g><rect x="1062" y="64" width="12" height="30" rx="6" fill="#fbf5e8" stroke="${INK}" stroke-width="2"/><circle cx="1068" cy="64" r="4" fill="${WOOD_D}" stroke="${INK}" stroke-width="2"/></g>
+    <g><rect x="1078" y="68" width="12" height="26" rx="6" fill="#f2d89a" stroke="${INK}" stroke-width="2"/><circle cx="1084" cy="68" r="4" fill="${WOOD_D}" stroke="${INK}" stroke-width="2"/></g>
+    <g><rect x="1094" y="62" width="12" height="32" rx="6" fill="#fbf5e8" stroke="${INK}" stroke-width="2"/><circle cx="1100" cy="62" r="4" fill="${WOOD_D}" stroke="${INK}" stroke-width="2"/></g>
+    <rect x="1114" y="66" width="44" height="26" rx="4" fill="#c8352a" stroke="${INK}" stroke-width="2.5"/>
+    <text x="1136" y="84" text-anchor="middle" font-family="'ZCOOL QingKe HuangYou',sans-serif" font-size="13" fill="#f2d89a">档</text>
+    <g><rect x="1062" y="112" width="12" height="30" rx="6" fill="#f2d89a" stroke="${INK}" stroke-width="2"/><circle cx="1068" cy="112" r="4" fill="${WOOD_D}" stroke="${INK}" stroke-width="2"/></g>
+    <g><rect x="1078" y="116" width="12" height="26" rx="6" fill="#fbf5e8" stroke="${INK}" stroke-width="2"/><circle cx="1084" cy="116" r="4" fill="${WOOD_D}" stroke="${INK}" stroke-width="2"/></g>
+    <circle cx="1140" cy="128" r="14" fill="#2e6b4f" stroke="${INK}" stroke-width="2.5"/>
+  </g>`;
+  /* 席纹毡毯 */
+  s += `<ellipse cx="985" cy="592" rx="152" ry="50" fill="#efdba8" stroke="${INK}" stroke-width="3"/>
+        <ellipse cx="985" cy="592" rx="120" ry="37" fill="none" stroke="${INK}" stroke-width="2" opacity=".35"/>
+        <ellipse cx="208" cy="600" rx="142" ry="46" fill="#d5dfd2" stroke="${INK}" stroke-width="3"/>
+        <ellipse cx="208" cy="600" rx="110" ry="33" fill="none" stroke="${INK}" stroke-width="2" opacity=".35"/>`;
+  /* 议事厅：八仙桌 + 茶具 */
+  s += `<g>
+    <circle cx="900" cy="548" r="17" fill="#b98a54" stroke="${INK}" stroke-width="3"/>
+    <circle cx="1072" cy="548" r="17" fill="#b98a54" stroke="${INK}" stroke-width="3"/>
+    <circle cx="985" cy="614" r="17" fill="#b98a54" stroke="${INK}" stroke-width="3"/>
+    <ellipse cx="985" cy="566" rx="98" ry="36" fill="${WOOD_D}" stroke="${INK}" stroke-width="3.5"/>
+    <ellipse cx="985" cy="560" rx="98" ry="36" fill="${WOOD}" stroke="${INK}" stroke-width="3.5"/>
+    <circle cx="962" cy="552" r="9" fill="#fbf5e8" stroke="${INK}" stroke-width="2.5"/>
+    <path d="M971 552 Q978 549 977 556" stroke="${INK}" stroke-width="2.5" fill="none"/>
+    <circle cx="1010" cy="558" r="5" fill="#fbf5e8" stroke="${INK}" stroke-width="2"/>
+    <circle cx="1024" cy="564" r="5" fill="#fbf5e8" stroke="${INK}" stroke-width="2"/>
+  </g>`;
+  /* 值房：罗汉榻 + 小几 */
+  s += `<g>
+    <rect x="112" y="556" width="196" height="46" rx="16" fill="#966f3e" stroke="${INK}" stroke-width="3.5"/>
+    <rect x="112" y="516" width="196" height="48" rx="16" fill="#4f7283" stroke="${INK}" stroke-width="3.5"/>
+    <line x1="177" y1="522" x2="177" y2="560" stroke="${INK}" stroke-width="2.5" opacity=".5"/>
+    <line x1="243" y1="522" x2="243" y2="560" stroke="${INK}" stroke-width="2.5" opacity=".5"/>
+    <circle cx="112" cy="570" r="18" fill="#966f3e" stroke="${INK}" stroke-width="3.5"/>
+    <circle cx="308" cy="570" r="18" fill="#966f3e" stroke="${INK}" stroke-width="3.5"/>
+    <ellipse cx="208" cy="656" rx="54" ry="17" fill="${WOOD}" stroke="${INK}" stroke-width="3"/>
+    <rect x="196" y="636" width="24" height="10" rx="3" fill="#fbf5e8" stroke="${INK}" stroke-width="2.5"/>
+  </g>`;
+  /* 公案 */
+  for (const [x, y] of DESK_POS) s += deskSvg(x, y);
+  /* 松柏盆景 */
+  s += plant(1128, 232, 1.05) + plant(66, 700, 1.1) + plant(1150, 700, 1.15);
+  /* 地面分区字 */
+  s += `<text x="985" y="692" text-anchor="middle" font-family="'ZCOOL QingKe HuangYou',sans-serif" font-size="22" fill="${INK}" opacity=".4" letter-spacing="6">议 事 厅</text>
+        <text x="208" y="706" text-anchor="middle" font-family="'ZCOOL QingKe HuangYou',sans-serif" font-size="22" fill="${INK}" opacity=".4" letter-spacing="6">值　房</text>`;
+  s += `</svg>`;
+  stage.insertAdjacentHTML('beforeend', s);
+}
+
+/* ================= 角色 SVG：乌纱帽官员 ================= */
+const FACES = {
+  neutral: `<ellipse cx="39" cy="33" rx="3" ry="4.5" fill="${INK}"/><ellipse cx="57" cy="33" rx="3" ry="4.5" fill="${INK}"/><path d="M43 42 Q48 46 53 42" stroke="${INK}" stroke-width="2.5" fill="none" stroke-linecap="round"/>`,
+  think:   `<ellipse cx="39" cy="33" rx="3" ry="4.5" fill="${INK}"/><ellipse cx="57" cy="33" rx="3" ry="4.5" fill="${INK}"/><line x1="33" y1="24" x2="44" y2="24" stroke="${INK}" stroke-width="2.5" stroke-linecap="round"/><line x1="52" y1="24" x2="63" y2="24" stroke="${INK}" stroke-width="2.5" stroke-linecap="round"/><circle cx="48" cy="43" r="2.6" fill="none" stroke="${INK}" stroke-width="2.5"/>`,
+  work:    `<line x1="32" y1="23" x2="44" y2="27" stroke="${INK}" stroke-width="2.8" stroke-linecap="round"/><line x1="64" y1="23" x2="52" y2="27" stroke="${INK}" stroke-width="2.8" stroke-linecap="round"/><ellipse cx="39" cy="34" rx="3" ry="4.5" fill="${INK}"/><ellipse cx="57" cy="34" rx="3" ry="4.5" fill="${INK}"/><line x1="42" y1="44" x2="54" y2="44" stroke="${INK}" stroke-width="2.5" stroke-linecap="round"/>`,
+  happy:   `<path d="M32 34 Q39 27 46 34" stroke="${INK}" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M50 34 Q57 27 64 34" stroke="${INK}" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M40 41 Q48 50 56 41" stroke="${INK}" stroke-width="2.8" fill="none" stroke-linecap="round"/>`,
+};
+const FACE_OF = { idle:'neutral', think:'think', work:'work', review:'think', done:'happy' };
+const EMOTE_OF = { idle:'', think:'…', work:'！', review:'？', done:'★' };
+const HAT = '#262033';
+
+function charSvg(key){
+  const a = AGENTS[key];
+  const mark = a.mark === 'glasses'
+    ? `<circle cx="39" cy="33" r="8.5" fill="none" stroke="${INK}" stroke-width="2.4"/><circle cx="57" cy="33" r="8.5" fill="none" stroke="${INK}" stroke-width="2.4"/><line x1="47.5" y1="33" x2="48.5" y2="33" stroke="${INK}" stroke-width="2.4"/>`
+    : '';
+  return `<svg viewBox="0 0 96 116" width="96" height="116" aria-hidden="true">
+    <ellipse cx="48" cy="108" rx="30" ry="7" fill="rgba(38,32,51,.16)"/>
+    <rect x="32" y="86" width="11" height="18" rx="5" fill="#3a3f4d" stroke="${INK}" stroke-width="3"/>
+    <rect x="53" y="86" width="11" height="18" rx="5" fill="#3a3f4d" stroke="${INK}" stroke-width="3"/>
+    <rect x="22" y="50" width="52" height="40" rx="16" fill="${a.hex}" stroke="${INK}" stroke-width="3.5"/>
+    <rect x="22" y="70" width="52" height="9" fill="#d9a436" stroke="${INK}" stroke-width="2.5"/>
+    <rect x="41" y="56" width="14" height="12" rx="2.5" fill="#fbf5e8" stroke="${INK}" stroke-width="2.2"/>
+    <circle cx="17" cy="64" r="7.5" fill="${a.hex}" stroke="${INK}" stroke-width="3"/>
+    <circle cx="79" cy="64" r="7.5" fill="${a.hex}" stroke="${INK}" stroke-width="3"/>
+    <circle cx="48" cy="32" r="25" fill="var(--skin)" stroke="${INK}" stroke-width="3.5"/>
+    ${mark}
+    <path d="M23 34 Q20 8 48 7 Q76 8 73 34 Q66 18 48 19 Q30 18 23 34 Z" fill="${HAT}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+    <rect x="40" y="0" width="16" height="10" rx="4" fill="${HAT}" stroke="${INK}" stroke-width="2.5"/>
+    <rect x="2" y="12" width="24" height="6" rx="3" fill="${HAT}" stroke="${INK}" stroke-width="2.5"/>
+    <rect x="70" y="12" width="24" height="6" rx="3" fill="${HAT}" stroke="${INK}" stroke-width="2.5"/>
+    <g class="face-g">${FACES.neutral}</g>
+  </svg>`;
+}
+</script>
+<script>
+/* ================= 建造：衙署 / 官员 / 顶栏 ================= */
+buildRoom();
+const A = {}; // key -> 运行时状态
+const agentIdx = Object.keys(AGENTS);
+function zonePoint(zone, key){
+  if (zone === 'desk') return deskAnchor(AGENTS[key].desk);
+  const [x, y] = ZONE_PT[zone];
+  const i = agentIdx.indexOf(key);
+  return [x + (i - 2.5) * 36, y + ((i % 2) ? 8 : -8)];
+}
+for (const key of agentIdx){
+  const a = AGENTS[key];
+  const [x, y] = deskAnchor(a.desk);
+  stage.insertAdjacentHTML('beforeend', `
+    <div class="agent" id="ag-${key}" data-od-id="agent-${key}" role="button" tabindex="0"
+         aria-label="查看${a.name}的行迹" style="left:${x}px;top:${y}px;z-index:${100+y}">
+      <div class="cap">
+        <div class="cap-name"><i class="dot"></i><b>${a.name}</b><span class="st-label">候令</span></div>
+        <div class="cap-task">候令</div>
+      </div>
+      <div class="emote" hidden></div>
+      <div class="char">${charSvg(key)}</div>
+    </div>`);
+  const el = $('#ag-' + key);
+  el.addEventListener('click', () => selectAgent(key));
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); selectAgent(key); }
+  });
+  A[key] = {
+    el, key,
+    dot: el.querySelector('.dot'), stLabel: el.querySelector('.st-label'),
+    task: el.querySelector('.cap-task'), emote: el.querySelector('.emote'),
+    face: el.querySelector('.face-g'),
+    pos: [x, y], zone: 'desk', status: 'idle',
+    sent: 0, recv: 0, acts: [], bubble: null, bubbleTimer: 0,
+  };
+}
+/* 顶栏：选卷 */
+const chaptersEl = $('.chapters');
+SESSIONS.forEach((s, i) => {
+  chaptersEl.insertAdjacentHTML('beforeend',
+    `<button class="chapter-btn" data-od-id="chapter-${s.id}" data-i="${i}" aria-pressed="false">
+       <span class="c-no">${s.no}</span><span class="c-name">${s.title}</span>
+     </button>`);
+});
+chaptersEl.addEventListener('click', e => {
+  const b = e.target.closest('.chapter-btn');
+  if (b) switchSession(+b.dataset.i);
+});
+/* 顶栏：官员 chips */
+const chipsEl = $('.chips');
+for (const key of agentIdx){
+  const a = AGENTS[key];
+  chipsEl.insertAdjacentHTML('beforeend',
+    `<button class="chip" data-od-id="chip-${key}" data-key="${key}" aria-pressed="false">
+       <span class="face" style="background:${a.hex}">${a.name[0]}</span>${a.name}<span class="st"></span>
+     </button>`);
+}
+chipsEl.addEventListener('click', e => {
+  const c = e.target.closest('.chip');
+  if (c) selectAgent(c.dataset.key);
+});
+
+/* ================= 舞台缩放 ================= */
+function fit(){
+  const w = $('#stageScale').clientWidth;
+  stage.style.transform = `scale(${w / 1200})`;
+}
+addEventListener('resize', fit);
+
+/* ================= 特效 ================= */
+const flights = [];
+function spawnSfx(text, x, y, cls){
+  const d = document.createElement('div');
+  d.className = 'sfx' + (cls ? ' ' + cls : '');
+  d.style.left = (x - 60) + 'px';
+  d.style.top = (y - 150) + 'px';
+  d.innerHTML = `<span>${text}</span>`;
+  stage.appendChild(d);
+  d.addEventListener('animationend', () => d.remove());
+}
+function flyEnv(x1, y1, x2, y2){
+  const d = document.createElement('div');
+  d.className = 'env';
+  d.innerHTML = `<svg viewBox="0 0 34 26"><rect x="2" y="7" width="30" height="13" rx="6.5" fill="#fbf5e8" stroke="${INK}" stroke-width="3"/><circle cx="6" cy="13.5" r="3.5" fill="#a87f4e" stroke="${INK}" stroke-width="2"/><circle cx="28" cy="13.5" r="3.5" fill="#a87f4e" stroke="${INK}" stroke-width="2"/><circle cx="17" cy="13.5" r="3.2" fill="#c8352a" stroke="${INK}" stroke-width="2"/></svg>`;
+  stage.appendChild(d);
+  flights.push({ el: d, x1, y1, x2, y2, cx: (x1 + x2) / 2, cy: Math.min(y1, y2) - 150, t0: performance.now(), dur: 850 });
+}
+function stepFlights(now){
+  for (let i = flights.length - 1; i >= 0; i--){
+    const f = flights[i];
+    let k = (now - f.t0) / f.dur;
+    if (k >= 1){ f.el.remove(); flights.splice(i, 1); continue; }
+    const u = 1 - k;
+    const x = u*u*f.x1 + 2*u*k*f.cx + k*k*f.x2;
+    const y = u*u*f.y1 + 2*u*k*f.cy + k*k*f.y2;
+    const dx = 2*u*(f.cx - f.x1) + 2*k*(f.x2 - f.cx);
+    const dy = 2*u*(f.cy - f.y1) + 2*k*(f.y2 - f.cy);
+    f.el.style.transform = `translate(${x - 17}px,${y - 13}px) rotate(${Math.atan2(dy, dx) * 57.3 * .3}deg)`;
+  }
+}
+function showBubble(key, text){
+  const a = A[key];
+  if (a.bubble) a.bubble.remove();
+  clearTimeout(a.bubbleTimer);
+  const b = document.createElement('div');
+  b.className = 'bubble';
+  b.innerHTML = `<span class="b-from">${AGENTS[key].name}</span>${text}`;
+  a.el.appendChild(b);
+  a.bubble = b;
+  a.bubbleTimer = setTimeout(() => {
+    b.classList.add('bye');
+    setTimeout(() => { b.remove(); if (a.bubble === b) a.bubble = null; }, 420);
+  }, 3000);
+}
+
+/* ================= 状态应用 ================= */
+let S = SESSIONS[0];
+let selected = null;
+function setAgentStatus(key, st, taskText){
+  const a = A[key];
+  a.status = st;
+  a.dot.style.background = STATUS[st].css;
+  a.stLabel.textContent = STATUS[st].label;
+  a.task.textContent = taskText;
+  a.face.innerHTML = FACES[FACE_OF[st]];
+  const em = EMOTE_OF[st];
+  a.emote.hidden = !em;
+  a.emote.textContent = em;
+  const chip = chipsEl.querySelector(`[data-key="${key}"] .st`);
+  if (chip) chip.style.background = STATUS[st].css;
+}
+function moveAgent(key, zone, fx){
+  const a = A[key];
+  const [x, y] = zonePoint(zone, key);
+  a.pos = [x, y]; a.zone = zone;
+  a.el.style.zIndex = 100 + Math.round(y);
+  if (!fx){
+    a.el.classList.add('notrans');
+    a.el.style.left = x + 'px'; a.el.style.top = y + 'px';
+    void a.el.offsetWidth;
+    a.el.classList.remove('notrans');
+    a.el.classList.remove('walking');
+    return;
+  }
+  a.el.style.left = x + 'px'; a.el.style.top = y + 'px';
+  a.el.classList.add('walking');
+  clearTimeout(a.walkTimer);
+  a.walkTimer = setTimeout(() => a.el.classList.remove('walking'), 1150);
+}
+function pushAct(key, t, text){
+  A[key].acts.push({ t, text });
+  if (selected === key) renderAgentPanel();
+}
+
+function applyEvent(ev, fx){
+  const [t, type] = ev;
+  if (type === 'ph'){
+    $('#phaseName').textContent = ev[2];
+    if (fx) spawnSfx('咚！', 372, 218, 'blue');
+  } else if (type === 'st'){
+    const [, , key, st, taskText] = ev;
+    setAgentStatus(key, st, taskText);
+    pushAct(key, t, `${STATUS[st].label} · ${taskText}`);
+  } else if (type === 'mv'){
+    const [, , key, zone] = ev;
+    moveAgent(key, zone, fx);
+    pushAct(key, t, `移步 ${zone === 'desk' ? '公案' : ZONE_NAME[zone]}`);
+  } else if (type === 'msg'){
+    const [, , from, to, text] = ev;
+    const toName = to === 'all' ? '诸司' : AGENTS[to].name;
+    A[from].sent++;
+    pushAct(from, t, `行文给 ${toName}：${text}`);
+    const [x1, y1] = A[from].pos;
+    if (fx){
+      showBubble(from, text);
+      const targets = to === 'all' ? agentIdx.filter(k => k !== from) : [to];
+      targets.forEach((k, i) => {
+        const [x2, y2] = A[k].pos;
+        setTimeout(() => flyEnv(x1, y1 - 96, x2, y2 - 96), i * 90);
+      });
+      const [fx0, fy0] = A[targets[0]].pos;
+      setTimeout(() => spawnSfx('报！', fx0, fy0, ''), 780);
+    }
+    if (to === 'all'){ for (const k of agentIdx) if (k !== from){ A[k].recv++; pushAct(k, t, `接 ${AGENTS[from].name} 文：${text}`); } }
+    else { A[to].recv++; pushAct(to, t, `接 ${AGENTS[from].name} 文：${text}`); }
+  } else if (type === 'ms'){
+    const text = ev[2];
+    msDone.add(text);
+    renderMs();
+    if (fx) spawnSfx('准！', 372, 218, 'red');
+  }
+}
+
+/* ================= 政事堂 / 里程碑 ================= */
+let msDone = new Set();
+const CHECK = `<svg viewBox="0 0 12 12"><path d="M2 6.5 L5 9.5 L10 2.5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+function renderMs(){
+  const ul = $('#msList');
+  ul.innerHTML = S.milestones.map(m =>
+    `<li class="ms-item ${msDone.has(m) ? 'done' : ''}"><span class="box">${CHECK}</span>${m}</li>`).join('');
+  $('#msBar').style.width = (msDone.size / S.milestones.length * 100) + '%';
+}
+
+/* ================= 百官谱面板 ================= */
+function renderAgentPanel(){
+  const body = $('#apBody');
+  if (!selected){
+    body.innerHTML = `<div class="ap-empty">点击衙署中任意官员<br>查看 TA 的状态与行迹流水</div>`;
+    return;
+  }
+  const a = A[selected], meta = AGENTS[selected];
+  const zone = a.zone === 'desk' ? `公案 ${meta.desk + 1} 号` : ZONE_NAME[a.zone];
+  body.innerHTML = `
+    <div class="ap-head">
+      <span class="ap-face" style="background:${meta.hex}">${meta.name[0]}</span>
+      <div><div class="ap-name">${meta.name}</div><div class="ap-role">${meta.role} · 现居${zone}</div></div>
+    </div>
+    <div class="ap-stats">
+      <div class="ap-stat"><b>${a.sent}</b><span>发文</span></div>
+      <div class="ap-stat"><b>${a.recv}</b><span>收文</span></div>
+      <div class="ap-stat"><b>${a.acts.length}</b><span>行迹</span></div>
+    </div>
+    <ul class="ap-acts">${a.acts.slice().reverse().map(x =>
+      `<li><span class="t">${fmt(x.t)}</span><span>${x.text}</span></li>`).join('')}</ul>`;
+}
+function selectAgent(key){
+  selected = selected === key ? null : key;
+  for (const k of agentIdx){
+    A[k].el.classList.toggle('selected', k === selected);
+    A[k].el.setAttribute('aria-pressed', k === selected);
+  }
+  chipsEl.querySelectorAll('.chip').forEach(c => {
+    const on = c.dataset.key === selected;
+    c.classList.toggle('sel', on);
+    c.setAttribute('aria-pressed', on);
+  });
+  renderAgentPanel();
+}
+
+/* ================= 回放引擎（自动循环） ================= */
+let si = 0, time = 0, evPtr = 0;
+try{
+  si = Math.min(Math.max(+(localStorage.getItem('od-liubu-session') || 0), 0), SESSIONS.length - 1);
+}catch(e){}
+
+function rebuild(){
+  for (const f of flights) f.el.remove();
+  flights.length = 0;
+  stage.querySelectorAll('.sfx,.bubble').forEach(d => d.remove());
+  for (const key of agentIdx){
+    const a = A[key];
+    a.sent = 0; a.recv = 0; a.acts = []; a.bubble = null;
+    clearTimeout(a.bubbleTimer);
+    moveAgent(key, 'desk', false);
+    setAgentStatus(key, 'idle', '候令');
+  }
+  msDone = new Set(); evPtr = 0;
+  $('#phaseName').textContent = '待升堂';
+  renderMs();
+  if (selected) renderAgentPanel();
+}
+function switchSession(i){
+  si = i; S = SESSIONS[i];
+  try{ localStorage.setItem('od-liubu-session', i); }catch(e){}
+  chaptersEl.querySelectorAll('.chapter-btn').forEach(b => {
+    const on = +b.dataset.i === i;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', on);
+  });
+  time = 0;
+  rebuild();
+}
+let lastNow = performance.now();
+function loop(now){
+  const dt = (now - lastNow) / 1000;
+  lastNow = now;
+  time += dt;
+  while (evPtr < S.events.length && S.events[evPtr][0] <= time){
+    applyEvent(S.events[evPtr], true);
+    evPtr++;
+  }
+  if (time >= S.duration){ time = 0; rebuild(); }
+  stepFlights(now);
+  requestAnimationFrame(loop);
+}
+
+/* ================= 启动 ================= */
+fit();
+switchSession(si);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
