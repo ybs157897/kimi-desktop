@@ -73,15 +73,20 @@ export function ApprovalCard({ interaction, onResolve, busy = false, onOpenPlanD
 
   if (!pending) {
     return (
-      <div className="mb-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-background-surface-under)] px-4 py-3">
-        <div className="flex items-center gap-2 text-[12px] text-[var(--color-text-foreground)]">
-          <span className={RESOLVED_TONE[interaction.state]}>
+      <div
+        className="ui-card-enter mb-2 max-w-[46rem] border-l-[3px] py-1.5 pl-3 pr-2 text-[12px]"
+        style={{ borderLeftColor: resolvedBarColor(interaction.state) }}
+      >
+        <div className="flex items-center gap-2">
+          <span className={`font-medium ${RESOLVED_TONE[interaction.state]}`}>
             {resolvedLabel(interaction.state)}
           </span>
-          <span className="opacity-70">{request.action}</span>
+          <span className="text-[var(--color-token-conversation-summary-trailing)]">{request.action}</span>
         </div>
         {response.success && response.data.feedback !== undefined ? (
-          <div className="mt-1 text-[11px] opacity-60">{response.data.feedback}</div>
+          <div className="mt-0.5 text-[11px] text-[var(--color-token-conversation-summary-trailing)]">
+            {response.data.feedback}
+          </div>
         ) : null}
       </div>
     );
@@ -217,6 +222,12 @@ const RESOLVED_TONE: Record<string, string> = {
   rejected: 'text-[var(--color-text-danger)]',
   cancelled: 'opacity-50',
 };
+
+function resolvedBarColor(state: string): string {
+  if (state === 'approved') return 'var(--color-text-success)';
+  if (state === 'rejected') return 'var(--color-text-danger)';
+  return 'var(--color-token-border-heavy)';
+}
 
 function resolvedLabel(state: string): string {
   switch (state) {

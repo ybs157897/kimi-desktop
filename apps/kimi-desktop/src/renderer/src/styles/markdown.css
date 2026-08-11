@@ -1,11 +1,11 @@
 /*
- * Markdown body typography — tuned for chat readability: optical tracking,
- * clear heading steps, recessed code materials, and a steadier vertical
- * rhythm than the previous flat Codex defaults.
+ * Markdown body typography — Codex/ChatGPT render spec (analysis 05/06/13).
  *
- * Prose colors come from the `--color-token-*` compatibility layer in
- * tokens.css (dark by default, `[data-theme='light']` switches); radii use
- * the shared `--radius-*` ladder; spacing stays on the 4px grid.
+ * Flat, borderless prose: recessed inline code (no border, mixed fill),
+ * absolute-px headings, a `::after` left bar for blockquotes, borderless
+ * separate-border tables with only row dividers, a single 8px-radius code
+ * shell, and 28px hrs. Prose colors come from the `--color-token-*` layer in
+ * tokens.css (dark by default, `[data-theme='light']` switches).
  *
  * Imported by Markdown.tsx (not app.css).
  */
@@ -14,7 +14,7 @@
   color: var(--color-token-text-primary, var(--color-text-foreground));
   font-size: var(--codex-chat-font-size, 14px);
   letter-spacing: var(--tracking-tight, 0);
-  line-height: var(--leading-chat, 1.5);
+  line-height: var(--markdown-line-height, calc(var(--codex-chat-font-size, 14px) + 8px));
   overflow-wrap: anywhere;
 }
 
@@ -31,28 +31,69 @@
 .markdown .markdown-math-block,
 .markdown .markdown-code-shell,
 .markdown .markdown-shiki {
-  margin-block: 0 var(--markdown-paragraph-spacing, 0.75rem);
+  margin-block: 0 var(--markdown-paragraph-spacing, 0.6875rem);
 }
 .markdown > :last-child {
   margin-bottom: 0;
 }
+/* A paragraph immediately followed by a list narrows its bottom gap, and a
+   list that is not last reclaims the same gap (Codex `_list` adjacency). */
+.markdown > p:has(+ ul),
+.markdown > p:has(+ ol) {
+  margin-bottom: 0.625rem;
+}
+.markdown > ul:not(:last-child),
+.markdown > ol:not(:last-child) {
+  margin-bottom: 0.625rem;
+}
 .markdown ul,
 .markdown ol {
-  padding-inline-start: var(--markdown-list-padding-inline-start, 1.35rem);
+  margin: 0;
+  padding-inline-start: var(--markdown-list-padding-inline-start, 1.3125rem);
+  list-style-position: outside;
+}
+.markdown ul {
+  list-style-type: disc;
+}
+.markdown ul ul {
+  list-style-type: circle;
+}
+.markdown ul ul ul {
+  list-style-type: square;
+}
+.markdown ol {
+  list-style-type: decimal;
+}
+/* GFM task list: drop the marker; the checkbox owns the bullet slot. */
+.markdown li:has(> input[type='checkbox']) {
+  list-style-type: none;
 }
 .markdown li + li {
-  margin-top: 0.25rem;
+  margin-top: var(--markdown-li-gap, 0.5rem);
 }
 .markdown li > p {
   margin-block: 0;
 }
+.markdown li > p + p {
+  margin-top: var(--markdown-paragraph-spacing, 0.6875rem);
+}
+.markdown li > ul,
+.markdown li > ol {
+  margin-top: var(--markdown-li-gap, 0.5rem);
+  margin-bottom: 0;
+}
+.markdown ul > li::marker,
+.markdown ol > li::marker {
+  color: var(--color-token-text-primary);
+}
 .markdown input[type='checkbox'] {
   margin-right: 0.25rem;
-  /* Native checkbox must stay visible on the dark canvas. */
   accent-color: var(--primary);
 }
 
-/* ---------------------------------------------------------------- headings */
+/* ---------------------------------------------------------------- headings
+   Absolute px ladder (24/20/17/17/15/15), weight 600, line-height 1.25,
+   uniform 20px/10px margins — matches Codex `_heading*`. */
 .markdown h1,
 .markdown h2,
 .markdown h3,
@@ -60,95 +101,100 @@
 .markdown h5,
 .markdown h6 {
   font-weight: 600;
-  letter-spacing: var(--tracking-display, -0.01em);
-  line-height: 1.28;
-  margin-block: 1.25rem 0.5rem;
+  line-height: 1.25;
+  margin: var(--markdown-heading-margin, 20px 0 10px);
   color: var(--color-token-text-primary);
 }
 .markdown > :is(h1, h2, h3, h4, h5, h6):first-child {
   margin-top: 0;
 }
 .markdown h1 {
-  font-size: 1.35em;
+  font-size: 24px;
 }
 .markdown h2 {
-  font-size: 1.2em;
+  font-size: 20px;
 }
-.markdown h3 {
-  font-size: 1.08em;
-  letter-spacing: var(--tracking-tight, 0);
-}
+.markdown h3,
 .markdown h4 {
-  font-size: 1em;
-  letter-spacing: var(--tracking-tight, 0);
+  font-size: 17px;
+  line-height: 22px;
 }
 .markdown h5,
 .markdown h6 {
-  font-size: 0.92em;
-  letter-spacing: var(--tracking-tight, 0);
+  font-size: 15px;
+  line-height: 20px;
   color: var(--color-token-text-secondary);
 }
 
-/* ------------------------------------------------------------------ inline */
+/* ------------------------------------------------------------------ inline
+   Inline code: no border, a mixed fill (list-hover + a touch of foreground),
+   6px radius, .92em. `box-decoration-break: clone` so wrapping spans keep
+   their padding on every line. */
 .markdown code,
 .markdown pre,
 .markdown .markdown-citation {
   font-family: var(--code-font-family, var(--font-mono, ui-monospace, 'SF Mono', Menlo, Consolas, monospace));
 }
 .markdown :not(pre) > code {
-  background-color: var(--color-background-button-secondary);
-  border: 1px solid var(--color-token-border-light);
-  border-radius: var(--markdown-inline-code-border-radius, 5px);
+  background: color-mix(
+    in srgb,
+    var(--color-token-list-hover-background) 60%,
+    var(--color-token-foreground) 6%
+  );
+  border: none;
+  border-radius: var(--markdown-inline-code-border-radius, 6px);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
   padding: var(--markdown-inline-code-padding, 1px 6px);
-  font-size: var(--markdown-inline-code-font-size, 0.9em);
+  font-size: var(--markdown-inline-code-font-size, 0.92em);
   letter-spacing: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-/* ----------------------------------------------------------- code blocks */
+/* ----------------------------------------------------------- code blocks
+   Flat shell: no border, no shadow, just the code-block fill and an 8px
+   radius. The header row carries the language + copy action in a single
+   toolbar. Fold behavior is unchanged (data-folded/data-lines). */
 .markdown-code-shell {
   position: relative;
   overflow: hidden;
-  border: 1px solid var(--color-token-border-heavy);
-  border-radius: var(--markdown-code-block-border-radius, 12px);
+  border: none;
+  border-radius: var(--markdown-code-block-border-radius, 8px);
   background-color: var(--color-token-text-code-block-background);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 .markdown-code-lang {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   border-bottom: 1px solid var(--color-token-border-light);
-  padding: 0.35rem 0.75rem;
-  font-family: var(--code-font-family, var(--font-mono, ui-monospace));
+  padding: 0.35rem 0.5rem 0.35rem 0.75rem;
+  font-family: var(--ui-font-family, var(--font-sans));
   font-size: var(--client-caption-font-size, 10px);
   font-weight: 500;
   letter-spacing: 0.02em;
   line-height: 1.3;
   color: var(--color-token-text-tertiary);
-  background: color-mix(in srgb, var(--color-background-panel) 55%, transparent);
 }
-.markdown-code-lang-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-text-accent) 60%, var(--color-token-text-tertiary));
-  flex-shrink: 0;
+.markdown-code-lang > .markdown-code-lang-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-/* Copy button — sits in the header row next to the language label, always
-   visible at reduced opacity so the affordance is discoverable; brightens on
-   hover/focus. */
+/* Copy button — lives in the header row (in-flow, ms-auto), revealed at
+   reduced opacity so the affordance is discoverable; brightens on hover. */
 .markdown-code-copy {
-  position: absolute;
-  top: 4px;
-  right: 8px;
-  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid var(--color-token-border-light);
+  margin-left: auto;
+  border: none;
   border-radius: var(--radius-xs, 4px);
   padding: 1px 7px;
-  background-color: var(--color-background-panel);
+  background-color: transparent;
   color: var(--color-token-text-tertiary);
   font-family: var(--ui-font-family, var(--font-sans));
   font-size: var(--client-caption-font-size, 10px);
@@ -159,8 +205,7 @@
   opacity: 0.55;
   transition:
     opacity var(--duration-hover) ease,
-    color var(--duration-hover) ease,
-    border-color var(--duration-hover) ease;
+    color var(--duration-hover) ease;
   user-select: none;
 }
 .markdown-code-shell:hover .markdown-code-copy,
@@ -169,12 +214,10 @@
 }
 .markdown-code-copy:hover {
   color: var(--color-token-text-primary);
-  border-color: var(--color-token-border-heavy);
 }
 .markdown-code-copy.is-copied,
 .markdown-code-copy.is-copied:hover {
   color: var(--color-text-success);
-  border-color: color-mix(in srgb, var(--color-text-success) 30%, var(--color-token-border-light));
   opacity: 1;
 }
 /* Long-block fold: a clamped preview window with a gradient veil and an
@@ -188,18 +231,17 @@
   width: 100%;
   border-top: 1px solid var(--color-token-border-light);
   padding: 0.35rem 0.75rem;
-  background: color-mix(in srgb, var(--color-background-panel) 55%, transparent);
+  background: transparent;
   font-family: var(--ui-font-family, var(--font-sans));
   font-size: var(--client-caption-font-size, 10px);
   font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--color-token-text-tertiary);
   cursor: pointer;
-  transition: color var(--duration-hover) ease, background-color var(--duration-hover) ease;
+  transition: color var(--duration-hover) ease;
 }
 .markdown-code-fold-toggle:hover {
   color: var(--color-token-text-primary);
-  background: var(--color-token-list-hover-background);
 }
 .markdown-code-body {
   position: relative;
@@ -229,19 +271,16 @@
   background-color: transparent;
   border: none;
   border-radius: 0;
-  padding: var(--markdown-code-block-padding, 12px);
-  line-height: var(--markdown-code-block-line-height, 1.55);
+  padding: var(--markdown-code-block-padding, 8px);
+  line-height: var(--markdown-code-block-line-height, 1.5);
   overflow-x: auto;
-  font-size: var(--codex-code-font-size, var(--code-font-size, 11px));
+  font-size: var(--codex-code-font-size, var(--code-font-size, 12px));
   letter-spacing: 0;
 }
-/* Bare pre (no shell) still gets material treatment. */
+/* Bare pre (no shell) still gets the code-block fill. */
 .markdown > pre,
 .markdown p > pre {
   background-color: var(--color-token-text-code-block-background);
-  border: 1px solid var(--color-token-border-heavy);
-  border-radius: var(--markdown-code-block-border-radius, 12px);
-  box-shadow: var(--shadow-sm);
 }
 /* Shiki paints the `pre` background inline — the token surface wins. */
 .markdown .markdown-shiki pre.shiki {
@@ -278,36 +317,64 @@
   user-select: none;
 }
 
-/* ------------------------------------------------------------------ links */
+/* ------------------------------------------------------------------ links
+   Link color; hover gets a 0.5px dashed underline with a 2px offset
+   (Codex InlineMention `data-underline-on-hover`). */
 .markdown a {
   color: var(--color-token-text-link-foreground, var(--blue-300));
   text-decoration: none;
   text-underline-offset: 2px;
 }
 .markdown a:hover {
-  text-decoration: underline;
+  -webkit-text-decoration: underline dashed;
+  text-decoration: underline dashed;
+  text-decoration-thickness: 0.5px;
 }
 
-/* ------------------------------------------------------------- quotations */
+/* ------------------------------------------------------------- quotations
+   No background, no border — a 4px rounded `::after` left bar in the heavy
+   border token, 8px block padding, 24px inline-start. Body text keeps the
+   primary color (no italic). */
 .markdown blockquote {
-  margin-inline: 0;
-  border-left: 2.5px solid var(--color-token-border-heavy);
-  padding: 0.25rem 0 0.25rem 0.75rem;
-  color: var(--color-token-text-secondary);
+  position: relative;
+  margin: 0 0 8px;
+  padding-block: 8px;
+  padding-inline-start: 24px;
+  border: none;
+  background: transparent;
+  color: var(--color-token-text-primary);
+  font-style: normal;
+  line-height: 24px;
+}
+.markdown blockquote > :first-child {
+  margin-top: 0;
+}
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+.markdown blockquote::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  border-radius: 2px;
+  background-color: var(--color-token-border-heavy);
 }
 
 /* ---------------------------------------------------------------- details */
 .markdown details {
-  border: 1px solid var(--color-token-border);
-  border-radius: var(--radius-md, 12px);
-  padding: 0.5rem 0.75rem;
-  background-color: var(--color-background-surface-under);
-  box-shadow: var(--shadow-sm);
+  border: 1px solid color-mix(in srgb, var(--color-token-border) 16%, transparent);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background-color: color-mix(in srgb, var(--color-token-bg-primary) 40%, transparent);
 }
 .markdown details > summary {
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--tracking-tight, 0);
+  color: var(--color-token-text-primary);
 }
 .markdown details[open] > summary {
   margin-bottom: 0.5rem;
@@ -315,11 +382,12 @@
 
 /* ------------------------------------------------------------- alerts (:::) */
 .markdown-alert {
-  border: 1px solid var(--color-token-border);
-  border-radius: var(--radius-md, 12px);
-  padding: 0.5rem 0.75rem;
-  background-color: var(--color-background-panel);
-  box-shadow: var(--shadow-sm);
+  border: none;
+  border-left: 3px solid var(--color-token-border-heavy);
+  border-radius: 0;
+  padding: 0.25rem 0 0.25rem 0.75rem;
+  background: transparent;
+  box-shadow: none;
 }
 .markdown-alert-title {
   font-size: var(--client-meta-font-size, 11px);
@@ -330,34 +398,29 @@
 .markdown-alert-body > :last-child {
   margin-bottom: 0;
 }
-/* Alert accents use the theme-switched text tokens so the bars/titles stay
-   readable on both surfaces (named palette values would not adapt). */
-.markdown-alert-note {
-  border-left: 3px solid var(--color-token-border-heavy);
-}
 .markdown-alert-note .markdown-alert-title {
   color: var(--color-text-secondary);
 }
 .markdown-alert-tip {
-  border-left: 3px solid var(--color-text-success);
+  border-left-color: var(--color-text-success);
 }
 .markdown-alert-tip .markdown-alert-title {
   color: var(--color-text-success);
 }
 .markdown-alert-important {
-  border-left: 3px solid var(--color-text-accent);
+  border-left-color: var(--color-text-accent);
 }
 .markdown-alert-important .markdown-alert-title {
   color: var(--color-text-accent);
 }
 .markdown-alert-warning {
-  border-left: 3px solid var(--color-text-warning);
+  border-left-color: var(--color-text-warning);
 }
 .markdown-alert-warning .markdown-alert-title {
   color: var(--color-text-warning);
 }
 .markdown-alert-caution {
-  border-left: 3px solid var(--color-text-danger);
+  border-left-color: var(--color-text-danger);
 }
 .markdown-alert-caution .markdown-alert-title {
   color: var(--color-text-danger);
@@ -372,44 +435,87 @@
   white-space: nowrap;
 }
 
-/* ------------------------------------------------------------------- table */
+/* ---------------------------------------------------------------- mermaid
+   A rendered mermaid diagram: center it, give it a little breathing room,
+   inherit the code-block surface so it reads as a diagram panel. The SVG
+   itself is injected by MermaidDiagram (dangerouslySetInnerHTML). */
+.markdown .markdown-mermaid {
+  display: flex;
+  justify-content: center;
+  padding: 12px 8px;
+  overflow-x: auto;
+}
+.markdown .markdown-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ------------------------------------------------------------------- table
+   `border-collapse: separate` with only row dividers: header bottom border
+   (heavy) + inter-row td bottom border (light). No outer frame, no card
+   chrome, no header background. The shell is just a scroll container. */
 .markdown-table-shell {
   width: 100%;
   overflow-x: auto;
-  border: 1px solid var(--color-token-border);
-  border-radius: var(--radius-md, 12px);
-  box-shadow: var(--shadow-sm);
+  scrollbar-width: thin;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 .markdown table {
-  width: 100%;
+  width: fit-content;
   min-width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: auto;
+  text-align: start;
+  margin: 0;
+  font-size: 14px;
 }
 .markdown th,
 .markdown td {
-  border: 1px solid var(--color-token-border-light);
-  padding: 8px 12px;
+  vertical-align: top;
+  white-space: normal;
+  padding-inline-end: 24px;
   overflow-wrap: anywhere;
 }
-.markdown th {
-  background-color: var(--color-background-surface-under);
+.markdown thead th {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-token-border-heavy);
+  text-align: start;
+  color: var(--color-token-text-primary);
   font-weight: 600;
-  letter-spacing: var(--tracking-tight, 0);
+  line-height: 16px;
+  background: transparent;
+}
+.markdown tbody td {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.markdown tbody tr:not(:last-child) td {
+  border-bottom: 1px solid var(--color-token-border-light);
+}
+.markdown th:last-child,
+.markdown td:last-child {
+  padding-inline-end: 0;
 }
 
 /* ------------------------------------------------------------------- image */
 .markdown img {
   max-width: 100%;
-  border-radius: var(--radius-md, 12px);
+  margin-block: 0.75rem;
+  border-radius: var(--radius-md, 8px);
   box-shadow: var(--shadow-sm);
 }
 
 /* ------------------------------------------------------------------- hr */
 .markdown hr {
+  clear: both;
   border: none;
-  border-top: 1px solid var(--color-token-border);
-  margin-block: 1rem;
+  border-top: 1px solid var(--color-token-border-heavy);
+  height: 0;
+  margin: var(--markdown-hr-margin, 28px 0);
 }
 
 /* ----------------------------------------------------------- streaming dot */
@@ -429,14 +535,16 @@
 }
 
 /* ------------------------------------------------- streaming incremental fade
-   Each streamed chunk is wrapped in a `markdown-stream-delta` span/div; the
-   animation plays once when the element first appears and never restarts on
-   later frames (chunk markup is stable across renders). Duration/easing match
-   the web version's text-node-stream-update-fade. */
+   Each streamed chunk is wrapped in a `markdown-stream-delta` span/div. The
+   class names and the span/div shape are load-bearing (pinned by
+   experience.test.ts) — only the animation kernel below may change. The fade
+   follows the Codex `_fade-in` cadence: a short opacity fade with the Codex
+   ease and an optional per-block `--fade-delay` for staggered entry. */
 .markdown-stream-delta {
-  animation-duration: 0.28s;
-  animation-timing-function: cubic-bezier(0.33, 0, 0.67, 1);
+  animation-duration: var(--duration-codex, 300ms);
+  animation-timing-function: var(--ease-codex, cubic-bezier(0.19, 1, 0.22, 1));
   animation-fill-mode: both;
+  animation-delay: var(--fade-delay, 0s);
   will-change: opacity;
 }
 .markdown-stream-delta--a {
@@ -485,7 +593,7 @@
 .markdown-error button {
   border: 1px solid var(--color-token-border);
   border-radius: var(--radius-sm, 8px);
-  background-color: var(--color-background-surface-under);
+  background-color: transparent;
   color: var(--color-token-text-primary);
   font-size: 12px;
   padding: 2px 8px;

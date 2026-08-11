@@ -108,6 +108,10 @@
   --duration-popover: 180ms;
   --duration-hover: 120ms;
   --duration-slow: 260ms; /* card entrance (web kimi-card-in) */
+  /* Codex disclosure / fade timing (app-initial Mk transition). */
+  --ease-codex: cubic-bezier(0.19, 1, 0.22, 1);
+  --duration-codex: 300ms;
+  --transition-duration-basic: 150ms;
 
   /* ------------------------------ corner radius ---------------------------- */
 
@@ -150,20 +154,32 @@
   /* Sidebar token-row height: 14px font × 1.5 line-height + 8px vertical padding. */
   --height-token-row: 29px;
 
-  /* ---------------------------- markdown prose ----------------------------- */
+  /* ---------------------------- markdown prose -----------------------------
+     Tuned to the Codex/ChatGPT render spec (analysis 05/06/13): paragraph
+     gap 11px, headings absolute px with weight 600, lists 1.3125rem indent,
+     code radius 8px / padding 8px, hr 28px. See markdown.css. */
 
-  --markdown-inline-code-border-radius: 4px;
+  --markdown-inline-code-border-radius: 6px;
   --markdown-inline-code-padding: 1px 6px;
-  --markdown-inline-code-font-size: 0.9em;
-  --markdown-code-block-border-radius: 12px;
-  --markdown-code-block-padding: 12px;
-  --markdown-code-block-line-height: 1.55;
-  --markdown-list-padding-inline-start: 1.35rem;
-  --markdown-paragraph-spacing: 0.75rem;
+  --markdown-inline-code-font-size: 0.92em;
+  --markdown-code-block-border-radius: 8px;
+  --markdown-code-block-padding: 8px;
+  --markdown-code-block-line-height: 1.5;
+  --markdown-list-padding-inline-start: 1.3125rem;
+  --markdown-paragraph-spacing: 0.6875rem;
+  /* line-height = font-size + 8px (the Codex markdown-content rhythm). */
+  --markdown-line-height: calc(var(--codex-chat-font-size, 14px) + 8px);
+  --markdown-heading-margin: 20px 0 10px;
+  --markdown-hr-margin: 28px 0;
+  --markdown-li-gap: 0.5rem;
   /* Long code block: line budget before the fold kicks in, and the folded
      body's max height (matches the ~16rem preview window). */
   --markdown-code-fold-threshold: 20;
   --markdown-code-folded-height: 16rem;
+
+  /* Conversation timeline gaps (Codex turn list rhythm). */
+  --conversation-item-gap: 16px;
+  --conversation-grouped-item-gap: 4px;
 }
 
 /* -------------------------- semantic layer (dark) --------------------------
@@ -282,6 +298,43 @@
   --color-token-list-active-background: var(--color-list-active);
   --color-token-on-accent: var(--color-text-on-accent);
   --color-token-error-foreground: var(--red-400);
+
+  /* Conversation summary text tones (Codex agent-activity / worked-for). */
+  --color-token-conversation-body: color-mix(
+    in srgb,
+    var(--color-token-foreground) 60%,
+    transparent
+  );
+  --color-token-conversation-header: color-mix(
+    in srgb,
+    var(--color-token-foreground) 30%,
+    transparent
+  );
+  --color-token-conversation-summary-leading: color-mix(
+    in srgb,
+    var(--color-text-secondary) 90%,
+    transparent
+  );
+  --color-token-conversation-summary-trailing: color-mix(
+    in srgb,
+    var(--color-token-foreground) 40%,
+    transparent
+  );
+  --color-token-non-assistant-body-descendant: color-mix(
+    in srgb,
+    var(--color-token-foreground) 60%,
+    transparent
+  );
+  --color-token-description-foreground: color-mix(
+    in srgb,
+    var(--color-token-foreground) 70%,
+    transparent
+  );
+
+  /* Shimmer (Codex loading-shimmer-pure-text): the dim base the text sits on
+     and the bright band that sweeps across it. Layered per theme. */
+  --shimmer-text-secondary: color-mix(in srgb, var(--color-token-foreground) 45%, transparent);
+  --shimmer-contrast: rgb(255 255 255 / 0.75);
 }
 
 /* -------------------------- semantic layer (light) ------------------------ */
@@ -394,4 +447,40 @@
   --color-token-list-active-background: var(--color-list-active);
   --color-token-on-accent: var(--color-text-on-accent);
   --color-token-error-foreground: var(--red-500);
+
+  /* Conversation summary text tones (light). */
+  --color-token-conversation-body: color-mix(
+    in srgb,
+    var(--color-token-foreground) 60%,
+    transparent
+  );
+  --color-token-conversation-header: color-mix(
+    in srgb,
+    var(--color-token-foreground) 30%,
+    transparent
+  );
+  --color-token-conversation-summary-leading: color-mix(
+    in srgb,
+    var(--color-text-secondary) 90%,
+    transparent
+  );
+  --color-token-conversation-summary-trailing: color-mix(
+    in srgb,
+    var(--color-token-foreground) 40%,
+    transparent
+  );
+  --color-token-non-assistant-body-descendant: color-mix(
+    in srgb,
+    var(--color-token-foreground) 60%,
+    transparent
+  );
+  --color-token-description-foreground: color-mix(
+    in srgb,
+    var(--color-token-foreground) 70%,
+    transparent
+  );
+
+  /* Shimmer (light): the sweep band is dark on a light canvas. */
+  --shimmer-text-secondary: color-mix(in srgb, var(--color-token-foreground) 55%, transparent);
+  --shimmer-contrast: rgb(0 0 0 / 0.55);
 }

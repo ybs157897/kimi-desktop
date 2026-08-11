@@ -13,6 +13,7 @@ import { useState } from 'react';
 
 import { agentTypeTag, tagClasses, tagIconClass, type TagKind } from '#/lib/agentColors';
 import { Markdown } from '../../markdown/Markdown';
+import { CollapsibleBody } from '../CollapsibleBody';
 
 export interface TaskRefCardProps {
   readonly item: TranscriptTaskRef;
@@ -34,7 +35,7 @@ export function TaskRefCard({ item, task, onOpenAgent }: TaskRefCardProps) {
   const [expanded, setExpanded] = useState(false);
   if (task === undefined) {
     return (
-      <div className="mb-2 flex min-h-9 max-w-[46rem] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background-panel)] px-3 py-1.5 text-[11px] text-[var(--color-text-tertiary)]">
+      <div className="ui-card-enter mb-1 flex min-h-9 max-w-[46rem] items-center gap-1.5 px-1.5 py-1 text-[11px] text-[var(--color-text-tertiary)]">
         <Wrench size={14} aria-hidden />
         后台任务 {item.taskId}
       </div>
@@ -46,23 +47,22 @@ export function TaskRefCard({ item, task, onOpenAgent }: TaskRefCardProps) {
   const tag: TagKind = typeTag?.tag ?? (task.kind === 'shell' ? 'shell' : 'generic');
   const body = taskBody(task);
   const hasBody = body !== undefined && body.trim() !== '';
-  const bodyLineCount = hasBody ? body.split('\n').length : 0;
 
   return (
-    <div className="ui-card-enter mb-2 max-w-[46rem] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background-panel)]">
-      <div className="flex min-h-9 w-full items-center hover:bg-[var(--color-list-hover)]">
+    <div className="ui-card-enter mb-1 max-w-[46rem]">
+      <div className="flex items-center">
         <button
           type="button"
           onClick={() => hasBody && setExpanded((value) => !value)}
           aria-expanded={expanded}
           disabled={!hasBody}
-          className="ui-pressable flex min-w-0 flex-1 select-none items-center gap-1.5 px-2.5 py-1 text-left enabled:cursor-pointer"
+          className="ui-pressable group/activity-header -mx-1 flex min-w-0 flex-1 cursor-pointer select-none items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-1 text-left text-[length:var(--codex-chat-font-size)] hover:bg-[var(--color-list-hover)] enabled:cursor-pointer"
         >
           <CaretRight
             size={11}
             weight="bold"
             className={`shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[var(--duration-hover)] ease-[var(--ease-out)] ${
-              expanded ? 'rotate-90' : ''
+              expanded ? 'rotate-90 opacity-100' : 'opacity-0 group-hover/activity-header:opacity-100 group-focus-visible/activity-header:opacity-100 group-has-[:focus-visible]/activity-header:opacity-100'
             } ${hasBody ? '' : 'opacity-0'}`}
             aria-hidden
           />
@@ -72,7 +72,7 @@ export function TaskRefCard({ item, task, onOpenAgent }: TaskRefCardProps) {
           <span className={`ui-tag-pill shrink-0 ${tagClasses(tag)}`}>
             {typeTag?.label ?? (task.kind === 'shell' ? '后台命令' : task.kind)}
           </span>
-          <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--color-text-foreground)]">
+          <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--color-token-conversation-summary-leading)] group-hover/activity-header:text-[var(--color-text-foreground)]">
             {task.description ?? item.taskId}
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
@@ -96,44 +96,22 @@ export function TaskRefCard({ item, task, onOpenAgent }: TaskRefCardProps) {
           </button>
         ) : null}
       </div>
-      {hasBody && !expanded ? (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          aria-label={`展开任务输出，共 ${bodyLineCount} 行`}
-          className="ui-pressable flex w-full items-center gap-1.5 border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-1.5 text-left text-[10.5px] text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-secondary)]"
-        >
-          <CaretRight size={10} weight="bold" aria-hidden />
-          <span className="truncate">{isAgent ? '查看结果' : `输出 ${bodyLineCount} 行`}</span>
-        </button>
-      ) : null}
-      {hasBody && expanded ? (
-        <>
-          {task.error !== undefined && task.error !== '' ? (
-            <div className="border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 pt-2 text-[11px] text-[var(--color-text-danger)]">
-              {task.error}
-            </div>
-          ) : null}
-          {isAgent ? (
-            <div className="max-h-96 overflow-auto border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3.5 py-2.5 text-[12px] leading-[var(--leading-chat)]">
+      <CollapsibleBody open={expanded} className="ml-3 border-l border-[var(--color-border-light)] pl-3">
+        {task.error !== undefined && task.error !== '' ? (
+          <div className="py-1 text-[11px] text-[var(--color-text-danger)]">{task.error}</div>
+        ) : null}
+        {hasBody ? (
+          isAgent ? (
+            <div className="max-h-96 overflow-auto py-2 text-[12px] leading-[var(--leading-chat)]">
               <Markdown source={body} />
             </div>
           ) : (
-            <pre className="max-h-72 overflow-auto whitespace-pre-wrap border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-2 font-mono text-[11px] leading-[1.55] text-[var(--color-text-secondary)]">
+            <pre className="max-h-72 overflow-auto whitespace-pre-wrap py-2 font-mono text-[11px] leading-[1.5] text-[var(--color-token-conversation-summary-trailing)]">
               {body}
             </pre>
-          )}
-          <button
-            type="button"
-            onClick={() => setExpanded(false)}
-            aria-label="收起任务输出"
-            className="ui-pressable flex w-full items-center justify-center gap-1 border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] py-1 text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
-          >
-            <CaretRight size={10} weight="bold" className="-rotate-90" aria-hidden />
-            收起
-          </button>
-        </>
-      ) : null}
+          )
+        ) : null}
+      </CollapsibleBody>
     </div>
   );
 }

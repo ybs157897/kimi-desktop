@@ -1,14 +1,14 @@
 import type {
+  ToolCallFrame,
   TranscriptAttachment,
   TranscriptFrame,
   TranscriptInteraction,
-  TranscriptStep,
   TranscriptTask,
   TranscriptTurn,
 } from '@moonshot-ai/transcript';
 import type { QuestionResponse } from '@moonshot-ai/protocol';
 import { CaretRight } from '@phosphor-icons/react';
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import type { TranscriptPlanInfo } from '#/lib/api';
 import type { SourcedPendingInteraction } from '#/lib/sessionInteractions';
@@ -18,6 +18,7 @@ import {
   resultTextFrameId,
   taskForToolFrame,
 } from '#/lib/timelinePresentation';
+import { toolRunsFromTurn, type TimelineEntry } from '#/lib/toolRunsFromTurn';
 
 import { ApprovalCard, type ApprovalResolveHandler } from './interactions/ApprovalCard';
 import { QuestionCard } from './interactions/QuestionCard';
@@ -28,6 +29,7 @@ import { NoticeFrame } from './frames/NoticeFrame';
 import { TextFrame } from './frames/TextFrame';
 import { ThinkingFrame } from './frames/ThinkingFrame';
 import { ToolFrame } from './frames/ToolFrame';
+import { ToolRunCard } from './frames/ToolRunCard';
 import type { SourcedChildInteraction } from './frames/SwarmCard';
 import type { OpenPlanDoc } from './PlanDocViewer';
 
@@ -97,7 +99,7 @@ export function TurnBlock({
           liveTailFrameId: liveTailFrameId(turn),
         }}
       >
-        {processFrameCount > 0 ? (
+        {processFrameCount > 0 || live ? (
           <ProcessDisclosure
             expanded={processExpanded}
             state={turn.state}
@@ -105,10 +107,14 @@ export function TurnBlock({
             onToggle={() => setUserExpanded((value) => (value === undefined ? !live : !value))}
           />
         ) : null}
-        {turn.steps.map((step) => (
-          <StepView
-            key={step.stepId}
-            step={step}
+        {/* A live turn always mounts the timeline so streaming frames land
+            visibly; a settled turn only mounts it when there is something to
+            show (process frames or a result). While a live turn has neither,
+            a quiet "Thinking" shimmer keeps the user oriented instead of a
+            blank gap. */}
+        {processFrameCount > 0 || resultFrameId !== undefined || live ? (
+          <FlattenedTimeline
+            turn={turn}
             tasks={tasks}
             interactions={interactions}
             attachments={attachments}
@@ -121,12 +127,16 @@ export function TurnBlock({
             plans={plans}
             processExpanded={processExpanded}
             resultFrameId={resultFrameId}
+            live={live}
           />
-        ))}
+        ) : null}
       </TurnContext.Provider>
       <EditedFilesCard turn={turn} />
       {turn.state === 'failed' && turn.error !== undefined ? (
-        <div className="ui-card-enter mb-2 rounded-[var(--radius-sm)] border border-[var(--color-border-error)] bg-[color-mix(in_srgb,var(--color-text-danger)_12%,transparent)] px-3 py-2 text-[12px] text-[var(--color-text-danger)]">
+        <div
+          className="ui-card-enter mb-2 max-w-[46rem] border-l-[3px] py-1.5 pl-3 pr-2 text-[12px] text-[var(--color-text-danger)]"
+          style={{ borderLeftColor: 'var(--color-text-danger)' }}
+        >
           {turn.error}
         </div>
       ) : null}
@@ -192,8 +202,26 @@ function TurnPrompt({ turn }: { turn: TranscriptTurn }) {
   );
 }
 
-function StepView({
-  step,
+/** A live turn's quiet "Thinking" placeholder (Codex `Ex` parity): a single
+ *  shimmering line shown while the engine has not yet produced any frame, so
+ *  the gap between sending a prompt and the first delta is never blank. */
+function LiveThinkingPlaceholder() {
+  return (
+    <div className="ui-shimmer-text mb-1 max-w-[46rem] text-[length:var(--codex-chat-font-size)] leading-[var(--markdown-line-height,calc(var(--codex-chat-font-size,14px)+8px))]">
+      正在思考…
+    </div>
+  );
+}
+
+/**
+ * FlattenedTimeline — renders a turn's frames as the Codex-style activity
+ * projection: consecutive groupable tool calls collapse into a single
+ * {@link ToolRunCard} summary row, while standalone frames (thinking, text,
+ * notice, single-Agent, swarm, plan, search, todo) render on their own. The
+ * step boundary is flattened (a run of commands split across two steps still
+ * collapses as one) by walking {@link toolRunsFromTurn}'s projection. */
+function FlattenedTimeline({
+  turn,
   tasks,
   interactions,
   attachments,
@@ -206,8 +234,9 @@ function StepView({
   plans,
   processExpanded,
   resultFrameId,
+  live,
 }: {
-  step: TranscriptStep;
+  turn: TranscriptTurn;
   tasks?: ReadonlyMap<string, TranscriptTask>;
   interactions?: ReadonlyMap<string, TranscriptInteraction>;
   attachments?: ReadonlyMap<string, TranscriptAttachment>;
@@ -220,33 +249,144 @@ function StepView({
   plans?: ReadonlyMap<string, TranscriptPlanInfo>;
   processExpanded: boolean;
   resultFrameId?: string;
+  live: boolean;
 }) {
+  const entries = toolRunsFromTurn(turn);
+  const stepDurationByFrame = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const step of turn.steps) {
+      const duration = elapsedBetween(step.startedAt, step.endedAt);
+      if (duration === undefined) continue;
+      for (const frame of step.frames) map.set(frame.frameId, duration);
+    }
+    return map;
+  }, [turn]);
+  const interrupted = processExpanded && turn.steps.some((step) => step.state === 'interrupted');
+  // A live turn that has not produced any frames yet shows a quiet "Thinking"
+  // shimmer so the gap is never a blank stare (Codex `Ex` placeholder parity).
+  const awaitingFirstFrame = live && entries.length === 0 && resultFrameId === undefined;
+
   return (
     <div>
-      {step.frames.map((frame) => (
-        <FrameView
-          key={frame.frameId}
-          frame={frame}
-          stepDurationMs={elapsedBetween(step.startedAt, step.endedAt)}
-          tasks={tasks}
-          interactions={interactions}
-          attachments={attachments}
-          pendingSessionInteractions={pendingSessionInteractions}
-          onResolveApproval={onResolveApproval}
-          onAnswerQuestion={onAnswerQuestion}
-          onDismissQuestion={onDismissQuestion}
-          onOpenAgent={onOpenAgent}
-          onOpenPlanDoc={onOpenPlanDoc}
-          plans={plans}
-          visible={processExpanded || frame.frameId === resultFrameId}
-        />
-      ))}
-      {processExpanded && step.state === 'interrupted' ? (
+      {awaitingFirstFrame ? <LiveThinkingPlaceholder /> : null}
+      {entries.map((entry, index) => {
+        if (entry.kind === 'run') {
+          // Frames inside a run are always built (visible=true): ToolRunCard's
+          // own CollapsibleBody controls whether they are physically on screen
+          // (run expanded) or hidden behind the summary (run collapsed). They
+          // must not be gated by `processExpanded` too, or expanding a run
+          // inside an already-expanded process section would still show nothing.
+          return (
+            <ToolRunCard
+              key={`run-${index}`}
+              frames={entry.frames}
+              summaryParts={entry.summaryParts}
+            >
+              {entry.frames.map((frame) => (
+                <ToolFrameNode
+                  key={frame.frameId}
+                  frame={frame}
+                  tasks={tasks}
+                  interactions={interactions}
+                  pendingSessionInteractions={pendingSessionInteractions}
+                  onResolveApproval={onResolveApproval}
+                  onAnswerQuestion={onAnswerQuestion}
+                  onDismissQuestion={onDismissQuestion}
+                  onOpenAgent={onOpenAgent}
+                  onOpenPlanDoc={onOpenPlanDoc}
+                  plans={plans}
+                  visible={processExpanded}
+                />
+              ))}
+            </ToolRunCard>
+          );
+        }
+        const frame = entry.frame;
+        const visible = processExpanded || frame.frameId === resultFrameId;
+        return (
+          <FrameView
+            key={frame.frameId}
+            frame={frame}
+            stepDurationMs={stepDurationByFrame.get(frame.frameId)}
+            tasks={tasks}
+            interactions={interactions}
+            attachments={attachments}
+            pendingSessionInteractions={pendingSessionInteractions}
+            onResolveApproval={onResolveApproval}
+            onAnswerQuestion={onAnswerQuestion}
+            onDismissQuestion={onDismissQuestion}
+            onOpenAgent={onOpenAgent}
+            onOpenPlanDoc={onOpenPlanDoc}
+            plans={plans}
+            visible={visible}
+          />
+        );
+      })}
+      {interrupted ? (
         <div className="mb-2 px-0.5 text-[10px] italic text-[var(--color-text-tertiary)]">
           步骤已中断
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** A tool frame rendered as a fragment (the ToolRunCard owns the wrapper). */
+function ToolFrameNode({
+  frame,
+  tasks,
+  interactions,
+  pendingSessionInteractions,
+  onResolveApproval,
+  onAnswerQuestion,
+  onDismissQuestion,
+  onOpenAgent,
+  onOpenPlanDoc,
+  plans,
+  visible,
+}: {
+  frame: ToolCallFrame;
+  tasks?: ReadonlyMap<string, TranscriptTask>;
+  interactions?: ReadonlyMap<string, TranscriptInteraction>;
+  pendingSessionInteractions: readonly SourcedPendingInteraction[];
+  onResolveApproval?: TurnBlockProps['onResolveApproval'];
+  onAnswerQuestion?: TurnBlockProps['onAnswerQuestion'];
+  onDismissQuestion?: TurnBlockProps['onDismissQuestion'];
+  onOpenAgent?: (agentId: string, prompt?: string) => void;
+  onOpenPlanDoc?: OpenPlanDoc;
+  plans?: ReadonlyMap<string, TranscriptPlanInfo>;
+  visible: boolean;
+}) {
+  const interaction =
+    findInteraction(frame.toolCallId, frame.approvalId, interactions) ??
+    pendingInteractionForToolFrame(frame, pendingSessionInteractions)?.interaction;
+  const task = taskForToolFrame(frame, tasks);
+  const childInteractions = childInteractionsForFrame(frame, pendingSessionInteractions);
+  const pending =
+    interaction !== undefined && interaction.state === 'pending'
+      ? renderInteraction(interaction, {
+          onResolveApproval,
+          onAnswerQuestion,
+          onDismissQuestion,
+          onOpenPlanDoc,
+        })
+      : null;
+  return (
+    <>
+      {visible ? (
+        <ToolFrame
+          frame={frame}
+          task={task}
+          interaction={interaction}
+          tasks={tasks}
+          childInteractions={childInteractions}
+          onOpenAgent={onOpenAgent}
+          onOpenPlanDoc={onOpenPlanDoc}
+          plan={plans?.get(frame.toolCallId)}
+        />
+      ) : null}
+      {pending}
+    </>
   );
 }
 
@@ -285,38 +425,22 @@ function FrameView({
     case 'thinking':
       return visible ? <ThinkingFrame frame={frame} durationMs={stepDurationMs} /> : null;
     case 'tool': {
-      const interaction =
-        findInteraction(frame.toolCallId, frame.approvalId, interactions) ??
-        pendingInteractionForToolFrame(frame, pendingSessionInteractions)?.interaction;
-      const task = taskForToolFrame(frame, tasks);
-      // Child-agent pending interactions (swarm members / single Agent spawns)
-      // feed the per-member badges on the swarm roster.
-      const childInteractions = childInteractionsForFrame(frame, pendingSessionInteractions);
-      const pending =
-        interaction !== undefined && interaction.state === 'pending'
-          ? renderInteraction(interaction, {
-              onResolveApproval,
-              onAnswerQuestion,
-              onDismissQuestion,
-              onOpenPlanDoc,
-            })
-          : null;
+      // Standalone tool frames (single-Agent, swarm, plan, todo, search) keep
+      // their own card; groupable tools arrive via ToolFrameNode instead.
       return (
-        <>
-          {visible ? (
-            <ToolFrame
-              frame={frame}
-              task={task}
-              interaction={interaction}
-              tasks={tasks}
-              childInteractions={childInteractions}
-              onOpenAgent={onOpenAgent}
-              onOpenPlanDoc={onOpenPlanDoc}
-              plan={plans?.get(frame.toolCallId)}
-            />
-          ) : null}
-          {pending}
-        </>
+        <ToolFrameNode
+          frame={frame}
+          tasks={tasks}
+          interactions={interactions}
+          pendingSessionInteractions={pendingSessionInteractions}
+          onResolveApproval={onResolveApproval}
+          onAnswerQuestion={onAnswerQuestion}
+          onDismissQuestion={onDismissQuestion}
+          onOpenAgent={onOpenAgent}
+          onOpenPlanDoc={onOpenPlanDoc}
+          plans={plans}
+          visible={visible}
+        />
       );
     }
     case 'notice':

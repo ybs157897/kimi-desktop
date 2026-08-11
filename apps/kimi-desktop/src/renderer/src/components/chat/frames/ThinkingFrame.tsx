@@ -2,6 +2,7 @@ import type { ThinkingFrame as ThinkingFrameModel } from '@moonshot-ai/transcrip
 import { Brain, CaretRight } from '@phosphor-icons/react';
 import { useContext, useEffect, useRef, useState } from 'react';
 
+import { CollapsibleBody } from '../CollapsibleBody';
 import { TurnContext } from '../frameContext';
 import { hasThinkingContent } from '#/lib/timelinePresentation';
 
@@ -61,51 +62,48 @@ export function ThinkingFrame({ frame, durationMs }: ThinkingFrameProps) {
   const showBody = open && hasThinkingContent(frame.text);
   return (
     <div className="mb-1.5 max-w-[46rem]">
-      <div
-        className={`overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-thinking-fill)] ${
-          showBody ? 'border-l-2 border-l-[var(--color-thinking-bar)]' : ''
-        }`}
+      <button
+        type="button"
+        onClick={() => {
+          if (live) return;
+          setExpandedByUser((value) => !value);
+        }}
+        aria-expanded={open}
+        className="ui-pressable group/activity-header -mx-1 flex h-7 w-[calc(100%+0.5rem)] cursor-pointer select-none items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 text-left text-[length:var(--codex-chat-font-size)] text-[var(--color-token-conversation-header)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
       >
-        <button
-          type="button"
-          onClick={() => {
-            if (live) return;
-            setExpandedByUser((value) => !value);
-          }}
-          aria-expanded={open}
-          className="ui-pressable flex h-7 w-full cursor-pointer select-none items-center gap-1.5 px-2.5 text-left text-[11px] tracking-[var(--tracking-tight)] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)]"
+        <CaretRight
+          size={10}
+          weight="bold"
+          className={`shrink-0 text-[var(--color-token-conversation-body)] transition-transform duration-[var(--duration-hover)] ${
+            open
+              ? 'rotate-90 opacity-100'
+              : 'opacity-0 group-hover/activity-header:opacity-100 group-focus-visible/activity-header:opacity-100 group-has-[:focus-visible]/activity-header:opacity-100'
+          }`}
+          aria-hidden
+        />
+        <Brain
+          size={13}
+          weight="regular"
+          className={`shrink-0 ${live ? 'text-[var(--color-text-accent)]' : 'text-[var(--color-text-tertiary)]'}`}
+          aria-hidden
+        />
+        {/* Live shimmer (Codex loading-shimmer-pure-text parity): a stepped
+            sweep clipped to the glyphs keeps a running chain visually distinct
+            from a settled collapsed label. Settled labels keep the quiet
+            conversation-header tone (foreground ~30%). */}
+        <span className={`min-w-0 truncate ${live ? 'ui-shimmer-text text-[var(--color-text-foreground)]' : 'text-[var(--color-token-conversation-header)]'}`}>
+          {label}
+        </span>
+      </button>
+      <CollapsibleBody open={showBody} className="ml-3 border-l border-[var(--color-border-light)] pl-3">
+        <div
+          ref={bodyRef}
+          onScroll={handleScroll}
+          className="max-h-[8.75rem] overflow-y-auto whitespace-pre-wrap pb-2 pt-1 text-[12px] leading-[var(--leading-chat)] text-[var(--color-token-conversation-summary-trailing)]"
         >
-          <CaretRight
-            size={10}
-            weight="bold"
-            className={`shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[var(--duration-hover)] ${
-              open ? 'rotate-90' : ''
-            }`}
-            aria-hidden
-          />
-          <Brain
-            size={13}
-            weight="regular"
-            className={`shrink-0 ${live ? 'text-[var(--color-text-accent)]' : 'text-[var(--color-text-tertiary)]'}`}
-            aria-hidden
-          />
-          {/* Live shimmer (zcode animated-gradient-text parity): a gradient sweep
-              clipped to the glyphs keeps a running chain visually distinct from a
-              settled collapsed label. Settled labels keep a quiet secondary tone. */}
-          <span className={`min-w-0 truncate ${live ? 'ui-shimmer-text text-[var(--color-text-foreground)]' : 'text-[var(--color-text-secondary)]'}`}>
-            {label}
-          </span>
-        </button>
-        {showBody ? (
-          <div
-            ref={bodyRef}
-            onScroll={handleScroll}
-            className="max-h-[10rem] overflow-y-auto whitespace-pre-wrap px-2.5 pb-2.5 pt-0.5 text-[12px] leading-[var(--leading-chat)] text-[var(--color-text-secondary)]"
-          >
-            {frame.text}
-          </div>
-        ) : null}
-      </div>
+          {frame.text}
+        </div>
+      </CollapsibleBody>
     </div>
   );
 }

@@ -26,6 +26,7 @@ import { ArrowSquareOut, CaretRight, CheckCircle, Circle, WarningCircle } from '
 import { useContext, useState } from 'react';
 
 import { agentTypeTag, tagClasses, tagIconClass } from '#/lib/agentColors';
+import { CollapsibleBody } from '../CollapsibleBody';
 import { TurnContext } from '../frameContext';
 
 export interface SwarmCardProps {
@@ -110,38 +111,38 @@ export function SwarmCard({
   const total = Math.max(roster.length, result.total, declaredTotal);
 
   return (
-    <section className="ui-card-enter mb-3 max-w-[46rem] border-t border-[var(--color-border-light)] pt-2">
-      <div className="mb-0.5 flex items-center gap-1.5">
-        <span className={`ui-tag-pill ${tagClasses('swarm')}`}>蜂群</span>
-      </div>
+    <section className="ui-card-enter mb-1 max-w-[46rem]">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
         aria-expanded={expanded}
-        className="ui-pressable -mx-1.5 flex min-h-8 w-[calc(100%+0.75rem)] cursor-pointer select-none items-center gap-2 rounded-[var(--radius-sm)] px-1.5 py-1 text-left hover:bg-[var(--color-list-hover)]"
+        className="ui-pressable group/activity-header -mx-1 flex min-h-8 w-[calc(100%+0.5rem)] cursor-pointer select-none items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-1 text-left text-[length:var(--codex-chat-font-size)] hover:bg-[var(--color-list-hover)]"
       >
         <AggregateIcon counts={counts} live={live} />
-        <div className="min-w-0 flex-1">
-          <div className="text-[12.5px] font-medium text-[var(--color-text-foreground)]">
+        <span className={`ui-tag-pill shrink-0 ${tagClasses('swarm')}`}>蜂群</span>
+        <div className="min-w-0 flex-1 text-[var(--color-token-conversation-summary-leading)] group-hover/activity-header:text-[var(--color-text-foreground)]">
+          <span className="text-[12.5px] font-medium">
             {aggregateLabel(counts, live)}
-          </div>
+          </span>
           {prompt !== undefined && prompt !== '' ? (
-            <div className="truncate text-[11px] text-[var(--color-text-tertiary)]">{prompt}</div>
+            <span className="ml-1 truncate text-[11px] text-[var(--color-token-conversation-summary-trailing)]">{prompt}</span>
           ) : null}
         </div>
-        <span className="shrink-0 text-[10.5px] text-[var(--color-text-tertiary)]">{total}</span>
+        <span className="shrink-0 text-[10.5px] text-[var(--color-token-conversation-summary-trailing)]">{total}</span>
         <CaretRight
           size={10}
           weight="bold"
-          className={`shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[var(--duration-hover)] ease-[var(--ease-out)] ${
-            expanded ? 'rotate-90' : ''
+          className={`shrink-0 text-[var(--color-token-conversation-body)] transition-transform duration-[var(--duration-hover)] ease-[var(--ease-out)] ${
+            expanded
+              ? 'rotate-90 opacity-100'
+              : 'opacity-0 group-hover/activity-header:opacity-100 group-focus-visible/activity-header:opacity-100 group-has-[:focus-visible]/activity-header:opacity-100'
           }`}
           aria-hidden
         />
       </button>
 
-      {expanded && roster.length > 0 ? (
-        <ul className="ml-2 mt-1 border-l border-[var(--color-border-light)] py-0.5 pl-2">
+      <CollapsibleBody open={expanded && roster.length > 0} className="ml-3 border-l border-[var(--color-border-light)] pl-2">
+        <ul className="py-0.5">
           {roster.map((ref, index) => (
             <MemberRow
               key={ref.agentId ?? index}
@@ -152,7 +153,7 @@ export function SwarmCard({
             />
           ))}
         </ul>
-      ) : null}
+      </CollapsibleBody>
     </section>
   );
 }

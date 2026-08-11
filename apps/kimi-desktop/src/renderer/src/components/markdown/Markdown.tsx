@@ -121,7 +121,7 @@ export function Markdown({ source, streaming = false }: MarkdownProps) {
   return (
     <MarkdownErrorBoundary onRetry={() => setAttempt((n) => n + 1)}>
       <StreamingContext.Provider value={streaming}>
-        <div className="markdown selectable">
+        <div className="markdown selectable" dir="auto">
           {content}
           {streaming ? <span className="markdown-cursor" aria-hidden /> : null}
         </div>

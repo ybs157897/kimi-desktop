@@ -14,7 +14,7 @@
  */
 
 import { Check, Copy } from '@phosphor-icons/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { HighlighterCore } from 'shiki/core';
 import type { LanguageRegistration, ThemeRegistrationRaw } from 'shiki/types';
 
@@ -95,13 +95,41 @@ const LANGUAGE_IMPORTERS: Readonly<Record<string, () => Promise<{ readonly defau
 };
 
 /**
+ * Friendly display names for the header. Keys mirror the normalized language
+ * id (lowercased, post-alias); unknown ids fall back to the raw id.
+ */
+const LANGUAGE_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  js: 'JavaScript', jsx: 'JavaScript', javascript: 'JavaScript',
+  ts: 'TypeScript', tsx: 'TypeScript', typescript: 'TypeScript',
+  json: 'JSON', jsonc: 'JSON', json5: 'JSON',
+  py: 'Python', python: 'Python',
+  rb: 'Ruby', ruby: 'Ruby',
+  go: 'Go', rs: 'Rust', rust: 'Rust',
+  c: 'C', cpp: 'C++', 'c++': 'C++', csharp: 'C#', 'c#': 'C#',
+  java: 'Java', kt: 'Kotlin', kotlin: 'Kotlin',
+  swift: 'Swift', php: 'PHP',
+  sh: 'Shell', bash: 'Bash', shell: 'Shell', shellscript: 'Shell', zsh: 'Zsh',
+  sql: 'SQL', graphql: 'GraphQL',
+  html: 'HTML', xml: 'XML', svg: 'SVG',
+  css: 'CSS', scss: 'SCSS', less: 'Less', postcss: 'PostCSS',
+  md: 'Markdown', markdown: 'Markdown', mdx: 'MDX',
+  yaml: 'YAML', yml: 'YAML', toml: 'TOML',
+  dockerfile: 'Dockerfile', make: 'Makefile', makefile: 'Makefile',
+  ini: 'INI', powershell: 'PowerShell', ps1: 'PowerShell',
+  diff: 'Diff', latex: 'LaTeX', tex: 'LaTeX',
+  nix: 'Nix', proto: 'Protocol Buffer', cmake: 'CMake', wasm: 'WebAssembly',
+  'objective-c': 'Objective-C', 'shell session': 'Shell Session',
+};
+
+/**
  * Normalize the fence language: strip meta (`ts {1-3}` → `ts`), lowercase.
- * Returns `null` when the block should render unhighlighted (`mermaid` and
- * other unknown languages).
+ * Returns `null` when the block should render unhighlighted (plain text or
+ * unknown languages). `mermaid` is returned as-is so the component can branch
+ * to its own diagram renderer.
  */
 function normalizeLanguage(language: string | undefined): string | null {
   const raw = language?.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
-  if (raw === '' || raw === 'text' || raw === 'plaintext' || raw === 'txt' || raw === 'mermaid') {
+  if (raw === '' || raw === 'text' || raw === 'plaintext' || raw === 'txt') {
     return null;
   }
   return raw;
@@ -209,8 +237,81 @@ function CodeCopyButton({ code }: { readonly code: string }) {
 /** Line budget over which a block folds to a preview window. */
 const FOLD_THRESHOLD = 20;
 
+/**
+ * MermaidDiagram — renders a fenced `mermaid` block as SVG.
+ *
+ * Mermaid is imported dynamically (`import('mermaid')`) so it is code-split
+ * out of the initial bundle; a failed import (e.g. blocked) degrades to a
+ * plain-text code block. The theme mirrors `data-theme` the same way the main
+ * component does, re-rendering when it flips.
+ */
+function MermaidDiagram({ code }: { readonly code: string }) {
+  const reactId = useId();
+  const renderId = 'mmd-' + reactId.replace(/[:]/g, '');
+  const [state, setState] = useState<{ svg: string | null; error: boolean }>({ svg: null, error: false });
+  const [themeTick, setThemeTick] = useState(0);
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => setThemeTick((tick) => tick + 1));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const theme = document.documentElement.dataset['theme'] === 'light' ? 'default' : 'dark';
+    void (async () => {
+      try {
+        const mermaidModule = await import('mermaid');
+        const mermaid = mermaidModule.default;
+        mermaid.initialize({
+          startOnLoad: false,
+          theme,
+          securityLevel: 'strict',
+          fontFamily: 'var(--ui-font-family), var(--font-sans), system-ui, sans-serif',
+        });
+        const { svg } = await mermaid.render(renderId, code);
+        if (!cancelled) setState({ svg, error: false });
+      } catch {
+        if (!cancelled) setState({ svg: null, error: true });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [code, renderId, themeTick]);
+
+  if (state.svg !== null) {
+    return <div className="markdown-mermaid" dir="ltr" dangerouslySetInnerHTML={{ __html: state.svg }} />;
+  }
+  return (
+    <pre className="markdown-code-block">
+      <code>{code}</code>
+    </pre>
+  );
+}
+
 export function MarkdownCodeBlock({ code, language, streaming = false }: MarkdownCodeBlockProps) {
   const normalized = normalizeLanguage(language);
+
+  // Mermaid gets its own diagram renderer; it bypasses Shiki, folding and the
+  // copy affordance (an SVG has nothing to copy as text).
+  if (normalized === 'mermaid') {
+    return (
+      <div className="markdown-code-shell" data-lang="mermaid">
+        <div className="markdown-code-lang">
+          <span className="markdown-code-lang-name">Mermaid</span>
+        </div>
+        <div className="markdown-code-body">
+          <MermaidDiagram code={code} />
+        </div>
+      </div>
+    );
+  }
+
   const importer = normalized !== null ? LANGUAGE_IMPORTERS[normalized] : undefined;
   const [highlighted, setHighlighted] = useState<string | null>(null);
   // Theme switches flip `data-theme` on <html> without re-rendering React, so
@@ -259,8 +360,8 @@ export function MarkdownCodeBlock({ code, language, streaming = false }: Markdow
   const header =
     normalized !== null ? (
       <div className="markdown-code-lang">
-        <span className="markdown-code-lang-dot" aria-hidden />
-        <span>{normalized}</span>
+        <span className="markdown-code-lang-name">{LANGUAGE_DISPLAY_NAMES[normalized] ?? normalized}</span>
+        {folded ? null : <CodeCopyButton code={code} />}
       </div>
     ) : null;
   const body =
@@ -290,7 +391,6 @@ export function MarkdownCodeBlock({ code, language, streaming = false }: Markdow
     >
       {header}
       <div className="markdown-code-body">{body}</div>
-      {folded ? null : <CodeCopyButton code={code} />}
       {folded ? (
         <button
           type="button"

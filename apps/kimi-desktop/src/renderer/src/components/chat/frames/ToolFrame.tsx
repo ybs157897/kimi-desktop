@@ -49,6 +49,7 @@ import { agentCallTypeLabel } from '#/lib/timelinePresentation';
 import { Markdown } from '../../markdown/Markdown';
 import type { TranscriptPlanInfo } from '#/lib/api';
 import type { OpenPlanDoc } from '../PlanDocViewer';
+import { CollapsibleBody } from '../CollapsibleBody';
 import { PlanCard } from './PlanCard';
 import { SwarmCard, type SourcedChildInteraction } from './SwarmCard';
 
@@ -70,11 +71,18 @@ export interface ToolFrameProps {
   readonly plan?: TranscriptPlanInfo;
 }
 
-/** Shared tool-card surface; also used by the end-of-turn edited-files card. */
-export const TOOL_CARD =
-  'ui-card-enter mb-1 max-w-[46rem] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background-panel)]';
+/**
+ * Shared tool-card surface; also used by the end-of-turn edited-files card.
+ * Flat (Codex activity-row parity): no border, no card background, no shadow —
+ * just the max-width + bottom margin. The header row owns its own hover
+ * affordance; bodies render in a left-indented column. */
+export const TOOL_CARD = 'ui-card-enter mb-1 max-w-[46rem]';
+/**
+ * Command/JSON output body: flat monospace, no panel fill, no top border. The
+ * left indent + the header above are enough to separate it from surrounding
+ * content. */
 const TOOL_BODY =
-  'max-h-72 overflow-auto border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-2 font-mono text-[11.5px] leading-[1.55] text-[var(--color-text-secondary)]';
+  'max-h-72 overflow-auto px-1 py-1 font-mono text-[11.5px] leading-[1.5] text-[var(--color-token-non-assistant-body-descendant)]';
 
 export function ToolFrame({
   frame,
@@ -217,7 +225,9 @@ function stringField(record: Record<string, unknown>, key: string): string | und
   return typeof value === 'string' ? value : undefined;
 }
 
-/** Shared expandable header — caret + icon + tag + title row. */
+/** Shared expandable header — the Codex activity row: caret + icon + tag +
+ *  title, flat (no card chrome), hover reveals the caret and brightens the
+ *  text to the foreground tone. */
 function CardHeader({
   expanded,
   onToggle,
@@ -240,13 +250,13 @@ function CardHeader({
     <button
       type="button"
       onClick={onToggle}
-      className="ui-pressable flex min-h-9 w-full cursor-pointer select-none items-center gap-1.5 px-2.5 py-1 text-left hover:bg-[var(--color-list-hover)]"
+      className="ui-pressable group/activity-header -mx-1 flex min-h-8 w-[calc(100%+0.5rem)] cursor-pointer select-none items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-1 text-left text-[length:var(--codex-chat-font-size)] hover:bg-[var(--color-list-hover)]"
     >
       <CaretRight
         size={11}
         weight="bold"
-        className={`shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[var(--duration-hover)] ease-[var(--ease-out)] ${
-          expanded ? 'rotate-90' : ''
+        className={`shrink-0 text-[var(--color-token-conversation-body)] transition-transform duration-[var(--duration-hover)] ease-[var(--ease-out)] ${
+          expanded ? 'rotate-90 opacity-100' : 'opacity-0 group-hover/activity-header:opacity-100 group-focus-visible/activity-header:opacity-100'
         }`}
         aria-hidden
       />
@@ -254,7 +264,7 @@ function CardHeader({
         {icon}
       </span>
       {tag !== undefined ? <span className={`ui-tag-pill shrink-0 ${tagClasses(tag)}`}>{tagLabel ?? tag}</span> : null}
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1 text-[var(--color-token-conversation-summary-leading)] group-hover/activity-header:text-[var(--color-text-foreground)]">{children}</div>
       {trailing !== undefined ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}
     </button>
   );
@@ -390,10 +400,12 @@ function BashCard({
   task: TranscriptTask | undefined;
   interaction: TranscriptInteraction | undefined;
 }) {
-  // Collapsed by default — command execution is background noise the user can
-  // opt into. The header's running/status badge still surfaces progress, so a
-  // live call is identifiable without the noisy streaming tail.
-  const [expanded, setExpanded] = useState(false);
+  // A running command auto-expands so the streaming tail is visible while it
+  // works (Codex `active` group parity); once settled it collapses back to the
+  // header + line-count hint unless the user pinned it open.
+  const running = frame.state === 'running';
+  const [userPinned, setUserPinned] = useState<boolean | undefined>(undefined);
+  const expanded = userPinned ?? running;
   const input = isRecord(frame.input) ? frame.input : undefined;
   const command =
     (display?.kind === 'command' && display.command) ||
@@ -409,13 +421,18 @@ function BashCard({
     <div className={TOOL_CARD}>
       <CardHeader
         expanded={expanded}
-        onToggle={() => setExpanded((value) => !value)}
+        onToggle={() => setUserPinned((value) => (value === undefined ? !running : !value))}
         icon={<TerminalWindow size={14} />}
         tag="shell"
         tagLabel="命令"
         trailing={
           <>
             <BadgeRow frame={frame} task={task} interaction={interaction} />
+            {hasOutput && !expanded ? (
+              <span className="shrink-0 text-[10.5px] text-[var(--color-token-conversation-summary-trailing)]">
+                {outputLineCount} 行输出
+              </span>
+            ) : null}
             {outcome !== undefined ? (
               <span className={`flex items-center gap-1 text-[10.5px] font-medium ${outcome.tone}`}>
                 {outcome.icon}
@@ -430,36 +447,12 @@ function BashCard({
           {command}
         </code>
       </CardHeader>
-      {hasOutput && !expanded ? (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          aria-label={`展开命令输出，共 ${outputLineCount} 行`}
-          className="ui-pressable flex w-full items-center gap-1.5 border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 py-1.5 text-left text-[10.5px] text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-secondary)]"
-        >
-          <CaretRight size={10} weight="bold" aria-hidden />
-          <span className="truncate">已执行 · {outputLineCount} 行输出</span>
-        </button>
-      ) : null}
-      {hasOutput && expanded ? (
-        <>
-          {cwd !== undefined && cwd !== '' ? (
-            <div className="border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3 pt-2 font-mono text-[10.5px] text-[var(--color-text-tertiary)]">
-              {cwd}
-            </div>
-          ) : null}
-          <pre className={`${TOOL_BODY} whitespace-pre-wrap ${cwd !== undefined && cwd !== '' ? 'border-t-0' : ''}`}>{fullOutput}</pre>
-          <button
-            type="button"
-            onClick={() => setExpanded(false)}
-            aria-label="收起命令输出"
-            className="ui-pressable flex w-full items-center justify-center gap-1 border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] py-1 text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
-          >
-            <CaretRight size={10} weight="bold" className="-rotate-90" aria-hidden />
-            收起输出
-          </button>
-        </>
-      ) : null}
+      <CollapsibleBody open={expanded} className="ml-3 border-l border-[var(--color-border-light)] pl-3">
+        {cwd !== undefined && cwd !== '' ? (
+          <div className="py-1 font-mono text-[10.5px] text-[var(--color-text-tertiary)]">{cwd}</div>
+        ) : null}
+        <pre className={`${TOOL_BODY} whitespace-pre-wrap`}>{fullOutput}</pre>
+      </CollapsibleBody>
     </div>
   );
 }
@@ -569,16 +562,18 @@ function DiffCard({
           {path !== undefined && path !== '' ? path : frame.name}
         </span>
       </CardHeader>
-      {expanded && lines.length > 0 ? (
-        <pre className="max-h-72 overflow-auto border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] py-1.5 font-mono text-[11.5px] leading-[1.55]">
-          {lines.map((line, index) => (
-            <div key={index} className={`px-3.5 ${diffLineTone(line.type)}`}>
-              <span className="select-none opacity-50">{diffPrefix(line.type)}</span>
-              {line.text}
-            </div>
-          ))}
-        </pre>
-      ) : null}
+      <CollapsibleBody open={expanded} className="ml-3 border-l border-[var(--color-border-light)] pl-3">
+        {lines.length > 0 ? (
+          <pre className="max-h-72 overflow-auto py-1.5 font-mono text-[11.5px] leading-[1.5]">
+            {lines.map((line, index) => (
+              <div key={index} className={`px-1 ${diffLineTone(line.type)}`}>
+                <span className="select-none opacity-50">{diffPrefix(line.type)}</span>
+                {line.text}
+              </div>
+            ))}
+          </pre>
+        ) : null}
+      </CollapsibleBody>
     </div>
   );
 }
@@ -763,10 +758,10 @@ function SearchLine({
   const query = (display?.kind === 'search' && display.query) || stringField(input ?? {}, 'query');
   const running = frame.state === 'running';
   return (
-    <div className="ui-card-enter mb-2 flex min-h-9 max-w-[46rem] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background-panel)] px-3 py-1.5 text-[12px] tracking-[var(--tracking-tight)] text-[var(--color-text-secondary)]">
+    <div className="ui-card-enter group/activity-header -mx-1 mb-1 flex min-h-8 max-w-[calc(46rem+0.5rem)] items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-1 text-[length:var(--codex-chat-font-size)] hover:bg-[var(--color-list-hover)]">
       <MagnifyingGlass size={14} className="shrink-0 text-[var(--color-tag-search)]" aria-hidden />
       <span className={`ui-tag-pill shrink-0 ${tagClasses('search')}`}>搜索</span>
-      <span className="min-w-0 truncate text-[var(--color-text-foreground)]">
+      <span className="min-w-0 flex-1 truncate text-[var(--color-token-conversation-summary-leading)] group-hover/activity-header:text-[var(--color-text-foreground)]">
         {running ? '正在搜索' : '已搜索'}
         {query !== undefined && query !== '' ? (
           <>
@@ -817,11 +812,11 @@ function TodoToolCard({
         trailing={<BadgeRow frame={frame} task={task} interaction={interaction} alwaysShowState />}
       >
         <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[10.5px] text-[var(--color-text-tertiary)]">{summary}</span>
+          <span className="truncate text-[10.5px] text-[var(--color-token-conversation-summary-trailing)]">{summary}</span>
         </div>
       </CardHeader>
-      {expanded ? (
-        <ul className="space-y-0.5 border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3.5 py-2">
+      <CollapsibleBody open={expanded} className="ml-3 border-l border-[var(--color-border-light)] pl-3">
+        <ul className="space-y-0.5 py-1">
           {items.map((item, index) => (
             <li key={`${item.title}-${index}`} className="flex items-center gap-2 text-[11px]">
               <span
@@ -834,7 +829,7 @@ function TodoToolCard({
             </li>
           ))}
         </ul>
-      ) : null}
+      </CollapsibleBody>
     </div>
   );
 }
@@ -884,34 +879,34 @@ function GenericCard({
       >
         <div className="flex min-w-0 items-center gap-2">
           {summary !== undefined ? (
-            <span className="min-w-0 truncate text-[10.5px] text-[var(--color-text-tertiary)]">
+            <span className="min-w-0 truncate text-[10.5px] text-[var(--color-token-conversation-summary-trailing)]">
               {summary}
             </span>
           ) : null}
         </div>
       </CardHeader>
-      {expanded ? (
-        <div className="space-y-2 border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] px-3.5 py-2.5">
+      <CollapsibleBody open={expanded} className="ml-3 border-l border-[var(--color-border-light)] pl-3">
+        <div className="space-y-2 py-1">
           {frame.input !== undefined ? (
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-text-secondary)]">
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-token-conversation-summary-trailing)]">
               {safeJson(frame.input)}
             </pre>
           ) : inputText !== undefined ? (
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-text-secondary)]">
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-token-conversation-summary-trailing)]">
               {inputText}
             </pre>
           ) : null}
           {output !== undefined ? (
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-text-secondary)]">
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-token-conversation-summary-trailing)]">
               {output}
             </pre>
           ) : frame.output !== undefined ? (
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-text-secondary)]">
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.5] text-[var(--color-token-conversation-summary-trailing)]">
               {safeJson(frame.output)}
             </pre>
           ) : null}
         </div>
-      ) : null}
+      </CollapsibleBody>
     </div>
   );
 }

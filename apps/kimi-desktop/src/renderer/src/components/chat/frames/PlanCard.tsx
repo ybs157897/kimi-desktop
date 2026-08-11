@@ -16,6 +16,7 @@ import type { TranscriptPlanInfo } from '#/lib/api';
 import { tagClasses } from '#/lib/agentColors';
 import { Markdown } from '../../markdown/Markdown';
 import type { OpenPlanDoc } from '../PlanDocViewer';
+import { CollapsibleBody } from '../CollapsibleBody';
 import { PlanStateIcon, planStateLabel, planTitle, type PlanReviewState } from '../planShared';
 
 export interface PlanCardProps {
@@ -52,39 +53,43 @@ export function PlanCard({ frame, display, plan, interaction, onOpenPlanDoc }: P
       : undefined;
 
   return (
-    <section className="ui-card-enter mb-3 max-w-[46rem] border-t border-[var(--color-border-light)] pt-2">
-      <div className="mb-0.5 flex items-center gap-1.5">
-        <span className={`ui-tag-pill ${tagClasses('plan')}`}>计划</span>
-      </div>
-      <div className="-mx-1.5 flex min-h-8 w-[calc(100%+0.75rem)] items-center rounded-[var(--radius-sm)] hover:bg-[var(--color-list-hover)]">
+    <section className="ui-card-enter mb-1 max-w-[46rem]">
+      <div className="ui-pressable group/activity-header -mx-1 flex min-h-8 w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-1 text-left text-[length:var(--codex-chat-font-size)] hover:bg-[var(--color-list-hover)]">
         <button
           type="button"
           onClick={() => hasPlan && setExpanded((value) => !value)}
           aria-expanded={expanded}
           disabled={!hasPlan}
           title={resolved.path}
-          className="ui-pressable flex min-w-0 flex-1 select-none items-center gap-2 rounded-[var(--radius-sm)] px-1.5 py-1 text-left enabled:cursor-pointer"
+          className="flex min-w-0 flex-1 select-none items-center gap-1.5 rounded-[var(--radius-sm)] py-1 text-left enabled:cursor-pointer"
         >
-          <PlanStateIcon state={resolved.state} />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[12.5px] font-medium text-[var(--color-text-foreground)]">
-              {title}
-            </div>
-            {resolved.selectedOption !== undefined ? (
-              <div className="truncate text-[10.5px] text-[var(--color-text-tertiary)]">
-                {resolved.selectedOption}
-              </div>
-            ) : null}
-          </div>
-          <span className="shrink-0 text-[10.5px] text-[var(--color-text-tertiary)]">{stateLabel}</span>
           {hasPlan ? (
             <CaretRight
               size={10}
               weight="bold"
-              className={`shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[var(--duration-hover)] ease-[var(--ease-out)] ${expanded ? 'rotate-90' : ''}`}
+              className={`shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[var(--duration-hover)] ease-[var(--ease-out)] ${
+                expanded ? 'rotate-90 opacity-100' : 'opacity-0 group-hover/activity-header:opacity-100 group-focus-visible/activity-header:opacity-100 group-has-[:focus-visible]/activity-header:opacity-100'
+              }`}
               aria-hidden
             />
           ) : null}
+          <span className="shrink-0" aria-hidden>
+            <PlanStateIcon state={resolved.state} />
+          </span>
+          <span className={`ui-tag-pill shrink-0 ${tagClasses('plan')}`}>计划</span>
+          <span className="min-w-0 flex-1 text-[var(--color-token-conversation-summary-leading)] group-hover/activity-header:text-[var(--color-text-foreground)]">
+            <span className="block truncate text-[12.5px] font-medium text-[var(--color-text-foreground)]">
+              {title}
+            </span>
+            {resolved.selectedOption !== undefined ? (
+              <span className="block truncate text-[10.5px] text-[var(--color-text-tertiary)]">
+                {resolved.selectedOption}
+              </span>
+            ) : null}
+          </span>
+          <span className="shrink-0 text-[10.5px] text-[var(--color-token-conversation-summary-trailing)]">
+            {stateLabel}
+          </span>
         </button>
         {openDoc !== undefined ? (
           <button
@@ -98,53 +103,51 @@ export function PlanCard({ frame, display, plan, interaction, onOpenPlanDoc }: P
           </button>
         ) : null}
       </div>
-      {expanded && hasPlan ? (
-        <div className="mt-1">
-          <div role="tablist" aria-label="计划视图" className="mb-1.5 flex items-center gap-1">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'plan'}
-              onClick={() => setTab('plan')}
-              className={`ui-pressable rounded-[var(--radius-sm)] px-2 py-0.5 text-[11px] font-medium ${
-                tab === 'plan'
-                  ? tagClasses('plan')
-                  : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)]'
-              }`}
-            >
-              计划
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'raw'}
-              onClick={() => setTab('raw')}
-              className={`ui-pressable rounded-[var(--radius-sm)] px-2 py-0.5 text-[11px] font-medium ${
-                tab === 'raw'
-                  ? tagClasses('plan')
-                  : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)]'
-              }`}
-            >
-              原始
-            </button>
+      <CollapsibleBody open={expanded && hasPlan} className="ml-3 border-l border-[var(--color-border-light)] pl-3">
+        <div role="tablist" aria-label="计划视图" className="mb-1.5 flex items-center gap-1">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'plan'}
+            onClick={() => setTab('plan')}
+            className={`ui-pressable rounded-[var(--radius-sm)] px-2 py-0.5 text-[11px] font-medium ${
+              tab === 'plan'
+                ? tagClasses('plan')
+                : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)]'
+            }`}
+          >
+            计划
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'raw'}
+            onClick={() => setTab('raw')}
+            className={`ui-pressable rounded-[var(--radius-sm)] px-2 py-0.5 text-[11px] font-medium ${
+              tab === 'raw'
+                ? tagClasses('plan')
+                : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)]'
+            }`}
+          >
+            原始
+          </button>
+        </div>
+        {tab === 'plan' ? (
+          <div className="max-h-[28rem] overflow-auto py-1 pr-2 text-[12px] leading-relaxed">
+            <Markdown source={resolved.plan!} />
           </div>
-          {tab === 'plan' ? (
-            <div className="ml-2 max-h-[28rem] overflow-auto border-l border-[var(--color-border-light)] py-1 pl-4 pr-2 text-[12px] leading-relaxed">
-              <Markdown source={resolved.plan!} />
-            </div>
-          ) : (
-            <pre className="ml-2 max-h-[28rem] overflow-auto whitespace-pre-wrap border-l border-[var(--color-border-light)] py-1 pl-4 pr-2 font-mono text-[11.5px] leading-[1.55] text-[var(--color-text-secondary)]">
-              {resolved.plan!}
-            </pre>
-          )}
-        </div>
-      ) : null}
-      {expanded && resolved.feedback !== undefined ? (
-        <div className="ml-2 border-l border-[var(--color-border-light)] px-4 py-2 text-[11px] text-[var(--color-text-secondary)]">
-          <span className="font-medium text-[var(--color-text-tertiary)]">反馈：</span>
-          {resolved.feedback}
-        </div>
-      ) : null}
+        ) : (
+          <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap py-1 pr-2 font-mono text-[11.5px] leading-[1.5] text-[var(--color-token-conversation-summary-trailing)]">
+            {resolved.plan!}
+          </pre>
+        )}
+        {resolved.feedback !== undefined ? (
+          <div className="py-2 text-[11px] text-[var(--color-token-conversation-summary-trailing)]">
+            <span className="font-medium text-[var(--color-text-tertiary)]">反馈：</span>
+            {resolved.feedback}
+          </div>
+        ) : null}
+      </CollapsibleBody>
     </section>
   );
 }

@@ -24,6 +24,11 @@ import {
   createMarkdownExtensions,
   type MathToken,
 } from '../src/renderer/src/components/markdown/extensions';
+import {
+  configuredThinkingEffort,
+  resolveThinkingEffort,
+  thinkingConfigPatch,
+} from '../src/renderer/src/lib/conversationDefaults';
 import { computeScaledSize } from '../src/renderer/src/lib/imageScale';
 import {
   groupModelCatalog,
@@ -50,8 +55,11 @@ import {
   taskForToolFrame,
   visibleTimelineItems,
 } from '../src/renderer/src/lib/timelinePresentation';
+import { toolRunsFromTurn } from '../src/renderer/src/lib/toolRunsFromTurn';
 import type {
+  TranscriptFrame,
   TranscriptInteraction,
+  TranscriptStep,
   TranscriptTask,
   TranscriptTurn,
 } from '@moonshot-ai/transcript';
@@ -507,6 +515,50 @@ describe('model catalog selection', () => {
         'default-provider/default-model',
       ),
     ).toBe('override-provider/override-model');
+  });
+});
+
+describe('conversation defaults', () => {
+  it('returns the persisted effort when global thinking is enabled', () => {
+    expect(configuredThinkingEffort({ enabled: true, effort: 'high' })).toBe(
+      'high',
+    );
+  });
+
+  it('returns off when global thinking is disabled', () => {
+    expect(configuredThinkingEffort({ enabled: false, effort: 'high' })).toBe(
+      'off',
+    );
+  });
+
+  it('uses the selected model default when a saved effort is unsupported', () => {
+    expect(
+      resolveThinkingEffort('high', {
+        provider: 'example-provider',
+        model: 'example-provider/example-model',
+        max_context_size: 128_000,
+        support_efforts: ['low', 'max'],
+        default_effort: 'max',
+      }),
+    ).toBe('max');
+  });
+
+  it('turns thinking off when the selected model has no thinking capability', () => {
+    expect(
+      resolveThinkingEffort('high', {
+        provider: 'example-provider',
+        model: 'example-provider/example-model',
+        max_context_size: 128_000,
+        capabilities: ['tool_use'],
+      }),
+    ).toBe('off');
+  });
+
+  it('persists off as both the effort and disabled global thinking', () => {
+    expect(thinkingConfigPatch('off')).toEqual({
+      enabled: false,
+      effort: 'off',
+    });
   });
 });
 
@@ -1022,5 +1074,93 @@ describe('streamHtml pairing', () => {
   it('ignores html that is not stream markup', () => {
     const nodes = pair('<span class="user">x</span>');
     expect(textOf(nodes)).toContain('<html:<span class="user">>');
+  });
+});
+
+describe('toolRunsFromTurn', () => {
+  /** Minimal tool frame helper: only the fields the grouping reads. The casts
+   *  keep the fixtures terse — the grouping only inspects `kind`/`name`/`view`/
+   *  `display`/`state`, so the full TranscriptFrame shape isn't needed here. */
+  const tool = (
+    frameId: string,
+    name: string,
+    extra: Partial<{ display: { kind: string }; state: string }> = {},
+  ) =>
+    ({
+      kind: 'tool',
+      frameId,
+      toolCallId: frameId,
+      name,
+      state: extra.state ?? 'done',
+      ...(extra.display !== undefined ? { display: extra.display } : {}),
+    }) as unknown as TranscriptFrame;
+  const text = (frameId: string) => ({ kind: 'text', frameId, role: 'assistant', text: '' }) as unknown as TranscriptFrame;
+  const thinking = (frameId: string) => ({ kind: 'thinking', frameId, text: '' }) as unknown as TranscriptFrame;
+  const step = (frames: readonly TranscriptFrame[]) =>
+    ({ kind: 'step', stepId: 's', turnId: 't', ordinal: 1, state: 'completed', frames }) as unknown as TranscriptStep;
+
+  const turn = (steps: readonly TranscriptStep[]) =>
+    ({ kind: 'turn', turnId: 't', ordinal: 1, state: 'completed', origin: { kind: 'user' }, steps }) as unknown as TranscriptTurn;
+
+  it('groups consecutive groupable tool frames into one run', () => {
+    const entries = toolRunsFromTurn(turn([step([
+      tool('a', 'Bash'),
+      tool('b', 'Edit'),
+      tool('c', 'Write'),
+    ])]));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.kind).toBe('run');
+    if (entries[0]!.kind === 'run') {
+      expect(entries[0]!.frames).toHaveLength(3);
+      expect(entries[0]!.summaryParts).toEqual(['编辑了 2 个文件', '运行了 1 条命令']);
+    }
+  });
+
+  it('splits a run when a standalone frame interrupts', () => {
+    const entries = toolRunsFromTurn(turn([step([
+      tool('a', 'Bash'),
+      tool('b', 'Agent'),
+      tool('c', 'Bash'),
+    ])]));
+    expect(entries).toHaveLength(3);
+    expect(entries[0]).toMatchObject({ kind: 'run' });
+    expect(entries[1]).toMatchObject({ kind: 'standalone' });
+    expect(entries[2]).toMatchObject({ kind: 'run' });
+  });
+
+  it('flattens across step boundaries so a run does not split on step edges', () => {
+    const entries = toolRunsFromTurn(turn([
+      step([tool('a', 'Bash')]),
+      step([tool('b', 'Edit')]),
+    ]));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ kind: 'run' });
+  });
+
+  it('keeps standalone-only frames (single Agent / search / todo) standalone', () => {
+    const entries = toolRunsFromTurn(turn([step([
+      tool('a', 'Agent'),
+      tool('b', 'WebSearch'),
+      tool('c', 'TodoWrite'),
+    ])]));
+    expect(entries.every((entry) => entry.kind === 'standalone')).toBe(true);
+    expect(entries).toHaveLength(3);
+  });
+
+  it('emits an empty array for a turn with no frames', () => {
+    expect(toolRunsFromTurn(turn([step([text('r')])]))).toHaveLength(1);
+    expect(toolRunsFromTurn(turn([step([])]))).toHaveLength(0);
+  });
+
+  it('keeps thinking/text/notice frames standalone between runs', () => {
+    const entries = toolRunsFromTurn(turn([step([
+      tool('a', 'Bash'),
+      thinking('th'),
+      text('r'),
+    ])]));
+    expect(entries).toHaveLength(3);
+    expect(entries[0]).toMatchObject({ kind: 'run' });
+    expect(entries[1]).toMatchObject({ kind: 'standalone' });
+    expect(entries[2]).toMatchObject({ kind: 'standalone' });
   });
 });

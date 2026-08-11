@@ -14,6 +14,7 @@ import { useMemo, useState } from 'react';
 import { diffLineTone, diffPrefix } from '#/lib/diffRender';
 import { editedFilesFromTurn, type EditedFileEntry } from '#/lib/editedFiles';
 
+import { CollapsibleBody } from './CollapsibleBody';
 import { TOOL_CARD } from './frames/ToolFrame';
 
 /** Files listed before the "show M more" expander. */
@@ -44,14 +45,14 @@ export function EditedFilesCard({ turn }: { readonly turn: TranscriptTurn }) {
 
   return (
     <div className={TOOL_CARD}>
-      <div className="flex min-h-9 items-center gap-1.5 px-2.5 py-1">
+      <div className="ui-pressable group/activity-header -mx-1 flex min-h-8 items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-1 text-[length:var(--codex-chat-font-size)] hover:bg-[var(--color-list-hover)]">
         <Files size={14} className="shrink-0 text-[var(--color-text-tertiary)]" aria-hidden />
-        <span className="min-w-0 flex-1 text-[12px] font-medium text-[var(--color-text-foreground)]">
+        <span className="min-w-0 flex-1 text-[12px] font-medium text-[var(--color-token-conversation-summary-leading)] group-hover/activity-header:text-[var(--color-text-foreground)]">
           已编辑 {entries.length} 个文件
         </span>
         <ChangePills adds={totalAdds} dels={totalDels} />
       </div>
-      <div className="border-t border-[var(--color-border-light)]">
+      <div className="ml-3 border-l border-[var(--color-border-light)] pl-2">
         {visible.map((entry) => (
           <FileRow
             key={entry.path}
@@ -65,7 +66,7 @@ export function EditedFilesCard({ turn }: { readonly turn: TranscriptTurn }) {
             type="button"
             aria-expanded={showAll}
             onClick={() => setShowAll((value) => !value)}
-            className="ui-pressable flex min-h-8 w-full cursor-pointer select-none items-center gap-1.5 border-t border-[var(--color-border-light)] px-2.5 py-1 text-left text-[11.5px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)]"
+            className="ui-pressable flex min-h-8 w-full cursor-pointer select-none items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-1 text-left text-[11.5px] text-[var(--color-token-conversation-summary-trailing)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-secondary)]"
           >
             {showAll ? (
               <CaretUp size={11} weight="bold" className="shrink-0 text-[var(--color-text-tertiary)]" aria-hidden />
@@ -96,13 +97,13 @@ function FileRow({
         type="button"
         aria-expanded={expanded}
         onClick={onToggle}
-        className="ui-pressable flex min-h-8 w-full cursor-pointer select-none items-center gap-1.5 px-2.5 py-1 text-left hover:bg-[var(--color-list-hover)]"
+        className="ui-pressable group/file-row flex min-h-8 w-full cursor-pointer select-none items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-1 text-left hover:bg-[var(--color-list-hover)]"
       >
         <CaretRight
           size={11}
           weight="bold"
-          className={`shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[var(--duration-hover)] ease-[var(--ease-out)] ${
-            expanded ? 'rotate-90' : ''
+          className={`shrink-0 text-[var(--color-token-conversation-body)] transition-transform duration-[var(--duration-hover)] ease-[var(--ease-out)] ${
+            expanded ? 'rotate-90 opacity-100' : 'opacity-0 group-hover/file-row:opacity-100 group-focus-visible/file-row:opacity-100 group-has-[:focus-visible]/file-row:opacity-100'
           }`}
           aria-hidden
         />
@@ -112,15 +113,15 @@ function FileRow({
         </span>
         <ChangePills adds={entry.adds} dels={entry.dels} />
       </button>
-      {expanded ? (
-        <pre className="max-h-72 overflow-auto border-t border-[var(--color-border-light)] bg-[var(--color-background-surface-under)] py-1.5 font-mono text-[11.5px] leading-[1.55]">
+      <CollapsibleBody open={expanded} className="pl-1">
+        <pre className="max-h-72 overflow-auto py-1 font-mono text-[11.5px] leading-[1.5]">
           {entry.segments.map((segment, segmentIndex) => (
             <div key={segmentIndex}>
               {segmentIndex > 0 ? (
-                <div className="mx-3.5 my-1 border-t border-dashed border-[var(--color-border-light)]" />
+                <div className="my-1 border-t border-dashed border-[var(--color-border-light)]" />
               ) : null}
               {segment.map((line, lineIndex) => (
-                <div key={lineIndex} className={`px-3.5 ${diffLineTone(line.type)}`}>
+                <div key={lineIndex} className={`px-1 ${diffLineTone(line.type)}`}>
                   <span className="select-none opacity-50">{diffPrefix(line.type)}</span>
                   {line.text}
                 </div>
@@ -128,7 +129,7 @@ function FileRow({
             </div>
           ))}
         </pre>
-      ) : null}
+      </CollapsibleBody>
     </div>
   );
 }
