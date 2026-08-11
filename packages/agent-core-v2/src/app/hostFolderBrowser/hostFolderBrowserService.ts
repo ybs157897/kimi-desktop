@@ -7,7 +7,7 @@
  * directory-only entries, dot-last sorting, and `parent` resolution.
  */
 
-import { readdir, realpath } from 'node:fs/promises';
+import { readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 
@@ -23,6 +23,8 @@ import {
   IHostFolderBrowser,
   RECENT_ROOTS_LIMIT,
 } from './hostFolderBrowser';
+
+const RECENT_ROOTS_PROBE_LIMIT = RECENT_ROOTS_LIMIT * 4;
 
 export class HostFolderBrowser implements IHostFolderBrowser {
   declare readonly _serviceBrand: undefined;
@@ -70,8 +72,27 @@ export class HostFolderBrowser implements IHostFolderBrowser {
   async home(): Promise<FsHomeResponse> {
     const home = homedir();
     const workspaces = await this.registry.list();
-    const recent_roots = workspaces.slice(0, RECENT_ROOTS_LIMIT).map((w) => w.root);
+    const candidates = workspaces
+      .toSorted((a, b) => b.lastOpenedAt - a.lastOpenedAt)
+      .slice(0, RECENT_ROOTS_PROBE_LIMIT);
+    const recent_roots = (
+      await Promise.all(
+        candidates.map(async (workspace) =>
+          (await isDirectory(workspace.root)) ? workspace.root : undefined,
+        ),
+      )
+    )
+      .filter((root): root is string => root !== undefined)
+      .slice(0, RECENT_ROOTS_LIMIT);
     return { home, recent_roots };
+  }
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
   }
 }
 

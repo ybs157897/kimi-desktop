@@ -181,6 +181,18 @@ describe('server-v2 /api/v1 fs folder picker', () => {
     expect(body.code).toBe(0);
     expect(body.data.recent_roots).toContain(root);
   });
+
+  it('excludes a registered workspace after its directory is deleted', async () => {
+    const root = join(home as string, 'deleted-workspace');
+    await mkdir(root);
+    const created = await postJson<{ id: string }>('/api/v1/workspaces', { root });
+    expect(created.body.code).toBe(0);
+    await rm(root, { recursive: true });
+
+    const { body } = await getJson<HomeWire>('/api/v1/fs:home');
+    expect(body.code).toBe(0);
+    expect(body.data.recent_roots).toEqual([]);
+  });
 });
 
 describe('server-v2 /api/v1 fs:mkdir', () => {
