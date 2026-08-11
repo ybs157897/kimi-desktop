@@ -18,6 +18,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { HighlighterCore } from 'shiki/core';
 import type { LanguageRegistration, ThemeRegistrationRaw } from 'shiki/types';
 
+import { codeBlockLanguage } from './codeBlockLanguage';
+
 export interface MarkdownCodeBlockProps {
   readonly code: string;
   readonly language?: string;
@@ -94,47 +96,6 @@ const LANGUAGE_IMPORTERS: Readonly<Record<string, () => Promise<{ readonly defau
   'shell session': () => import('shiki/langs/shellsession.mjs'),
 };
 
-/**
- * Friendly display names for the header. Keys mirror the normalized language
- * id (lowercased, post-alias); unknown ids fall back to the raw id.
- */
-const LANGUAGE_DISPLAY_NAMES: Readonly<Record<string, string>> = {
-  js: 'JavaScript', jsx: 'JavaScript', javascript: 'JavaScript',
-  ts: 'TypeScript', tsx: 'TypeScript', typescript: 'TypeScript',
-  json: 'JSON', jsonc: 'JSON', json5: 'JSON',
-  py: 'Python', python: 'Python',
-  rb: 'Ruby', ruby: 'Ruby',
-  go: 'Go', rs: 'Rust', rust: 'Rust',
-  c: 'C', cpp: 'C++', 'c++': 'C++', csharp: 'C#', 'c#': 'C#',
-  java: 'Java', kt: 'Kotlin', kotlin: 'Kotlin',
-  swift: 'Swift', php: 'PHP',
-  sh: 'Shell', bash: 'Bash', shell: 'Shell', shellscript: 'Shell', zsh: 'Zsh',
-  sql: 'SQL', graphql: 'GraphQL',
-  html: 'HTML', xml: 'XML', svg: 'SVG',
-  css: 'CSS', scss: 'SCSS', less: 'Less', postcss: 'PostCSS',
-  md: 'Markdown', markdown: 'Markdown', mdx: 'MDX',
-  yaml: 'YAML', yml: 'YAML', toml: 'TOML',
-  dockerfile: 'Dockerfile', make: 'Makefile', makefile: 'Makefile',
-  ini: 'INI', powershell: 'PowerShell', ps1: 'PowerShell',
-  diff: 'Diff', latex: 'LaTeX', tex: 'LaTeX',
-  nix: 'Nix', proto: 'Protocol Buffer', cmake: 'CMake', wasm: 'WebAssembly',
-  'objective-c': 'Objective-C', 'shell session': 'Shell Session',
-};
-
-/**
- * Normalize the fence language: strip meta (`ts {1-3}` → `ts`), lowercase.
- * Returns `null` when the block should render unhighlighted (plain text or
- * unknown languages). `mermaid` is returned as-is so the component can branch
- * to its own diagram renderer.
- */
-function normalizeLanguage(language: string | undefined): string | null {
-  const raw = language?.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
-  if (raw === '' || raw === 'text' || raw === 'plaintext' || raw === 'txt') {
-    return null;
-  }
-  return raw;
-}
-
 function currentTheme(): ThemeName {
   return document.documentElement.dataset['theme'] === 'light' ? 'github-light' : 'github-dark';
 }
@@ -199,7 +160,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-/** Copy button — floats over the code block header, revealed on hover/focus. */
+/** Copy button in the code block toolbar. */
 function CodeCopyButton({ code }: { readonly code: string }) {
   const [copied, setCopied] = useState(false);
   const resetTimer = useRef<number | null>(null);
@@ -228,14 +189,35 @@ function CodeCopyButton({ code }: { readonly code: string }) {
       title={label}
       onClick={handleCopy}
     >
-      {copied ? <Check size={12} weight="bold" /> : <Copy size={12} />}
-      <span>{copied ? '已复制' : '复制'}</span>
+      {copied ? <Check size={14} weight="bold" /> : <Copy size={14} />}
     </button>
   );
 }
 
-/** Line budget over which a block folds to a preview window. */
-const FOLD_THRESHOLD = 20;
+function CodeWrapButton({
+  wrapped,
+  onClick,
+}: {
+  readonly wrapped: boolean;
+  readonly onClick: () => void;
+}) {
+  const label = wrapped ? '禁用自动换行' : '启用自动换行';
+  return (
+    <button
+      type="button"
+      className="markdown-code-wrap-toggle"
+      aria-label={label}
+      aria-pressed={wrapped}
+      title={label}
+      onClick={onClick}
+    >
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden>
+        <path d="M2 3.5h12M2 7h9.25a2.25 2.25 0 0 1 0 4.5H9" />
+        <path d="m10.5 9.75-1.75 1.75 1.75 1.75M2 11.5h4" />
+      </svg>
+    </button>
+  );
+}
 
 /**
  * MermaidDiagram — renders a fenced `mermaid` block as SVG.
@@ -295,25 +277,49 @@ function MermaidDiagram({ code }: { readonly code: string }) {
 }
 
 export function MarkdownCodeBlock({ code, language, streaming = false }: MarkdownCodeBlockProps) {
-  const normalized = normalizeLanguage(language);
+  const { id: normalized, label: languageLabel } = codeBlockLanguage(language);
 
-  // Mermaid gets its own diagram renderer; it bypasses Shiki, folding and the
-  // copy affordance (an SVG has nothing to copy as text).
   if (normalized === 'mermaid') {
-    return (
-      <div className="markdown-code-shell" data-lang="mermaid">
-        <div className="markdown-code-lang">
-          <span className="markdown-code-lang-name">Mermaid</span>
-        </div>
-        <div className="markdown-code-body">
-          <MermaidDiagram code={code} />
-        </div>
-      </div>
-    );
+    return <MermaidCodeBlock code={code} />;
   }
 
+  return (
+    <HighlightedCodeBlock
+      code={code}
+      languageLabel={languageLabel}
+      normalized={normalized}
+      streaming={streaming}
+    />
+  );
+}
+
+function MermaidCodeBlock({ code }: { readonly code: string }) {
+  return (
+    <div className="markdown-code-shell" data-lang="mermaid">
+      <div className="markdown-code-lang">
+        <span className="markdown-code-lang-name">Mermaid</span>
+      </div>
+      <div className="markdown-code-body" dir="ltr">
+        <MermaidDiagram code={code} />
+      </div>
+    </div>
+  );
+}
+
+function HighlightedCodeBlock({
+  code,
+  languageLabel,
+  normalized,
+  streaming,
+}: {
+  readonly code: string;
+  readonly languageLabel: string;
+  readonly normalized: string | null;
+  readonly streaming: boolean;
+}) {
   const importer = normalized !== null ? LANGUAGE_IMPORTERS[normalized] : undefined;
   const [highlighted, setHighlighted] = useState<string | null>(null);
+  const [wrapped, setWrapped] = useState(false);
   // Theme switches flip `data-theme` on <html> without re-rendering React, so
   // an effect dep alone would leave visible blocks stuck on the previous
   // theme's token colors. A MutationObserver bumps this counter and the
@@ -346,38 +352,27 @@ export function MarkdownCodeBlock({ code, language, streaming = false }: Markdow
     };
   }, [code, importer, normalized, themeTick]);
 
-  // Long-block fold. A streaming block stays open so the user can watch it
-  // land; settled blocks over the line budget start folded.
-  const lineCount = code === '' ? 0 : code.split('\n').length;
-  const foldable = !streaming && lineCount > FOLD_THRESHOLD;
-  const [expanded, setExpanded] = useState(!foldable);
-  // Re-evaluate when `code` changes (a streaming block that crosses the
-  // threshold mid-flight should not fold until it settles).
-  const effectiveExpanded = streaming ? true : expanded;
-  const folded = foldable && !effectiveExpanded;
-  const showLines = effectiveExpanded && highlighted === null;
-
-  const header =
-    normalized !== null ? (
-      <div className="markdown-code-lang">
-        <span className="markdown-code-lang-name">{LANGUAGE_DISPLAY_NAMES[normalized] ?? normalized}</span>
-        {folded ? null : <CodeCopyButton code={code} />}
+  const header = (
+    <div className="markdown-code-lang">
+      <span className="markdown-code-lang-name">{languageLabel}</span>
+      <div className="markdown-code-actions">
+        <CodeWrapButton
+          wrapped={wrapped}
+          onClick={() => {
+            setWrapped((value) => !value);
+          }}
+        />
+        <CodeCopyButton code={code} />
       </div>
-    ) : null;
+    </div>
+  );
   const body =
     highlighted !== null ? (
       <div className="markdown-shiki" dangerouslySetInnerHTML={{ __html: highlighted }} />
     ) : (
       <pre className="markdown-code-block">
         <code>
-          {showLines
-            ? code.split('\n').map((line, index) => (
-                <span key={index} className="markdown-code-line">
-                  {line}
-                  {index < lineCount - 1 ? '\n' : ''}
-                </span>
-              ))
-            : code}
+          {code}
           {streaming ? <span className="markdown-cursor" aria-hidden /> : null}
         </code>
       </pre>
@@ -386,28 +381,12 @@ export function MarkdownCodeBlock({ code, language, streaming = false }: Markdow
     <div
       className="markdown-code-shell"
       data-lang={normalized ?? undefined}
-      data-folded={folded ? 'true' : 'false'}
-      data-lines={showLines ? 'true' : 'false'}
+      data-wrap={wrapped ? 'true' : 'false'}
     >
       {header}
-      <div className="markdown-code-body">{body}</div>
-      {folded ? (
-        <button
-          type="button"
-          className="markdown-code-fold-toggle"
-          onClick={() => setExpanded(true)}
-        >
-          展开全部 {lineCount} 行
-        </button>
-      ) : foldable ? (
-        <button
-          type="button"
-          className="markdown-code-fold-toggle"
-          onClick={() => setExpanded(false)}
-        >
-          收起
-        </button>
-      ) : null}
+      <div className="markdown-code-body" dir="ltr">
+        {body}
+      </div>
     </div>
   );
 }

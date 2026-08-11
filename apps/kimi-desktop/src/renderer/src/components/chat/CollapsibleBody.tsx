@@ -28,6 +28,8 @@ export function CollapsibleBody({ open, children, maxHeightClass, className }: C
   return (
     <motion.div
       className="collapsible-body"
+      aria-hidden={open ? undefined : true}
+      inert={!open}
       initial={false}
       animate={{ height: open ? 'auto' : 0, opacity: open ? 1 : 0 }}
       transition={reduced ? { duration: 0 } : { duration: 0.3, ease: [0.19, 1, 0.22, 1] }}

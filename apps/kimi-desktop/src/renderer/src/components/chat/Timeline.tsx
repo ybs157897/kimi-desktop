@@ -8,13 +8,14 @@ import type { SourcedPendingInteraction } from '#/lib/sessionInteractions';
 import { ChatSkeleton } from './ChatSkeleton';
 import { TaskRefCard } from './frames/TaskRefCard';
 import type { OpenPlanDoc } from './PlanDocViewer';
-import { TurnBlock } from './TurnBlock';
+import { TurnBlock, type TurnBlockProps } from './TurnBlock';
 import { WorkedForSeparator } from './WorkedForSeparator';
 
 export interface TimelineProps {
   /** The store state driving the timeline (items + global entities). */
   readonly state: AgentState;
   readonly loading?: boolean;
+  readonly initialError?: unknown;
   readonly error?: unknown;
   readonly onRetry?: (() => void);
   /** Page older turns (before_turn); wired to an IntersectionObserver sentinel
@@ -23,8 +24,13 @@ export interface TimelineProps {
   readonly loadingOlder?: boolean;
   /** Session-level pending interactions, including requests owned by subagents. */
   readonly pendingSessionInteractions?: readonly SourcedPendingInteraction[];
+  readonly onResolveApproval?: TurnBlockProps['onResolveApproval'];
+  readonly onAnswerQuestion?: TurnBlockProps['onAnswerQuestion'];
+  readonly onDismissQuestion?: TurnBlockProps['onDismissQuestion'];
   /** Open a child agent's transcript in the side panel (swarm / single Agent). */
   readonly onOpenAgent?: (agentId: string, prompt?: string) => void;
+  /** Open the child-agent overview in the app shell. */
+  readonly onOpenSubagents?: () => void;
   /** Open a plan in the plan-document dock tab. */
   readonly onOpenPlanDoc?: OpenPlanDoc;
   /** Durable ExitPlanMode projections, keyed by tool call id. */
@@ -33,6 +39,8 @@ export interface TimelineProps {
    *  the prompt assigned by the parent agent. */
   readonly variant?: 'main' | 'agent';
   readonly introPrompt?: string;
+  /** Optimistic state between local submit and the first transcript turn. */
+  readonly awaitingTurn?: boolean;
 }
 
 /** Distance from the bottom below which the viewport counts as "pinned". */
@@ -51,16 +59,22 @@ const SENTINEL_MARGIN = 400;
 export function Timeline({
   state,
   loading = false,
+  initialError = null,
   error = null,
   onRetry,
   onLoadOlder,
   loadingOlder = false,
   pendingSessionInteractions = [],
+  onResolveApproval,
+  onAnswerQuestion,
+  onDismissQuestion,
   onOpenAgent,
+  onOpenSubagents,
   onOpenPlanDoc,
   plans,
   variant = 'main',
   introPrompt,
+  awaitingTurn = false,
 }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -108,8 +122,16 @@ export function Timeline({
     const el = scrollRef.current;
     if (el === null) return;
     if (initialScrollRef.current) {
-      el.scrollTop = variant === 'agent' ? 0 : el.scrollHeight;
+      el.scrollTop = variant === 'agent' && !awaitingTurn ? 0 : el.scrollHeight;
+      if (awaitingTurn) stickBottomRef.current = true;
       initialScrollRef.current = false;
+      return;
+    }
+    if (awaitingTurn) {
+      anchorRef.current = null;
+      el.scrollTop = el.scrollHeight;
+      stickBottomRef.current = true;
+      setAtBottom(true);
       return;
     }
     if (anchorRef.current !== null) {
@@ -118,7 +140,7 @@ export function Timeline({
       return;
     }
     if (stickBottomRef.current) el.scrollTop = el.scrollHeight;
-  }, [items, variant]);
+  }, [items, variant, awaitingTurn]);
 
   // Auto-paging sentinel: fires when the top of the window approaches the
   // viewport. Paused while a page load is in flight and while an error is up
@@ -126,7 +148,15 @@ export function Timeline({
   useEffect(() => {
     const sentinel = sentinelRef.current;
     const root = scrollRef.current;
-    if (sentinel === null || root === null || !state.hasMoreOlder || error !== null) return;
+    if (
+      sentinel === null ||
+      root === null ||
+      !state.hasMoreOlder ||
+      initialError !== null ||
+      error !== null
+    ) {
+      return;
+    }
     if (onLoadOlder === undefined) return;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -138,13 +168,13 @@ export function Timeline({
     return () => {
       observer.disconnect();
     };
-  }, [state.hasMoreOlder, error, loadingOlder, onLoadOlder, loadOlder]);
+  }, [state.hasMoreOlder, initialError, error, loadingOlder, onLoadOlder, loadOlder]);
 
-  if (loading && items.length === 0) {
-    return <ChatSkeleton />;
-  }
-  if (error !== null && items.length === 0) {
+  if ((initialError !== null || error !== null) && items.length === 0 && !awaitingTurn) {
     return <ErrorState onRetry={onRetry} />;
+  }
+  if (loading && items.length === 0 && !awaitingTurn) {
+    return <ChatSkeleton />;
   }
   return (
     <div
@@ -159,7 +189,20 @@ export function Timeline({
             : 'max-w-[var(--layout-thread-max-width)] px-6'
         }`}
       >
-        {error !== null ? (
+        {initialError !== null ? (
+          <div className="mb-3 flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border-error)] bg-[color-mix(in_srgb,var(--color-text-danger)_12%,transparent)] px-3 py-2 text-[11px] text-[var(--color-text-danger)]">
+            <span className="min-w-0 flex-1">暂时无法同步对话。</span>
+            {onRetry !== undefined ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="shrink-0 cursor-pointer rounded-[var(--radius-xs)] border border-[var(--color-border-heavy)] px-2 py-0.5 hover:bg-[var(--color-list-hover)]"
+              >
+                重试
+              </button>
+            ) : null}
+          </div>
+        ) : error !== null ? (
           <div className="mb-3 flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border-error)] bg-[color-mix(in_srgb,var(--color-text-danger)_12%,transparent)] px-3 py-2 text-[11px] text-[var(--color-text-danger)]">
             <span className="min-w-0 flex-1">加载更早的对话失败。</span>
             {onLoadOlder !== undefined ? (
@@ -192,11 +235,11 @@ export function Timeline({
           const previous = index > 0 ? items[index - 1] : undefined;
           return (
             <div key={itemId(item)}>
-              {previous?.kind === 'turn' && item.kind === 'turn' ? (
+              {variant === 'agent' && previous?.kind === 'turn' && item.kind === 'turn' ? (
                 <WorkedForSeparator
                   turn={previous}
                   nextTurn={item}
-                  variant={variant === 'agent' ? 'agent' : 'default'}
+                  variant="agent"
                   modelLabel={modelLabel}
                 />
               ) : null}
@@ -204,7 +247,11 @@ export function Timeline({
                 item={item}
                 state={state}
                 pendingSessionInteractions={pendingSessionInteractions}
+                onResolveApproval={variant === 'agent' ? onResolveApproval : undefined}
+                onAnswerQuestion={variant === 'agent' ? onAnswerQuestion : undefined}
+                onDismissQuestion={variant === 'agent' ? onDismissQuestion : undefined}
                 onOpenAgent={onOpenAgent}
+                onOpenSubagents={onOpenSubagents}
                 onOpenPlanDoc={onOpenPlanDoc}
                 plans={plans}
                 hidePrompt={
@@ -217,6 +264,7 @@ export function Timeline({
             </div>
           );
         })}
+        {awaitingTurn ? <AwaitingTurnPlaceholder /> : null}
       </div>
       {/* Floating "jump to latest": appears when the viewport drifts off the
           bottom (so streaming follow is suspended); smooth-scrolls back.
@@ -233,6 +281,21 @@ export function Timeline({
           <ArrowDown size={16} weight="bold" aria-hidden />
         </button>
       ) : null}
+    </div>
+  );
+}
+
+/** Local-only handoff state. It remains visible if transcript transport is
+ *  delayed or disconnected, then disappears as soon as a real user turn is
+ *  observed and TurnBlock takes over. */
+function AwaitingTurnPlaceholder() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="ui-card-enter ui-shimmer-text mb-4 max-w-[46rem] text-[length:var(--codex-chat-font-size)] leading-[var(--markdown-line-height,calc(var(--codex-chat-font-size,14px)+8px))]"
+    >
+      正在思考…
     </div>
   );
 }
@@ -269,11 +332,27 @@ function ErrorState({ onRetry }: { readonly onRetry?: (() => void) }) {
   );
 }
 
-function ItemView({ item, state, pendingSessionInteractions, onOpenAgent, onOpenPlanDoc, plans, hidePrompt = false }: {
+function ItemView({
+  item,
+  state,
+  pendingSessionInteractions,
+  onResolveApproval,
+  onAnswerQuestion,
+  onDismissQuestion,
+  onOpenAgent,
+  onOpenSubagents,
+  onOpenPlanDoc,
+  plans,
+  hidePrompt = false,
+}: {
   item: TranscriptItem;
   state: AgentState;
   pendingSessionInteractions: readonly SourcedPendingInteraction[];
+  onResolveApproval?: TurnBlockProps['onResolveApproval'];
+  onAnswerQuestion?: TurnBlockProps['onAnswerQuestion'];
+  onDismissQuestion?: TurnBlockProps['onDismissQuestion'];
   onOpenAgent?: (agentId: string, prompt?: string) => void;
+  onOpenSubagents?: () => void;
   onOpenPlanDoc?: OpenPlanDoc;
   plans?: ReadonlyMap<string, TranscriptPlanInfo>;
   hidePrompt?: boolean;
@@ -287,7 +366,11 @@ function ItemView({ item, state, pendingSessionInteractions, onOpenAgent, onOpen
           interactions={state.interactions}
           attachments={state.attachments}
           pendingSessionInteractions={pendingSessionInteractions}
+          onResolveApproval={onResolveApproval}
+          onAnswerQuestion={onAnswerQuestion}
+          onDismissQuestion={onDismissQuestion}
           onOpenAgent={onOpenAgent}
+          onOpenSubagents={onOpenSubagents}
           onOpenPlanDoc={onOpenPlanDoc}
           plans={plans}
           hidePrompt={hidePrompt}

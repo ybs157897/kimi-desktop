@@ -59,18 +59,22 @@ export function MarkdownMath({ tex, block = false }: MarkdownMathProps) {
   }, [tex, block]);
 
   if (failed) {
-    return <code className="markdown-math-fallback">{tex}</code>;
+    return block ? (
+      <span className="markdown-math markdown-math-block markdown-math-fallback">{tex}</span>
+    ) : (
+      <code className="markdown-math-fallback">{tex}</code>
+    );
   }
   if (html !== null) {
     return block ? (
-      <div className="markdown-math markdown-math-block" dangerouslySetInnerHTML={{ __html: html }} />
+      <span className="markdown-math markdown-math-block" dangerouslySetInnerHTML={{ __html: html }} />
     ) : (
       <span className="markdown-math markdown-math-inline" dangerouslySetInnerHTML={{ __html: html }} />
     );
   }
   // Not yet rendered — keep the raw source visible (streaming deltas).
   return block ? (
-    <div className="markdown-math markdown-math-block">{tex}</div>
+    <span className="markdown-math markdown-math-block">{tex}</span>
   ) : (
     <span className="markdown-math markdown-math-inline">{tex}</span>
   );

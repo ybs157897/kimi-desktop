@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 import { Marked } from 'marked';
 import type { Token, Tokens } from 'marked';
@@ -7,6 +9,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
   attachmentImageSrc,
@@ -20,6 +23,8 @@ import {
   splitStreamingDelta,
 } from '../src/renderer/src/components/markdown/streaming';
 import { pairStreamHtml } from '../src/renderer/src/components/markdown/streamHtml';
+import { codeBlockLanguage } from '../src/renderer/src/components/markdown/codeBlockLanguage';
+import { MarkdownMath } from '../src/renderer/src/components/markdown/MarkdownMath';
 import {
   createMarkdownExtensions,
   type MathToken,
@@ -30,6 +35,11 @@ import {
   thinkingConfigPatch,
 } from '../src/renderer/src/lib/conversationDefaults';
 import { computeScaledSize } from '../src/renderer/src/lib/imageScale';
+import {
+  newSessionErrorMessage,
+  resolveNewSessionCwd,
+} from '../src/renderer/src/lib/newSession';
+import { ApiError } from '../src/renderer/src/lib/api';
 import {
   groupModelCatalog,
   modelCatalogItemId,
@@ -46,7 +56,10 @@ import {
 } from '../src/renderer/src/lib/sessionInteractions';
 import {
   agentCallTypeLabel,
+  hasUserTurnAfter,
+  hasUserTurnSince,
   hasThinkingContent,
+  latestTurnOrdinal,
   liveTailFrameId,
   pendingInteractionForToolFrame,
   pendingComposerInteractions,
@@ -55,18 +68,53 @@ import {
   taskForToolFrame,
   visibleTimelineItems,
 } from '../src/renderer/src/lib/timelinePresentation';
-import { toolRunsFromTurn } from '../src/renderer/src/lib/toolRunsFromTurn';
+import {
+  resolveToolRunPresentation,
+  toolRunsFromTurn,
+} from '../src/renderer/src/lib/toolRunsFromTurn';
+import {
+  mergeSessionSubagents,
+  projectSubagentActivity,
+  selectPanelSubagents,
+  summarizeSubagents,
+} from '../src/renderer/src/lib/subagentSummary';
 import type {
+  ToolCallFrame,
   TranscriptFrame,
   TranscriptInteraction,
   TranscriptStep,
   TranscriptTask,
   TranscriptTurn,
 } from '@moonshot-ai/transcript';
+import { ErrorCode } from '@moonshot-ai/protocol';
+import type { SessionSubagentSnapshot } from '../src/renderer/src/lib/api';
 import {
   DESKTOP_TITLEBAR_HEIGHT,
   resolveDesktopWindowChrome,
 } from '../src/shared/windowChrome';
+
+describe('desktop design tokens', () => {
+  it('defines every custom property referenced by the token layer', () => {
+    const css = readFileSync(
+      new URL('../src/renderer/src/styles/tokens.css', import.meta.url),
+      'utf8',
+    );
+    const definitions = new Set(
+      [...css.matchAll(/^\s*(--[\w-]+)\s*:/gm)].map((match) => match[1]!),
+    );
+    const references = new Set(
+      [...css.matchAll(/var\((--[\w-]+)/g)].map((match) => match[1]!),
+    );
+
+    expect([...references].filter((reference) => !definitions.has(reference))).toEqual([]);
+  });
+});
+
+describe('markdown code block', () => {
+  it('labels an untyped fenced block as plain text', () => {
+    expect(codeBlockLanguage(undefined)).toEqual({ id: null, label: '纯文本' });
+  });
+});
 
 describe('desktop window chrome', () => {
   it('replaces both visible Windows chrome rows with the renderer title bar', () => {
@@ -89,6 +137,31 @@ describe('desktop window chrome', () => {
       autoHideMenuBar: false,
       hideMenuBar: false,
     });
+  });
+});
+
+describe('new session workspace', () => {
+  it('does not resurrect a missing historical workspace after host roots load', () => {
+    expect(
+      resolveNewSessionCwd(
+        { home: '/Users/example', recent_roots: [] },
+        ['/Users/example/deleted-project'],
+      ),
+    ).toBe('/Users/example');
+  });
+
+  it('explains when the selected workspace directory no longer exists', () => {
+    const error = new ApiError(ErrorCode.FS_PATH_NOT_FOUND, 'missing workspace', 404);
+    expect(newSessionErrorMessage(error)).toBe(
+      '工作区目录不存在或已移动，请重新选择。',
+    );
+  });
+
+  it('reserves the connection warning for transport failures', () => {
+    const error = new ApiError(-1, 'network error', 0);
+    expect(newSessionErrorMessage(error)).toBe(
+      '无法连接后端，请检查服务状态后重试。',
+    );
   });
 });
 
@@ -267,6 +340,29 @@ describe('Codex-style streaming timeline presentation', () => {
   it('does not reserve a blank streaming reasoning body', () => {
     expect(hasThinkingContent('   ')).toBe(false);
     expect(hasThinkingContent('正在检查项目')).toBe(true);
+  });
+
+  it('keeps optimistic thinking visible until a newer user turn is observed', () => {
+    const turn = (ordinal: number, origin: 'user' | 'cron' = 'user'): TranscriptTurn => ({
+      kind: 'turn',
+      turnId: `turn-${ordinal}-${origin}`,
+      ordinal,
+      state: 'completed',
+      origin: { kind: origin },
+      steps: [],
+    });
+    const baseline = [turn(3)];
+
+    expect(latestTurnOrdinal(baseline)).toBe(3);
+    expect(hasUserTurnAfter([turn(1), ...baseline], 3)).toBe(false);
+    expect(hasUserTurnAfter([...baseline, turn(4, 'cron')], 3)).toBe(false);
+    expect(hasUserTurnAfter([...baseline, turn(4)], 3)).toBe(true);
+    expect(hasUserTurnAfter([turn(1)], undefined)).toBe(true);
+
+    const historical = { ...turn(3), startedAt: '2026-08-11T12:00:00.000Z' };
+    const submitted = { ...turn(4), startedAt: '2026-08-11T12:00:01.000Z' };
+    expect(hasUserTurnSince([historical], '2026-08-11T12:00:01.000Z')).toBe(false);
+    expect(hasUserTurnSince([historical, submitted], '2026-08-11T12:00:01.000Z')).toBe(true);
   });
 
   it('pins live-tail affordances to the newest frame, not the whole running turn', () => {
@@ -857,6 +953,91 @@ describe('markdown math delimiters', () => {
     expect(math.every((token) => token.displayMode === false)).toBe(true);
   });
 
+  it('parses display math placed directly after prose without leaking a delimiter', () => {
+    const paragraph = markdown.lexer(
+      '**答案**：$$\\boxed{\\lim_{x\\to0^+}x\\lfloor 1/x\\rfloor=1,\\quad \\frac13}$$',
+    )[0] as Tokens.Paragraph;
+    const math = paragraph.tokens.filter(
+      (token): token is MathToken => token.type === 'math',
+    );
+
+    expect(math).toEqual([
+      expect.objectContaining({
+        tex: '\\boxed{\\lim_{x\\to0^+}x\\lfloor 1/x\\rfloor=1,\\quad \\frac13}',
+        displayMode: true,
+      }),
+    ]);
+    expect(math[0]?.tex).not.toContain('$');
+  });
+
+  it('keeps embedded display math valid inside paragraph markup', () => {
+    const html = renderToStaticMarkup(
+      createElement(MarkdownMath, { tex: '\\boxed{x=1}', block: true }),
+    );
+
+    expect(html).toMatch(/^<span class="markdown-math markdown-math-block">/);
+    expect(html).not.toContain('<div');
+  });
+
+  it('renders a standalone spaced single-dollar formula as display math', () => {
+    const math = markdown
+      .lexer('答案：\n\n$ \\boxed{x\\lfloor 1/x\\rfloor=1} $\n\n验证如下。')
+      .find((token): token is MathToken => token.type === 'math');
+
+    expect(math).toMatchObject({
+      tex: '\\boxed{x\\lfloor 1/x\\rfloor=1}',
+      displayMode: true,
+    });
+  });
+
+  it('normalizes a redundant single-dollar pair inside display math', () => {
+    const math = markdown
+      .lexer('$$\n$\\boxed{y\u2032(0)=\\frac12}$\n$$')
+      .find((token): token is MathToken => token.type === 'math');
+
+    expect(math).toMatchObject({
+      tex: '\\boxed{y\u2032(0)=\\frac12}',
+      displayMode: true,
+    });
+  });
+
+  it('accepts a standalone dollar opener on the line before the formula', () => {
+    const math = markdown
+      .lexer('$\n\\boxed{y\u2032\u2032(0)=-\\frac14}$\n')
+      .find((token): token is MathToken => token.type === 'math');
+
+    expect(math).toMatchObject({
+      tex: '\\boxed{y\u2032\u2032(0)=-\\frac14}',
+      displayMode: true,
+    });
+  });
+
+  it('does not merge separate single-dollar formulas into one display token', () => {
+    const tokens = markdown.lexer('$x$ and prose\n$y$');
+    const math: MathToken[] = tokens.flatMap((token) => {
+      if (token.type === 'paragraph') {
+        return (token.tokens ?? []).filter(
+          (child): child is MathToken => child.type === 'math',
+        );
+      }
+      return token.type === 'math' ? [token as MathToken] : [];
+    });
+
+    expect(math.map((token) => [token.tex, token.displayMode])).toEqual([
+      ['x', false],
+      ['y', true],
+    ]);
+  });
+
+  it('keeps an escaped TeX atom at the end of inline math', () => {
+    const paragraph = markdown.lexer('完成率是 $100\\%$。')[0] as Tokens.Paragraph;
+    const math = paragraph.tokens.find(
+      (token): token is MathToken => token.type === 'math',
+    );
+
+    expect(math).toMatchObject({ tex: '100\\%', displayMode: false });
+  });
+
   it('leaves dollar-prefixed prose alone when no closing delimiter exists', () => {
     const paragraph = markdown.lexer('价格是 $5。')[0] as Tokens.Paragraph;
     expect(paragraph.tokens.some((token) => token.type === 'math')).toBe(false);
@@ -1077,14 +1258,23 @@ describe('streamHtml pairing', () => {
   });
 });
 
-describe('toolRunsFromTurn', () => {
+describe('tool activity projection', () => {
   /** Minimal tool frame helper: only the fields the grouping reads. The casts
    *  keep the fixtures terse — the grouping only inspects `kind`/`name`/`view`/
    *  `display`/`state`, so the full TranscriptFrame shape isn't needed here. */
   const tool = (
     frameId: string,
     name: string,
-    extra: Partial<{ display: { kind: string }; state: string }> = {},
+    extra: Partial<{
+      display: { kind: string; agent_name?: string };
+      input: Record<string, unknown>;
+      inputText: string;
+      output: unknown;
+      error: string;
+      taskId: string;
+      state: ToolCallFrame['state'];
+      agentRefs: readonly { agentId: string; role?: 'child' | 'member' }[];
+    }> = {},
   ) =>
     ({
       kind: 'tool',
@@ -1093,6 +1283,12 @@ describe('toolRunsFromTurn', () => {
       name,
       state: extra.state ?? 'done',
       ...(extra.display !== undefined ? { display: extra.display } : {}),
+      ...(extra.input !== undefined ? { input: extra.input } : {}),
+      ...(extra.inputText !== undefined ? { inputText: extra.inputText } : {}),
+      ...(extra.output !== undefined ? { output: extra.output } : {}),
+      ...(extra.error !== undefined ? { error: extra.error } : {}),
+      ...(extra.taskId !== undefined ? { taskId: extra.taskId } : {}),
+      ...(extra.agentRefs !== undefined ? { agentRefs: extra.agentRefs } : {}),
     }) as unknown as TranscriptFrame;
   const text = (frameId: string) => ({ kind: 'text', frameId, role: 'assistant', text: '' }) as unknown as TranscriptFrame;
   const thinking = (frameId: string) => ({ kind: 'thinking', frameId, text: '' }) as unknown as TranscriptFrame;
@@ -1101,6 +1297,26 @@ describe('toolRunsFromTurn', () => {
 
   const turn = (steps: readonly TranscriptStep[]) =>
     ({ kind: 'turn', turnId: 't', ordinal: 1, state: 'completed', origin: { kind: 'user' }, steps }) as unknown as TranscriptTurn;
+
+  const commandRun = (
+    commands: readonly {
+      readonly id: string;
+      readonly command: string;
+      readonly state: ToolCallFrame['state'];
+    }[],
+  ) => {
+    const entry = toolRunsFromTurn(
+      turn([
+        step(
+          commands.map(({ id, command, state }) =>
+            tool(id, 'Bash', { input: { command }, state }),
+          ),
+        ),
+      ]),
+    )[0];
+    if (entry?.kind !== 'run') throw new Error('expected a grouped command run');
+    return entry;
+  };
 
   it('groups consecutive groupable tool frames into one run', () => {
     const entries = toolRunsFromTurn(turn([step([
@@ -1124,7 +1340,7 @@ describe('toolRunsFromTurn', () => {
     ])]));
     expect(entries).toHaveLength(3);
     expect(entries[0]).toMatchObject({ kind: 'run' });
-    expect(entries[1]).toMatchObject({ kind: 'standalone' });
+    expect(entries[1]).toMatchObject({ kind: 'subagents' });
     expect(entries[2]).toMatchObject({ kind: 'run' });
   });
 
@@ -1137,14 +1353,38 @@ describe('toolRunsFromTurn', () => {
     expect(entries[0]).toMatchObject({ kind: 'run' });
   });
 
-  it('keeps standalone-only frames (single Agent / search / todo) standalone', () => {
+  it('keeps dedicated search and todo frames outside a subagent run', () => {
     const entries = toolRunsFromTurn(turn([step([
       tool('a', 'Agent'),
       tool('b', 'WebSearch'),
       tool('c', 'TodoWrite'),
     ])]));
-    expect(entries.every((entry) => entry.kind === 'standalone')).toBe(true);
     expect(entries).toHaveLength(3);
+    expect(entries.map((entry) => entry.kind)).toEqual([
+      'subagents',
+      'standalone',
+      'standalone',
+    ]);
+  });
+
+  it('groups consecutive subagents across step boundaries', () => {
+    const entries = toolRunsFromTurn(turn([
+      step([tool('a', 'Agent')]),
+      step([tool('b', 'Agent')]),
+    ]));
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ kind: 'subagents', frames: [{ frameId: 'a' }, { frameId: 'b' }] });
+  });
+
+  it('keeps a pre-spawn subagent failure inspectable as a standalone frame', () => {
+    const entries = toolRunsFromTurn(turn([
+      step([tool('agent', 'Agent', { state: 'error', error: 'Unknown agent type' })]),
+    ]));
+
+    expect(entries).toEqual([
+      expect.objectContaining({ kind: 'standalone', frame: expect.objectContaining({ frameId: 'agent' }) }),
+    ]);
   });
 
   it('emits an empty array for a turn with no frames', () => {
@@ -1162,5 +1402,386 @@ describe('toolRunsFromTurn', () => {
     expect(entries[0]).toMatchObject({ kind: 'run' });
     expect(entries[1]).toMatchObject({ kind: 'standalone' });
     expect(entries[2]).toMatchObject({ kind: 'standalone' });
+  });
+
+  it('projects one collapsed activity row when grouped commands are live', () => {
+    const run = commandRun([
+      { id: 'lint', command: 'pnpm lint', state: 'done' },
+      { id: 'test', command: 'pnpm test', state: 'running' },
+    ]);
+
+    expect(resolveToolRunPresentation(run, 'running', undefined)).toEqual({
+      live: true,
+      status: 'running',
+      label: '正在运行 pnpm test',
+      showHeader: true,
+      detailsExpanded: false,
+    });
+  });
+
+  it('projects one completed summary when every grouped command has settled', () => {
+    const run = commandRun([
+      { id: 'lint', command: 'pnpm lint', state: 'done' },
+      { id: 'test', command: 'pnpm test', state: 'done' },
+    ]);
+
+    expect(resolveToolRunPresentation(run, 'completed', undefined)).toEqual({
+      live: false,
+      status: 'done',
+      label: '运行了 2 条命令',
+      showHeader: true,
+      detailsExpanded: false,
+    });
+  });
+
+  it('replaces the activity label when the next grouped command starts', () => {
+    const first = commandRun([
+      { id: 'lint', command: 'pnpm lint', state: 'running' },
+    ]);
+    const next = commandRun([
+      { id: 'lint', command: 'pnpm lint', state: 'done' },
+      { id: 'test', command: 'pnpm test', state: 'running' },
+    ]);
+
+    expect([
+      resolveToolRunPresentation(first, 'running', undefined).label,
+      resolveToolRunPresentation(next, 'running', undefined).label,
+    ]).toEqual(['正在运行 pnpm lint', '正在运行 pnpm test']);
+  });
+
+  it('switches a single command from the live header to its settled row', () => {
+    const live = commandRun([
+      { id: 'test', command: 'pnpm test', state: 'running' },
+    ]);
+    const settled = commandRun([
+      { id: 'test', command: 'pnpm test', state: 'done' },
+    ]);
+
+    expect([
+      resolveToolRunPresentation(live, 'running', undefined).showHeader,
+      resolveToolRunPresentation(settled, 'completed', undefined).showHeader,
+    ]).toEqual([true, false]);
+  });
+
+  it('shows three subagent capsules and reports one hidden agent', () => {
+    const frames = ['Noop 1', 'Noop 2', 'Noop 3', 'Noop 4'].map((label, index) =>
+      tool(`agent-${index + 1}`, 'Agent', {
+        input: { description: label, subagent_type: 'coder' },
+        agentRefs: [{ agentId: `child-${index + 1}` }],
+      }),
+    ) as readonly ToolCallFrame[];
+
+    const summary = summarizeSubagents(projectSubagentActivity(frames, undefined));
+
+    expect(summary?.visibleEntries.map((entry) => entry.label)).toEqual([
+      'Noop 1',
+      'Noop 2',
+      'Noop 3',
+    ]);
+    expect(summary?.overflowCount).toBe(1);
+  });
+});
+
+describe('Codex-style subagent summary projection', () => {
+  const task = (
+    taskId: string,
+    agentId: string,
+    state: TranscriptTask['state'],
+    description: string,
+  ) =>
+    ({
+      taskId,
+      agentId,
+      kind: 'subagent',
+      state,
+      detached: false,
+      description,
+      outputTail: '',
+      resultSummary: state === 'completed' ? `${description} finished` : undefined,
+    }) as TranscriptTask;
+
+  const roster = (
+    id: string,
+    status: SessionSubagentSnapshot['status'],
+    description: string,
+  ): SessionSubagentSnapshot => ({ id, kind: 'subagent', status, description });
+
+  it('prefers the transcript task when the snapshot repeats the same agent', () => {
+    const entries = mergeSessionSubagents(
+      [task('task-1', 'child-1', 'completed', 'Noop 1')],
+      [roster('child-1', 'running', 'stale snapshot')],
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      agentId: 'child-1',
+      label: 'Noop 1',
+      state: 'completed',
+      snippet: 'Noop 1 finished',
+    });
+  });
+
+  it('includes a roster-only child agent', () => {
+    const entries = mergeSessionSubagents(
+      [task('task-1', 'child-1', 'completed', 'Lead')],
+      [roster('nested-1', 'running', 'Nested reviewer')],
+    );
+
+    expect(entries.map((entry) => entry.agentId)).toEqual(['child-1', 'nested-1']);
+  });
+
+  it('reports all four subagents completed', () => {
+    const entries = ['1', '2', '3', '4'].map((id) =>
+      task(`task-${id}`, `child-${id}`, 'completed', `Noop ${id}`),
+    );
+
+    expect(summarizeSubagents(mergeSessionSubagents(entries, []))).toMatchObject({
+      inlineLabel: '已完成',
+      panelLabel: '4 完成',
+    });
+  });
+
+  it('reports running while any subagent is still active', () => {
+    const entries = [
+      task('task-1', 'child-1', 'completed', 'Noop 1'),
+      task('task-2', 'child-2', 'running', 'Noop 2'),
+    ];
+
+    expect(summarizeSubagents(mergeSessionSubagents(entries, []))).toMatchObject({
+      inlineLabel: '已开始工作',
+      panelLabel: '1 运行中',
+    });
+  });
+
+  it('reports a settled failure without claiming full success', () => {
+    const entries = [
+      task('task-1', 'child-1', 'completed', 'Noop 1'),
+      task('task-2', 'child-2', 'failed', 'Noop 2'),
+    ];
+
+    expect(summarizeSubagents(mergeSessionSubagents(entries, []))).toMatchObject({
+      inlineLabel: '完成但有错误',
+      panelLabel: '1 完成 · 1 失败',
+    });
+  });
+
+  it('binds live swarm labels through each agent task instead of ref position', () => {
+    const frame = {
+      kind: 'tool',
+      frameId: 'swarm-frame',
+      toolCallId: 'swarm-call',
+      name: 'AgentSwarm',
+      state: 'running',
+      input: { description: 'Review modules', items: ['alpha', 'beta'] },
+      agentRefs: [
+        { agentId: 'child-beta', role: 'member' },
+        { agentId: 'child-alpha', role: 'member' },
+      ],
+    } as const satisfies ToolCallFrame;
+    const tasks = new Map<string, TranscriptTask>([
+      ['child-alpha', task('task-alpha', 'child-alpha', 'running', 'Review alpha')],
+      ['child-beta', task('task-beta', 'child-beta', 'running', 'Review beta')],
+    ]);
+
+    expect(projectSubagentActivity([frame], tasks).map((entry) => [entry.agentId, entry.label])).toEqual([
+      ['child-beta', 'Review beta'],
+      ['child-alpha', 'Review alpha'],
+    ]);
+  });
+
+  it('uses settled swarm output to bind mixed resume and spawn items by agent id', () => {
+    const frame = {
+      kind: 'tool',
+      frameId: 'swarm-frame',
+      toolCallId: 'swarm-call',
+      name: 'AgentSwarm',
+      state: 'done',
+      input: {
+        description: 'Review modules',
+        items: ['alpha', 'beta'],
+        resume_agent_ids: { 'child-old': 'continue' },
+      },
+      agentRefs: [
+        { agentId: 'child-beta', role: 'member' },
+        { agentId: 'child-old', role: 'member' },
+        { agentId: 'child-alpha', role: 'member' },
+      ],
+      output: [
+        {
+          type: 'text',
+          text: '<agent_swarm_result>\n<subagent mode="resume" agent_id="child-old" item="legacy" outcome="completed">done</subagent>\n<subagent agent_id="child-alpha" item="alpha" outcome="completed">done</subagent>\n<subagent agent_id="child-beta" item="beta" outcome="completed">done</subagent>\n</agent_swarm_result>',
+        },
+      ],
+    } as const satisfies ToolCallFrame;
+
+    expect(projectSubagentActivity([frame], undefined).map((entry) => [entry.agentId, entry.label])).toEqual([
+      ['child-beta', 'beta'],
+      ['child-old', 'legacy'],
+      ['child-alpha', 'alpha'],
+    ]);
+  });
+
+  it('includes swarm members that never received an agent id', () => {
+    const frame = {
+      kind: 'tool',
+      frameId: 'swarm-frame',
+      toolCallId: 'swarm-call',
+      name: 'AgentSwarm',
+      state: 'done',
+      output: '<agent_swarm_result>\n<subagent item="alpha" state="not_started" outcome="aborted">cancelled</subagent>\n<subagent item="beta" state="not_started" outcome="failed">launch failed</subagent>\n</agent_swarm_result>',
+    } as const satisfies ToolCallFrame;
+
+    expect(projectSubagentActivity([frame], undefined)).toMatchObject([
+      { agentId: undefined, label: 'alpha', state: 'killed' },
+      { agentId: undefined, label: 'beta', state: 'failed' },
+    ]);
+  });
+
+  it('does not treat XML examples in a single agent result as extra agents', () => {
+    const frame = {
+      kind: 'tool',
+      frameId: 'agent-frame',
+      toolCallId: 'agent-call',
+      name: 'Agent',
+      state: 'done',
+      input: { description: 'Explain the format' },
+      agentRefs: [{ agentId: 'child-1' }],
+      output: 'Example: <agent_swarm_result><subagent item="fake" outcome="failed">sample</subagent></agent_swarm_result>',
+    } as const satisfies ToolCallFrame;
+
+    expect(projectSubagentActivity([frame], undefined)).toMatchObject([
+      { agentId: 'child-1', label: 'Explain the format', state: 'completed' },
+    ]);
+  });
+
+  it('uses stable aggregate counts for members omitted from a truncated preview', () => {
+    const frame = {
+      kind: 'tool',
+      frameId: 'swarm-frame',
+      toolCallId: 'swarm-call',
+      name: 'AgentSwarm',
+      state: 'done',
+      agentRefs: [
+        { agentId: 'child-alpha', role: 'member' },
+        { agentId: 'child-beta', role: 'member' },
+      ],
+      output: 'Tool output exceeded 50000 characters; showing a preview only.\n[preview]\n<agent_swarm_result>\n<summary>completed: 1, failed: 1</summary>\n<subagent agent_id="child-alpha" item="alpha" outcome="completed">done</subagent>',
+    } as const satisfies ToolCallFrame;
+
+    const entries = projectSubagentActivity([frame], undefined);
+    expect(entries.map((entry) => [entry.agentId, entry.state])).toEqual([
+      ['child-alpha', 'completed'],
+      [undefined, 'failed'],
+    ]);
+    expect(summarizeSubagents(entries)).toMatchObject({ completedCount: 1, failedCount: 1 });
+  });
+
+  it('does not assign aggregate-only failures to a named swarm agent', () => {
+    const frame = {
+      kind: 'tool',
+      frameId: 'swarm-frame',
+      toolCallId: 'swarm-call',
+      name: 'AgentSwarm',
+      state: 'done',
+      agentRefs: [
+        { agentId: 'child-beta', role: 'member' },
+        { agentId: 'child-alpha', role: 'member' },
+      ],
+      output: '<agent_swarm_result><summary>completed: 1, failed: 1</summary><subagent agent_id="child-alpha" item="alpha" outcome="completed">done</subagent>',
+    } as const satisfies ToolCallFrame;
+    const laterTasks = new Map<string, TranscriptTask>([
+      ['child-beta', task('task-beta', 'child-beta', 'failed', 'Later invocation')],
+    ]);
+
+    const entries = projectSubagentActivity([frame], laterTasks);
+    expect(entries.find((entry) => entry.agentId === 'child-alpha')?.state).toBe('completed');
+    expect(entries.find((entry) => entry.state === 'failed')?.agentId).toBeUndefined();
+    expect(entries.some((entry) => entry.agentId === 'child-beta' && entry.state === 'failed')).toBe(false);
+  });
+
+  it('ignores XML-looking subagent tags inside a settled swarm result body', () => {
+    const frame = {
+      kind: 'tool',
+      frameId: 'swarm-frame',
+      toolCallId: 'swarm-call',
+      name: 'AgentSwarm',
+      state: 'done',
+      input: { items: ['alpha', 'beta'] },
+      agentRefs: [
+        { agentId: 'child-alpha', role: 'member' },
+        { agentId: 'child-beta', role: 'member' },
+      ],
+      output: '<agent_swarm_result><summary>completed: 2</summary><subagent agent_id="child-alpha" item="alpha" outcome="completed">Example: </subagent><subagent agent_id="fake" item="fake" outcome="failed">fake</subagent><subagent agent_id="child-beta" item="beta" outcome="completed">done</subagent></agent_swarm_result>',
+    } as const satisfies ToolCallFrame;
+
+    const entries = projectSubagentActivity([frame], undefined);
+    expect(entries.map((entry) => entry.agentId)).toEqual(['child-alpha', 'child-beta']);
+    expect(summarizeSubagents(entries)).toMatchObject({ completedCount: 2, failedCount: 0 });
+  });
+
+  it('decodes escaped swarm item labels from settled output', () => {
+    const frame = {
+      kind: 'tool',
+      frameId: 'swarm-frame',
+      toolCallId: 'swarm-call',
+      name: 'AgentSwarm',
+      state: 'done',
+      agentRefs: [{ agentId: 'child-1', role: 'member' }],
+      output: '<agent_swarm_result><subagent agent_id="child-1" item="A &amp; &quot;B&quot; &lt;C&gt;" outcome="completed">done</subagent></agent_swarm_result>',
+    } as const satisfies ToolCallFrame;
+
+    expect(projectSubagentActivity([frame], undefined)[0]?.label).toBe('A & "B" <C>');
+  });
+
+  it('seals a completed frame against a later resume task state', () => {
+    const frame = {
+      kind: 'tool',
+      frameId: 'agent-frame',
+      toolCallId: 'agent-call',
+      name: 'Agent',
+      state: 'done',
+      input: { description: 'Original review' },
+      agentRefs: [{ agentId: 'child-1' }],
+    } as const satisfies ToolCallFrame;
+    const resumed = new Map<string, TranscriptTask>([
+      ['child-1', task('task-1', 'child-1', 'failed', 'Continue review')],
+    ]);
+
+    expect(projectSubagentActivity([frame], resumed)[0]?.state).toBe('completed');
+  });
+
+  it('shows only the running cohort in the compact panel roster', () => {
+    const entries = [
+      task('task-1', 'child-1', 'completed', 'Noop 1'),
+      task('task-2', 'child-2', 'running', 'Noop 2'),
+      task('task-3', 'child-3', 'completed', 'Noop 3'),
+      task('task-4', 'child-4', 'running', 'Noop 4'),
+      task('task-5', 'child-5', 'completed', 'Noop 5'),
+    ];
+    const projection = selectPanelSubagents(mergeSessionSubagents(entries, []), 4);
+
+    expect(projection.visibleEntries.map((entry) => entry.agentId)).toEqual([
+      'child-2',
+      'child-4',
+    ]);
+    expect(projection.overflowCount).toBe(0);
+  });
+
+  it('keeps a detached agent active after its launch tool settles', () => {
+    const frame = {
+      kind: 'tool',
+      frameId: 'background-frame',
+      toolCallId: 'background-call',
+      name: 'Agent',
+      state: 'done',
+      input: { description: 'Background review', run_in_background: true },
+      output: 'task_id: task-1\nstatus: running\nagent_id: child-1',
+      agentRefs: [{ agentId: 'child-1' }],
+    } as const satisfies ToolCallFrame;
+    const tasks = new Map<string, TranscriptTask>([
+      ['child-1', task('task-1', 'child-1', 'running', 'Background review')],
+    ]);
+
+    expect(projectSubagentActivity([frame], tasks)[0]?.state).toBe('running');
   });
 });

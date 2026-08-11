@@ -49,6 +49,11 @@ import { Welcome, type WelcomeStartPayload } from './components/Welcome';
 import { OfficeView } from './office/OfficeView';
 import { useConnection } from './lib/connection';
 import {
+  isMissingWorkspaceError,
+  newSessionErrorMessage,
+  resolveNewSessionCwd,
+} from './lib/newSession';
+import {
   useCreateSession,
   useFsHome,
   useGlobalActivitySocket,
@@ -66,14 +71,14 @@ const RIGHT_PANEL_MAX_WIDTH = 720;
 const RIGHT_PANEL_DEFAULT_WIDTH = 440;
 const RIGHT_PANEL_RESIZE_STEP = 24;
 
-// The workspace tabs (变更 / 文件 / 终端) are hidden for now — the panels and
-// their wiring are kept so they can be re-enabled later by flipping this.
+// The full workspace tab set (文件 / 终端) is hidden for now. Changes remains
+// addressable from the conversation summary's real Git-status row.
 const WORKSPACE_PANELS_ENABLED: boolean = false;
 
 /** Fixed (non-document) tab ids the dock can address in the current build. */
 const FIXED_PANEL_IDS: readonly string[] = WORKSPACE_PANELS_ENABLED
   ? ['plan', 'diff', 'files', 'terminal']
-  : ['plan'];
+  : ['plan', 'diff'];
 
 /** A dynamically opened, closable document tab in the right dock. */
 type DocTab =
@@ -143,21 +148,10 @@ export function App() {
   const [newSessionInitialPrompt, setNewSessionInitialPrompt] = useState('');
   const creatingSessionRef = useRef(false);
   const sessionItems = sessions.data?.pages.flatMap((page) => page.items) ?? [];
-  const latestProjectCwd = fsHome.data?.recent_roots.find(
-    (root) => root !== fsHome.data.home,
+  const latestWorkspaceCwd = resolveNewSessionCwd(
+    fsHome.data,
+    sessionItems.map((session) => session.workspace.cwd),
   );
-  const latestWorkspaceSession =
-    sessionItems.find(
-      (session) => session.workspace.cwd === latestProjectCwd,
-    ) ??
-    sessionItems.find(
-      (session) =>
-        session.workspace.cwd !== null &&
-        session.workspace.cwd !== fsHome.data?.home,
-    ) ??
-    sessionItems.find((session) => session.workspace.cwd !== null);
-  const latestWorkspaceCwd =
-    latestProjectCwd ?? latestWorkspaceSession?.workspace.cwd ?? undefined;
   const draftWorkspaceCwd = newSessionCwd ?? latestWorkspaceCwd;
   const draftWorkspaceSession = sessionItems.find(
     (session) => session.workspace.cwd === draftWorkspaceCwd,
@@ -202,6 +196,7 @@ export function App() {
             // so the first prompt (and every later one) never depends on the
             // engine-side default being configured.
             model: payload.model,
+            thinking: payload.effort,
             plan_mode: payload.planMode,
             swarm_mode: payload.swarmMode ? true : undefined,
             goal_objective: payload.goalMode ? payload.prompt : undefined,
@@ -228,14 +223,26 @@ export function App() {
           }
           setActiveSessionId(session.id);
         })
-        .catch(() => setNewSessionError('请检查后端连接后重试。'))
+        .catch(async (error: unknown) => {
+          setNewSessionError(newSessionErrorMessage(error));
+          if (!isMissingWorkspaceError(error)) return;
+          const refreshed = await fsHome.refetch();
+          setNewSessionCwd(
+            resolveNewSessionCwd(refreshed.data, []) ?? fsHome.data?.home,
+          );
+        })
         .finally(() => {
           creatingSessionRef.current = false;
           setNewSessionPending(false);
         });
     },
-    [api, createSession],
+    [api, createSession, fsHome],
   );
+
+  const handleWelcomeCwdChange = useCallback((cwd: string) => {
+    setNewSessionCwd(cwd);
+    setNewSessionError(null);
+  }, []);
 
   const handleArchiveSuccess = useCallback(
     (sessionId: string) => {
@@ -325,6 +332,16 @@ export function App() {
     },
     [openDocTab],
   );
+
+  const openSubagentsSummary = useCallback(() => {
+    setRightPanelCollapsed(false);
+    setRightPanelTab('plan');
+  }, []);
+
+  const openChanges = useCallback(() => {
+    setRightPanelCollapsed(false);
+    setRightPanelTab('diff');
+  }, []);
 
   const openOfficeAgent = useCallback(
     (agentId: string) => {
@@ -496,10 +513,12 @@ export function App() {
   // Right dock tabs: fixed panels first (workspace tabs only when enabled),
   // then the open document tabs, each closable.
   const rightPanelTabs = useMemo<readonly PanelTab[]>(() => {
-    const tabs: PanelTab[] = [{ id: 'plan', kind: 'plan', label: '计划' }];
+    const tabs: PanelTab[] = [
+      { id: 'plan', kind: 'plan', label: '概览' },
+      { id: 'diff', kind: 'diff', label: '变更' },
+    ];
     if (WORKSPACE_PANELS_ENABLED) {
       tabs.push(
-        { id: 'diff', kind: 'diff', label: '变更' },
         { id: 'files', kind: 'files', label: '文件' },
         { id: 'terminal', kind: 'terminal', label: '终端' },
       );
@@ -593,6 +612,8 @@ export function App() {
             {activeSessionId !== null && !officeOpen ? (
               <button
                 type="button"
+                aria-controls="thread-summary-panel"
+                aria-expanded={!rightPanelCollapsed}
                 aria-label={
                   rightPanelCollapsed ? '展开右侧面板' : '折叠右侧面板'
                 }
@@ -721,6 +742,7 @@ export function App() {
                 ref={chatViewRef}
                 sessionId={activeSessionId}
                 onOpenAgent={openSideChat}
+                onOpenSubagents={openSubagentsSummary}
                 onOpenPlanDoc={openPlanDoc}
                 onTranscriptSummary={setTranscriptSummary}
                 onOpenModelSettings={() => setSettingsOpen(true)}
@@ -730,6 +752,7 @@ export function App() {
                 key={newSessionKey}
                 defaultCwd={draftWorkspaceCwd}
                 defaultBranch={draftWorkspaceSession?.git?.branch ?? undefined}
+                onCwdChange={handleWelcomeCwdChange}
                 onStart={handleWelcomeStart}
                 newSessionPending={newSessionPending}
                 newSessionError={newSessionError}
@@ -740,11 +763,30 @@ export function App() {
           </div>
         </main>
 
-        {/* --------------------------------------- right dock (resizable dock) */}
-        {activeSessionId === null || officeOpen ? null : (
-          <>
+        {/* Codex-style summary floats over the thread; document/agent views
+            keep the existing resizable dock so their reading surface stays useful. */}
+        {activeSessionId === null || officeOpen || rightPanelCollapsed ? null : rightPanelTab === 'plan' ? (
+          <aside
+            id="thread-summary-panel"
+            aria-label="对话摘要"
+            className="ui-popover absolute right-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] w-[300px] flex-col overflow-hidden rounded-[20px] border border-[var(--color-border)] bg-[var(--color-background-panel)] shadow-[var(--shadow-xl)]"
+          >
+            <PlanPanel
+              sessionId={activeSessionId}
+              cwd={activeSession?.workspace.cwd ?? undefined}
+              plans={(transcriptSummary ?? EMPTY_SUMMARY).plans}
+              todos={(transcriptSummary ?? EMPTY_SUMMARY).todos}
+              tasks={(transcriptSummary ?? EMPTY_SUMMARY).tasks}
+              onOpenAgent={openSideChat}
+              onOpenPlanDoc={openPlanDoc}
+              onOpenChanges={openChanges}
+            />
+          </aside>
+        ) : (
             <aside
-              className={`${rightPanelCollapsed ? 'hidden' : 'relative flex'} shrink-0 flex-col border-l border-[var(--color-border-light)] bg-[var(--color-background-panel)]`}
+              id="thread-summary-panel"
+              aria-label="对话侧栏"
+              className="relative flex shrink-0 flex-col border-l border-[var(--color-border-light)] bg-[var(--color-background-panel)]"
               style={{ width: rightPanelWidth }}
             >
               {/* width resize handle (left edge, full height) */}
@@ -769,16 +811,7 @@ export function App() {
                 onSelect={setRightPanelTab}
                 onCloseTab={closeDocTab}
               >
-                {rightPanelTab === 'plan' ? (
-                  <PlanPanel
-                    sessionId={activeSessionId}
-                    plans={(transcriptSummary ?? EMPTY_SUMMARY).plans}
-                    todos={(transcriptSummary ?? EMPTY_SUMMARY).todos}
-                    tasks={(transcriptSummary ?? EMPTY_SUMMARY).tasks}
-                    onOpenAgent={openSideChat}
-                    onOpenPlanDoc={openPlanDoc}
-                  />
-                ) : WORKSPACE_PANELS_ENABLED && rightPanelTab === 'diff' ? (
+                {rightPanelTab === 'diff' ? (
                   <DiffPanel
                     key={activeSessionId}
                     sessionId={activeSessionId}
@@ -816,7 +849,6 @@ export function App() {
                 ) : null}
               </PanelHost>
             </aside>
-          </>
         )}
       </div>
 

@@ -179,7 +179,7 @@ export function SessionList({
                       return next;
                     });
                   }}
-                  className="ui-pressable flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left text-[length:var(--client-content-font-size)] font-medium tracking-[var(--tracking-tight)] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+                  className="ui-pressable flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left text-[length:var(--client-sidebar-primary-font-size)] font-semibold tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)]"
                 >
                   <Folder size={15} weight="regular" className="shrink-0 text-[var(--color-text-secondary)]" />
                   <span className="min-w-0 flex-1 truncate">{group.label}</span>

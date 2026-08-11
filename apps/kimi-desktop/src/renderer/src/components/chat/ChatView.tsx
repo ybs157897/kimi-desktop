@@ -17,7 +17,6 @@
 
 import {
   type ApprovalDecision,
-  type ApprovalScope,
   type QuestionResponse,
 } from '@moonshot-ai/protocol';
 import {
@@ -53,6 +52,9 @@ import {
   type SourcedPendingInteraction,
 } from '#/lib/sessionInteractions';
 import {
+  hasUserTurnAfter,
+  hasUserTurnSince,
+  latestTurnOrdinal,
   pendingComposerInteractions,
   shouldAbortAfterApproval,
 } from '#/lib/timelinePresentation';
@@ -73,6 +75,8 @@ export interface ChatViewProps {
   readonly agentId?: string;
   /** Open a child agent's transcript in the side panel (swarm / Agent calls). */
   readonly onOpenAgent?: (agentId: string, prompt?: string) => void;
+  /** Open the child-agent overview in the app shell. */
+  readonly onOpenSubagents?: () => void;
   /** Open a plan in the plan-document dock tab. */
   readonly onOpenPlanDoc?: OpenPlanDoc;
   /** Parent-agent brief shown as the first block of a child transcript. */
@@ -104,6 +108,13 @@ interface Channel {
   readonly sync: TranscriptSync;
 }
 
+interface PendingSubmission {
+  readonly afterTurnOrdinal?: number;
+  readonly acceptedAt?: string;
+  readonly baselineLoaded: boolean;
+  readonly promptId?: string;
+}
+
 const noopSubscribe = () => () => {};
 
 export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
@@ -111,6 +122,7 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
     sessionId,
     agentId = 'main',
     onOpenAgent,
+    onOpenSubagents,
     onOpenPlanDoc,
     introPrompt,
     onTranscriptSummary,
@@ -128,6 +140,7 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [interactionError, setInteractionError] = useState<unknown>(null);
   const [plans, setPlans] = useState<ReadonlyMap<string, TranscriptPlanInfo>>(() => new Map());
+  const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission | null>(null);
 
   useEffect(() => {
     const channels = channelsRef.current;
@@ -186,6 +199,49 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
     channel?.store.subscribe ?? noopSubscribe,
     () => channel?.store.getState() ?? EMPTY_AGENT_STATE,
   );
+  const latestTurnOrdinalRef = useRef<number | undefined>(undefined);
+  latestTurnOrdinalRef.current = latestTurnOrdinal(state.items);
+  const loadedRef = useRef(loaded);
+  loadedRef.current = loaded;
+  const handleSubmissionPendingChange = useCallback((pending: boolean) => {
+    setPendingSubmission(
+      pending
+        ? {
+            afterTurnOrdinal: latestTurnOrdinalRef.current,
+            baselineLoaded: loadedRef.current,
+          }
+        : null,
+    );
+  }, []);
+  const handleSubmissionAccepted = useCallback((promptId: string, createdAt: string) => {
+    setPendingSubmission((submission) =>
+      submission === null ? null : { ...submission, acceptedAt: createdAt, promptId },
+    );
+  }, []);
+  const submissionAcknowledged =
+    pendingSubmission !== null &&
+    (pendingSubmission.baselineLoaded
+      ? hasUserTurnAfter(state.items, pendingSubmission.afterTurnOrdinal)
+      : pendingSubmission.acceptedAt !== undefined &&
+        hasUserTurnSince(state.items, pendingSubmission.acceptedAt));
+  const submittedPrompt =
+    pendingSubmission?.promptId === undefined
+      ? undefined
+      : state.prompts.get(pendingSubmission.promptId);
+  const submissionTerminated =
+    submittedPrompt !== undefined &&
+    submittedPrompt.status !== 'running' &&
+    submittedPrompt.status !== 'queued';
+  const submissionResolved = submissionAcknowledged || submissionTerminated;
+  const awaitingTurn = pendingSubmission !== null && !submissionResolved;
+
+  useEffect(() => {
+    if (submissionResolved) setPendingSubmission(null);
+  }, [submissionResolved]);
+
+  useEffect(() => {
+    setPendingSubmission(null);
+  }, [sessionId, agentId]);
 
   // The plan endpoint projects both live approval displays and cold-replay
   // output. It fills the gap left by historical ExitPlanMode frames whose
@@ -209,7 +265,9 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
 
   const running =
     state.meta.activity === 'turn' ||
-    state.items.some((item) => item.kind === 'turn' && item.state === 'running');
+    state.items.some(
+      (item) => item.kind === 'turn' && (item.state === 'queued' || item.state === 'running'),
+    );
 
   const resolveApproval = useResolveApproval(sessionId);
   const resolveQuestion = useResolveQuestion(sessionId);
@@ -254,7 +312,7 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
     (
       interaction: TranscriptInteraction,
       decision: ApprovalDecision,
-      options?: { scope?: ApprovalScope; feedback?: string; selectedLabel?: string },
+      options?: ApprovalResolveOptions,
       sourceAgentId = 'main',
     ) => {
       const approval = approvalInteractionPresentation(interaction);
@@ -289,6 +347,15 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
         .then(() => undefined);
     },
     [resolveApproval, abortPrompt, sessionQuery.data?.current_prompt_id],
+  );
+
+  const handleTimelineResolveApproval = useCallback(
+    (
+      interaction: TranscriptInteraction,
+      decision: ApprovalDecision,
+      options?: ApprovalResolveOptions,
+    ) => handleResolveApproval(interaction, decision, options, agentId),
+    [agentId, handleResolveApproval],
   );
 
   const handleAnswerQuestion = useCallback(
@@ -337,7 +404,7 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
       {isSideAgent ? null : (
         <ConnectionBar
           error={loadError ?? pendingQuery.error}
-          running={running}
+          running={running || awaitingTurn}
           pendingCount={pendingInteractions.length}
         />
       )}
@@ -349,19 +416,27 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
       <Timeline
         state={state}
         loading={!loaded}
-        error={loadError ?? olderError}
+        initialError={loadError}
+        error={olderError}
         onRetry={retryInitialLoad}
         onLoadOlder={loadOlder}
         loadingOlder={loadingOlder}
         pendingSessionInteractions={pendingInteractions}
+        onResolveApproval={handleTimelineResolveApproval}
+        onAnswerQuestion={handleAnswerQuestion}
+        onDismissQuestion={handleDismissQuestion}
         onOpenAgent={onOpenAgent}
+        onOpenSubagents={onOpenSubagents}
         onOpenPlanDoc={onOpenPlanDoc}
         plans={plans}
         variant={isSideAgent ? 'agent' : 'main'}
         introPrompt={introPrompt}
+        awaitingTurn={awaitingTurn}
       />
       {/* Empty headline sits directly above the composer so they read as one unit. */}
-      {!isSideAgent && loaded && state.items.length === 0 ? <EmptyComposerHero /> : null}
+      {!isSideAgent && loaded && state.items.length === 0 && !awaitingTurn ? (
+        <EmptyComposerHero />
+      ) : null}
       {!isSideAgent && pendingInteraction !== undefined ? (
         <PendingInteractionDock
           pending={pendingInteraction}
@@ -371,12 +446,14 @@ export const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatV
           onOpenPlanDoc={onOpenPlanDoc}
         />
       ) : null}
-      {isSideAgent || (loadError !== null && !loaded) ? null : (
+      {isSideAgent || (loadError !== null && !loaded && !awaitingTurn) ? null : (
         <Composer
           sessionId={sessionId}
           agentId={agentId}
-          empty={loaded && state.items.length === 0}
+          empty={loaded && state.items.length === 0 && !awaitingTurn}
           onOpenModelSettings={onOpenModelSettings}
+          onSubmissionAccepted={handleSubmissionAccepted}
+          onSubmissionPendingChange={handleSubmissionPendingChange}
         />
       )}
     </div>

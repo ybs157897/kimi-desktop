@@ -32,10 +32,9 @@ function entryLabel(entry: ModelCatalogItem): string {
 /**
  * Composer model dropdown over the model catalog. The select mirrors the
  * session's effective model — the owner passes the session status model or
- * the global default — and picking an entry is a per-prompt override only: the
- * owner resets the override after submit, never touching the session or the
- * global default. An effective id absent from the catalog (a provider alias,
- * say) is shown verbatim so the select never falls back to a misleading entry.
+ * the global default — and delegates persistence of a changed selection to
+ * its owner. An effective id absent from the catalog (a provider alias, say)
+ * is shown verbatim so the select never falls back to a misleading entry.
  */
 export function ModelSelect({
   value,
@@ -272,8 +271,8 @@ function effortLabel(value: string): string {
 
 /**
  * Thinking-effort dropdown (the Effort zone of the Codex-style model popover).
- * Like the model select, choosing an entry overrides the current prompt only;
- * the empty choice leaves the session's own thinking setting untouched.
+ * Like the model select, the surrounding composer owns persistence. Choosing
+ * the empty entry asks it to persist the selected model's default effort.
  *
  * A custom button + popover (not a native `<select>`): the native control's
  * clickable area was only the text itself — the icon/padding of the wrapping

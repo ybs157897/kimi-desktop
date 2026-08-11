@@ -97,6 +97,17 @@ export function ToolFrame({
   const display = parseDisplay(frame.display);
   const key = frame.view ?? frame.name;
 
+  // A subagent call rejected before spawning has no child transcript to open.
+  // Keep the generic expandable error/output surface instead of rendering an
+  // empty Agent/Swarm roster that hides the backend reason.
+  if (
+    frame.state === 'error' &&
+    (frame.agentRefs?.length ?? 0) === 0 &&
+    (isSwarm(frame, display, key) || display?.kind === 'agent_call' || isAgentName(key))
+  ) {
+    return <GenericCard frame={frame} display={display} task={task} interaction={interaction} />;
+  }
+
   if (isSwarm(frame, display, key)) {
     const members = swarmMembers(frame);
     return (

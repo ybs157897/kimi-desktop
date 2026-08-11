@@ -73,9 +73,7 @@ export function SessionListItem({
               aria-label="已置顶"
             />
           ) : null}
-          <span
-            className={`min-w-0 flex-1 truncate text-[length:var(--client-content-font-size)] tracking-[var(--tracking-tight)] ${active ? 'font-medium' : 'font-normal'}`}
-          >
+          <span className="min-w-0 flex-1 truncate text-[length:var(--client-sidebar-primary-font-size)] font-normal tracking-[var(--tracking-tight)]">
             {title}
           </span>
         </button>

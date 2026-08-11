@@ -13,8 +13,13 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 
-import { useConfig, useFsHome, useModels } from '#/lib/queries';
+import { useConfig, useFsHome, useModels, usePatchConfig } from '#/lib/queries';
 import { normalizePermissionMode } from '#/lib/permissionMode';
+import {
+  configuredThinkingEffort,
+  resolveThinkingEffort,
+  thinkingConfigPatch,
+} from '#/lib/conversationDefaults';
 
 import { FolderPicker } from './sidebar/FolderPicker';
 import { ModelSelect, ThinkingEffortSelect } from './composer/ModelSelect';
@@ -34,6 +39,7 @@ export interface WelcomeStartPayload {
 export interface WelcomeProps {
   readonly defaultCwd?: string;
   readonly defaultBranch?: string;
+  readonly onCwdChange: (cwd: string) => void;
   readonly onStart: (payload: WelcomeStartPayload) => void;
   readonly newSessionPending?: boolean;
   readonly newSessionError?: string | null;
@@ -45,6 +51,7 @@ export interface WelcomeProps {
 export function Welcome({
   defaultCwd,
   defaultBranch,
+  onCwdChange,
   onStart,
   newSessionPending = false,
   newSessionError = null,
@@ -54,9 +61,9 @@ export function Welcome({
   const fsHome = useFsHome();
   const config = useConfig();
   const models = useModels();
+  const patchConfig = usePatchConfig();
   const recentRoots = fsHome.data?.recent_roots ?? [];
-  const fallbackCwd = defaultCwd ?? recentRoots[0] ?? fsHome.data?.home ?? '';
-  const [cwd, setCwd] = useState(defaultCwd ?? '');
+  const cwd = defaultCwd ?? recentRoots[0] ?? fsHome.data?.home ?? '';
   const [prompt, setPrompt] = useState(initialPrompt);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -65,18 +72,11 @@ export function Welcome({
     useState<PromptPermissionMode>('manual');
   const [model, setModel] = useState<string | undefined>();
   const [effort, setEffort] = useState<string | undefined>();
+  const [preferenceError, setPreferenceError] = useState<string | null>(null);
   const [planMode, setPlanMode] = useState(false);
   const [goalMode, setGoalMode] = useState(false);
   const [swarmMode, setSwarmMode] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (cwd === '' && fallbackCwd !== '') setCwd(fallbackCwd);
-  }, [cwd, fallbackCwd]);
-
-  useEffect(() => {
-    if (defaultCwd !== undefined) setCwd(defaultCwd);
-  }, [defaultCwd]);
 
   useEffect(() => {
     setPermissionMode(
@@ -94,6 +94,10 @@ export function Welcome({
     (entry) => entry.model === effectiveModel,
   );
   const supportedEfforts = selectedModel?.support_efforts;
+  const effectiveEffort = resolveThinkingEffort(
+    effort ?? configuredThinkingEffort(config.data?.thinking),
+    selectedModel,
+  );
   const submitDisabled =
     newSessionPending || cwd === '' || prompt.trim() === '';
   const roots = useMemo(
@@ -104,16 +108,6 @@ export function Welcome({
     ],
     [defaultCwd, recentRoots, fsHome.data?.home],
   );
-
-  useEffect(() => {
-    if (
-      effort !== undefined &&
-      supportedEfforts !== undefined &&
-      !supportedEfforts.includes(effort)
-    ) {
-      setEffort(undefined);
-    }
-  }, [effort, supportedEfforts]);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -126,8 +120,11 @@ export function Welcome({
       // configured default). Sending nothing made the first prompt fail with
       // "model not configured" whenever the server engine had no default
       // bound, even though the UI displayed one.
-      model: effectiveModel === undefined || effectiveModel === '' ? undefined : effectiveModel,
-      effort: effort === undefined || effort === '' ? undefined : effort,
+      model:
+        effectiveModel === undefined || effectiveModel === ''
+          ? undefined
+          : effectiveModel,
+      effort: effectiveEffort,
       planMode,
       goalMode,
       swarmMode,
@@ -154,6 +151,7 @@ export function Welcome({
               aria-label="选择项目目录"
               aria-expanded={workspaceMenuOpen}
               title={cwd}
+              disabled={newSessionPending}
               onClick={() => setWorkspaceMenuOpen((value) => !value)}
               className="ui-pressable flex min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1 text-[length:var(--client-control-font-size)] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
             >
@@ -186,7 +184,7 @@ export function Welcome({
               </div>
             ) : null}
 
-            {workspaceMenuOpen ? (
+            {workspaceMenuOpen && !newSessionPending ? (
               <>
                 <button
                   type="button"
@@ -203,7 +201,7 @@ export function Welcome({
                       key={root}
                       type="button"
                       onClick={() => {
-                        setCwd(root);
+                        onCwdChange(root);
                         setWorkspaceMenuOpen(false);
                       }}
                       className={`block w-full px-3 py-1.5 text-left hover:bg-[var(--color-list-hover)] ${root === cwd ? 'bg-[var(--color-list-active)]' : ''}`}
@@ -328,17 +326,64 @@ export function Welcome({
               <ModelSelect
                 value={effectiveModel}
                 models={models.data?.items}
-                onChange={(next) => setModel(next === '' ? undefined : next)}
-                disabled={newSessionPending}
+                onChange={(next) => {
+                  if (next === '') {
+                    setModel(undefined);
+                    return;
+                  }
+                  const previousModel = model;
+                  const previousEffort = effort;
+                  const nextEntry = models.data?.items.find(
+                    (entry) => entry.model === next,
+                  );
+                  const nextEffort = resolveThinkingEffort(
+                    effectiveEffort,
+                    nextEntry,
+                  );
+                  setPreferenceError(null);
+                  setModel(next);
+                  setEffort(nextEffort);
+                  void patchConfig
+                    .mutateAsync({
+                      default_model: next,
+                      thinking:
+                        nextEffort === undefined
+                          ? undefined
+                          : thinkingConfigPatch(nextEffort),
+                    })
+                    .catch(() => {
+                      setModel(previousModel);
+                      setEffort(previousEffort);
+                      setPreferenceError('模型偏好保存失败，请重试。');
+                    });
+                }}
+                disabled={newSessionPending || patchConfig.isPending}
                 onOpenModelSettings={onOpenModelSettings}
               />
               {supportedEfforts?.length === 0 ? null : (
                 <ThinkingEffortSelect
-                  value={effort}
+                  value={effectiveEffort}
                   efforts={supportedEfforts}
                   defaultEffort={selectedModel?.default_effort}
-                  onChange={(next) => setEffort(next === '' ? undefined : next)}
-                  disabled={newSessionPending}
+                  onChange={(next) => {
+                    const resolvedEffort = resolveThinkingEffort(
+                      next === '' ? undefined : next,
+                      selectedModel,
+                    );
+                    if (resolvedEffort === undefined) return;
+                    const previousEffort = effort;
+                    setPreferenceError(null);
+                    setEffort(resolvedEffort);
+                    void patchConfig
+                      .mutateAsync({
+                        thinking: thinkingConfigPatch(resolvedEffort),
+                      })
+                      .catch(() => {
+                        setEffort(previousEffort);
+                        setPreferenceError('思考等级保存失败，请重试。');
+                      });
+                  }}
+                  disabled={newSessionPending || patchConfig.isPending}
                 />
               )}
               <button
@@ -353,20 +398,20 @@ export function Welcome({
           </div>
         </form>
 
-        {newSessionError !== null ? (
+        {newSessionError !== null || preferenceError !== null ? (
           <p
             role="alert"
             className="mt-3 text-center text-[12px] text-[var(--color-text-danger)]"
           >
-            {newSessionError}
+            {newSessionError ?? preferenceError}
           </p>
         ) : null}
       </div>
 
-      {folderPickerOpen ? (
+      {folderPickerOpen && !newSessionPending ? (
         <FolderPicker
           onPick={(nextCwd) => {
-            setCwd(nextCwd);
+            onCwdChange(nextCwd);
             setFolderPickerOpen(false);
           }}
           onClose={() => setFolderPickerOpen(false)}

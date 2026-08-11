@@ -284,6 +284,26 @@ body {
   }
 }
 
+.subagent-chip-enter {
+  transform-origin: left center;
+  animation: subagent-chip-enter 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes subagent-chip-enter {
+  0% {
+    opacity: 0;
+    transform: translate(-8px, 4px) scale(0.92);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(1px, -1px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
 /* Live-label shimmer text — Codex `loading-shimmer-pure-text` parity. The
    glyph fill is transparent; a stepped sweep (transparent → contrast band →
    transparent) is clipped to the text, producing a character-by-character
@@ -422,7 +442,8 @@ body {
   .ui-shimmer,
   .ui-shimmer-text,
   .ui-shimmer-cadenced--active,
-  .ui-card-enter {
+  .ui-card-enter,
+  .subagent-chip-enter {
     animation: none;
   }
 

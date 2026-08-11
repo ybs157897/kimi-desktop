@@ -74,6 +74,7 @@
   --client-control-font-size: 13px;
   --client-content-font-size: 14px;
   --client-title-font-size: 14px;
+  --client-sidebar-primary-font-size: 14px;
   --client-display-font-size: clamp(20px, 2.4vw, 34px);
   --code-font-size: 11px;
   --code-font-weight: 400;
@@ -172,11 +173,6 @@
   --markdown-heading-margin: 20px 0 10px;
   --markdown-hr-margin: 28px 0;
   --markdown-li-gap: 0.5rem;
-  /* Long code block: line budget before the fold kicks in, and the folded
-     body's max height (matches the ~16rem preview window). */
-  --markdown-code-fold-threshold: 20;
-  --markdown-code-folded-height: 16rem;
-
   /* Conversation timeline gaps (Codex turn list rhythm). */
   --conversation-item-gap: 16px;
   --conversation-grouped-item-gap: 4px;
@@ -277,6 +273,7 @@
   --color-tag-generic-fill: var(--color-background-button-secondary);
 
   /* ------------------ token compatibility layer (prose) ------------------- */
+  --color-token-foreground: var(--color-text-foreground);
   --color-token-text-primary: var(--color-text-foreground);
   --color-token-text-secondary: var(--color-text-secondary);
   --color-token-text-tertiary: var(--color-text-tertiary);
@@ -447,6 +444,7 @@
   --color-token-list-active-background: var(--color-list-active);
   --color-token-on-accent: var(--color-text-on-accent);
   --color-token-error-foreground: var(--red-500);
+  --color-token-foreground: var(--color-text-foreground);
 
   /* Conversation summary text tones (light). */
   --color-token-conversation-body: color-mix(

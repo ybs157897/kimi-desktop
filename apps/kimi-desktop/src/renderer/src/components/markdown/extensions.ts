@@ -9,8 +9,9 @@
  *      `:name{attrs}` / `:name{attrs} content :` inline.
  *    Unknown names and malformed syntax return `undefined`, so marked falls
  *    back to the raw text — a bad directive must never crash the message.
- *  - `math` — KaTeX delimiters: block `$$…$$` / `\[…\]` and inline `$…$` / `\(…\)`
- *    (plus an inline `\[…\]` fallback for mid-paragraph display math).
+ *  - `math` — KaTeX delimiters: block `$$…$$` / `\[…\]` / a standalone
+ *    `$…$` line, and inline `$…$` / `\(…\)` (plus an inline `\[…\]`
+ *    fallback for mid-paragraph display math).
  *  - `citation` — file references: literal `【path†L12】` / `【F:…†L12-L40】`
  *    and link-shaped bare text `path:12`, `path:12:4-40:8`, `path#L12C4`.
  *
@@ -196,7 +197,7 @@ function mathBlockExtension(name: string, rule: RegExp): TokenizerExtension {
     name,
     level: 'block',
     start(src) {
-      const idx = src.search(/\n\$\$|\n\\\[/);
+      const idx = src.search(/\n {0,3}(?:\$|\\\[)/);
       return idx === -1 ? undefined : idx;
     },
     tokenizer(src) {
@@ -204,13 +205,29 @@ function mathBlockExtension(name: string, rule: RegExp): TokenizerExtension {
       if (match === null) return undefined;
       const token: MathToken = {
         type: 'math',
-        tex: (match[1] ?? '').trim(),
+        tex: normalizeBlockMathTex(match[1] ?? ''),
         displayMode: true,
         raw: match[0],
       };
       return token;
     },
   };
+}
+
+/** Models occasionally wrap `$…$` once more inside a display delimiter.
+ * KaTeX is already in math mode at that point, so the redundant pair would
+ * otherwise become a red parse-error fallback. */
+function normalizeBlockMathTex(value: string): string {
+  const tex = value.trim();
+  if (
+    tex.startsWith('$') &&
+    !tex.startsWith('$$') &&
+    tex.endsWith('$') &&
+    !tex.endsWith('$$')
+  ) {
+    return tex.slice(1, -1).trim();
+  }
+  return tex;
 }
 
 function mathInlineExtension(name: string, rule: RegExp, displayMode: boolean): TokenizerExtension {
@@ -237,9 +254,21 @@ function mathInlineExtension(name: string, rule: RegExp, displayMode: boolean): 
 
 const blockDollarMath = mathBlockExtension('mathBlockDollar', /^ {0,3}\$\$([\s\S]+?)\$\$(?:\n+|$)/);
 const blockBracketMath = mathBlockExtension('mathBlockBracket', /^ {0,3}\\\[([\s\S]+?)\\\](?:\n+|$)/);
+const blockSingleDollarMath = mathBlockExtension(
+  'mathBlockSingleDollar',
+  /^ {0,3}\$(?!\$)[ \t]*(?:\n[ \t]*)?((?:\\[\s\S]|[^\\$])+?)[ \t]*\$(?!\$)[ \t]*(?:\n+|$)/,
+);
+// Models often place display math directly after prose (`答案：$$…$$`). At
+// inline lexer level this must win before the single-dollar rule, otherwise
+// the middle `$…$` is consumed with one delimiter left inside the TeX.
+const inlineDoubleDollarMath = mathInlineExtension(
+  'mathInlineDoubleDollar',
+  /^\$\$([\s\S]+?)\$\$/,
+  true,
+);
 const inlineDollarMath = mathInlineExtension(
   'mathInlineDollar',
-  /^\$(?!\$)(?!\s)((?:\\.|[^\\$\n])*?\S)\$(?!\$)/,
+  /^\$(?!\$)(?!\s)((?:\\.|[^\\$\n])*?(?:\\[^\n]|[^\s\\$\n]))\$(?!\$)/,
   false,
 );
 const inlineParenMath = mathInlineExtension('mathInlineParen', /^\\\(([\s\S]+?)\\\)/, false);
@@ -337,6 +366,8 @@ export function createMarkdownExtensions(): MarkedExtension {
     guarded(inlineDirective),
     guarded(blockDollarMath),
     guarded(blockBracketMath),
+    guarded(blockSingleDollarMath),
+    guarded(inlineDoubleDollarMath),
     guarded(inlineDollarMath),
     guarded(inlineParenMath),
     guarded(inlineBracketMath),

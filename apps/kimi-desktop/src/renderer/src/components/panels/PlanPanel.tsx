@@ -1,9 +1,7 @@
 /**
- * PlanPanel — the right-dock 「计划」tab, modeled on zcode's StatusPanel:
- * collapsible sections (default open, chevron appears on hover, trailing
- * counts) for the session's plans (计划), the execution-progress steps
- * (进程, the model's TodoList), and the child agents (智能体, zcode's
- * 子智能体目录). The agents directory merges two sources: the main agent's
+ * PlanPanel — the Codex-style floating conversation summary: compact,
+ * persistent sections for the environment, plans, execution progress, and
+ * child agents. The agents directory merges two sources: the main agent's
  * transcript tasks AND the session snapshot's subagent roster — the latter is
  * the only surface that sees expert-team / swarm members spawned by child
  * agents. Plans likewise merge the main projection with each child agent's
@@ -12,27 +10,52 @@
 
 import type { TodoItem, TranscriptTask, TranscriptTodo } from '@moonshot-ai/transcript';
 import {
+  ArrowClockwise,
   ArrowSquareOut,
+  CaretDown,
   CaretRight,
   CheckCircle,
   Circle,
   CircleNotch,
   FileText,
+  GitBranch,
+  GitCommit,
+  GitDiff,
+  GitPullRequest,
+  Laptop,
   PlayCircle,
+  Plus,
   XCircle,
 } from '@phosphor-icons/react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 
-import type { SessionSubagentSnapshot, TranscriptPlanInfo } from '#/lib/api';
-import { agentTypeTag, tagClasses, tagIconClass, type TagKind } from '#/lib/agentColors';
-import { useChildAgentPlans, useSessionSubagents } from '#/lib/queries';
+import type { TranscriptPlanInfo } from '#/lib/api';
+import { tagClasses, tagIconClass } from '#/lib/agentColors';
+import {
+  useChildAgentPlans,
+  useFsGitBranches,
+  useFsGitCheckout,
+  useFsGitStatus,
+  useFsOpen,
+  useSessionSubagents,
+} from '#/lib/queries';
+import {
+  mergeSessionSubagents,
+  selectPanelSubagents,
+  summarizeSubagents,
+  type SubagentEntry,
+  type SubagentSummary,
+} from '#/lib/subagentSummary';
+import { CollapsibleBody } from '../chat/CollapsibleBody';
 import type { OpenPlanDoc } from '../chat/PlanDocViewer';
 import { planDocFromInfo } from '../chat/PlanDocViewer';
 import { COLLAPSE_AFTER, selectVisibleTodos } from '../chat/TodoPanel';
 import { planStateLabel, planTitle, type PlanReviewState } from '../chat/planShared';
+import { SubagentGlyph } from '../subagents/SubagentGlyph';
 
 export interface PlanPanelProps {
   readonly sessionId: string;
+  readonly cwd?: string;
   readonly plans: ReadonlyMap<string, TranscriptPlanInfo>;
   readonly todos: ReadonlyMap<string, TranscriptTodo>;
   readonly tasks: ReadonlyMap<string, TranscriptTask>;
@@ -40,6 +63,8 @@ export interface PlanPanelProps {
   readonly onOpenAgent?: (agentId: string, prompt?: string) => void;
   /** Open a plan in the plan-document dock tab. */
   readonly onOpenPlanDoc?: OpenPlanDoc;
+  /** Open the full changed-files review in the resizable dock. */
+  readonly onOpenChanges?: () => void;
 }
 
 const HISTORY_AFTER = 3;
@@ -55,28 +80,26 @@ const AGENT_STATUS_LABEL: Record<TranscriptTask['state'], string> = {
   lost: '丢失',
 };
 
-/** One row of the agents directory, normalized from either source. */
-interface AgentEntry {
-  readonly key: string;
-  readonly agentId?: string;
-  readonly title: string;
-  readonly state: TranscriptTask['state'];
-  /** Colored type pill (expert-team member profile etc.), when known. */
-  readonly typeLabel?: string;
-  readonly typeTag: TagKind;
-  readonly snippet?: string;
-  readonly timeIso?: string;
-}
-
-export function PlanPanel({ sessionId, plans, todos, tasks, onOpenAgent, onOpenPlanDoc }: PlanPanelProps) {
+export function PlanPanel({
+  sessionId,
+  cwd,
+  plans,
+  todos,
+  tasks,
+  onOpenAgent,
+  onOpenPlanDoc,
+  onOpenChanges,
+}: PlanPanelProps) {
   const todoItems = Array.from(todos.values()).flatMap((doc) => doc.items);
-  const mainAgents = Array.from(tasks.values()).filter(
-    (task) => task.kind === 'subagent' && task.agentId !== undefined,
-  );
+  const mainAgents = Array.from(tasks.values()).filter((task) => task.kind === 'subagent');
   const mainRunning = mainAgents.some((task) => task.state === 'running');
 
   const roster = useSessionSubagents(sessionId, mainRunning);
-  const agents = mergeAgentEntries(mainAgents, roster.data ?? []);
+  const agents = mergeSessionSubagents(mainAgents, roster.data ?? []);
+  const inlineAgentSummary = summarizeSubagents(agents, 4);
+  const agentSummary = inlineAgentSummary === undefined
+    ? undefined
+    : { ...inlineAgentSummary, ...selectPanelSubagents(agents, 4) };
 
   // Child agents may hold their own ExitPlanMode plans (an expert-team lead
   // planning the delegation); merge them with the main projection.
@@ -87,10 +110,17 @@ export function PlanPanel({ sessionId, plans, todos, tasks, onOpenAgent, onOpenP
   const childPlans = useChildAgentPlans(sessionId, childAgentIds);
   const planEntries = orderPlans(plans, childPlans);
 
-  const sections: ReactNode[] = [];
+  const sections: ReactNode[] = [
+    <EnvironmentSection
+      key="environment"
+      sessionId={sessionId}
+      cwd={cwd}
+      onOpenChanges={onOpenChanges}
+    />,
+  ];
   if (planEntries.length > 0) {
     sections.push(
-      <PanelSection key="plans" title="计划" bordered={sections.length > 0}>
+      <PanelSection key="plans" sectionKey="plans" title="计划" bordered>
         <PlansSection entries={planEntries} onOpenPlanDoc={onOpenPlanDoc} />
       </PanelSection>,
     );
@@ -99,37 +129,31 @@ export function PlanPanel({ sessionId, plans, todos, tasks, onOpenAgent, onOpenP
     sections.push(
       <PanelSection
         key="progress"
+        sectionKey="progress"
         title="进程"
         trailing={<ProgressCount items={todoItems} />}
-        bordered={sections.length > 0}
+        bordered
       >
         <ProgressSection items={todoItems} />
       </PanelSection>,
     );
   }
-  if (agents.length > 0) {
-    const runningCount = agents.filter((entry) => entry.state === 'running').length;
+  if (agentSummary !== undefined) {
     sections.push(
       <PanelSection
         key="agents"
-        title="智能体"
-        trailing={runningCount > 0 ? `${runningCount} 运行` : undefined}
-        bordered={sections.length > 0}
+        sectionKey="subagents"
+        title="子智能体"
+        bordered
       >
-        <AgentsSection agents={agents} onOpenAgent={onOpenAgent} />
+        <AgentsSection summary={agentSummary} onOpenAgent={onOpenAgent} />
       </PanelSection>,
     );
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
-      {sections.length > 0 ? (
-        <div className="space-y-1">{sections}</div>
-      ) : (
-        <div className="px-3 py-6 text-center text-[12px] text-[var(--color-text-tertiary)]">
-          暂无计划与进展
-        </div>
-      )}
+    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+      <div className="space-y-1">{sections}</div>
     </div>
   );
 }
@@ -150,100 +174,229 @@ function orderPlans(
   return [...pending, ...rest];
 }
 
-/** The agents directory: transcript tasks first (they carry richer result
- *  data), then roster-only rows — the expert-team members whose spawning
- *  tool calls live in a child agent's transcript. */
-function mergeAgentEntries(
-  mainAgents: readonly TranscriptTask[],
-  roster: readonly SessionSubagentSnapshot[],
-): readonly AgentEntry[] {
-  const entries: AgentEntry[] = mainAgents.map((task) => {
-    const typeTag = agentTypeTag(task.description ?? task.agentId);
-    return {
-      key: `task:${task.taskId}`,
-      agentId: task.agentId,
-      title: task.description ?? task.agentId ?? task.taskId,
-      state: task.state,
-      typeTag: typeTag.tag,
-      snippet: firstLine(task.error ?? task.resultSummary ?? emptyToUndefined(task.outputTail)),
-      timeIso: task.endedAt ?? task.startedAt,
-    };
-  });
-  const known = new Set(entries.map((entry) => entry.agentId).filter((id) => id !== undefined));
-  for (const item of roster) {
-    if (item.kind !== 'subagent' || known.has(item.id)) continue;
-    const typeTag = agentTypeTag(item.subagent_type ?? item.description);
-    entries.push({
-      key: `roster:${item.id}`,
-      agentId: item.id,
-      title: item.description,
-      state: rosterState(item),
-      typeLabel: item.subagent_type,
-      typeTag: typeTag.tag,
-      snippet: firstLine(item.suspended_reason ?? item.output_preview),
-      timeIso: item.completed_at ?? item.started_at ?? item.created_at,
-    });
-  }
-  return entries;
-}
-
-function rosterState(item: SessionSubagentSnapshot): TranscriptTask['state'] {
-  if (item.status === 'cancelled') return 'killed';
-  return item.status;
-}
-
-function emptyToUndefined(value: string | undefined): string | undefined {
-  return value === undefined || value === '' ? undefined : value;
-}
-
-/** First non-empty line of the result (or the failure message). */
-function firstLine(source: string | undefined): string | undefined {
-  if (source === undefined) return undefined;
-  return source
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line !== '');
-}
-
 // ------------------------------------------------------------------ section
 
 /** zcode StatusSection: h-8 trigger (title + trailing count + hover chevron),
  *  default open, remembered only for the session (component state). */
 function PanelSection({
+  sectionKey,
   title,
   trailing,
   bordered = false,
   children,
 }: {
+  readonly sectionKey: string;
   readonly title: string;
   readonly trailing?: ReactNode;
   readonly bordered?: boolean;
   readonly children: ReactNode;
 }) {
-  const [open, setOpen] = useState(true);
+  const bodyId = useId();
+  const storageKey = `kimi-desktop:thread-summary:${sectionKey}:open`;
+  const [open, setOpen] = useState(
+    () => localStorage.getItem(storageKey) !== 'false',
+  );
+  useEffect(() => {
+    localStorage.setItem(storageKey, String(open));
+  }, [open, storageKey]);
   return (
     <section className={bordered ? 'border-t border-[var(--color-border-light)] pt-1' : ''}>
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="ui-pressable group flex h-8 w-full items-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-left hover:bg-[var(--color-list-hover)]"
-      >
-        <span className="text-[12px] font-medium text-[var(--color-text-secondary)]">{title}</span>
+      <div className="group flex h-8 w-full items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          className="ui-pressable flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-left hover:bg-[var(--color-list-hover)]"
+        >
+          <span className="text-[length:var(--client-content-font-size)] font-medium text-[var(--color-text-secondary)]">{title}</span>
+          <CaretRight
+            size={10}
+            weight="bold"
+            className={`ml-auto shrink-0 text-[var(--color-text-tertiary)] opacity-0 transition-[opacity,transform] duration-[var(--duration-hover)] ease-[var(--ease-out)] group-hover:opacity-100 ${open ? 'rotate-90' : ''}`}
+            aria-hidden
+          />
+        </button>
         {trailing !== undefined ? (
-          <span className="ml-auto shrink-0 tabular-nums text-[11px] text-[var(--color-text-tertiary)]">
+          <span className="flex shrink-0 items-center tabular-nums text-[length:var(--client-content-font-size)] text-[var(--color-text-tertiary)]">
             {trailing}
           </span>
         ) : null}
-        <CaretRight
-          size={10}
-          weight="bold"
-          className={`${trailing === undefined ? 'ml-auto' : ''} shrink-0 text-[var(--color-text-tertiary)] opacity-0 transition-[opacity,transform] duration-[var(--duration-hover)] ease-[var(--ease-out)] group-hover:opacity-100 ${open ? 'rotate-90' : ''}`}
-          aria-hidden
-        />
-      </button>
-      {open ? <div className="pb-1">{children}</div> : null}
+      </div>
+      <div id={bodyId}>
+        <CollapsibleBody open={open} className="pb-1">
+          {children}
+        </CollapsibleBody>
+      </div>
     </section>
+  );
+}
+
+// ------------------------------------------------------------- 环境信息
+
+function EnvironmentSection({
+  sessionId,
+  cwd,
+  onOpenChanges,
+}: {
+  readonly sessionId: string;
+  readonly cwd?: string;
+  readonly onOpenChanges?: () => void;
+}) {
+  const git = useFsGitStatus(sessionId);
+  const branches = useFsGitBranches(sessionId);
+  const checkout = useFsGitCheckout(sessionId);
+  const open = useFsOpen(sessionId);
+  const branch = git.data?.branch ?? branches.data?.current;
+  const branchNames = branches.data?.branches ?? (branch === undefined ? [] : [branch]);
+  const pullRequest = git.data?.pullRequest;
+
+  return (
+    <PanelSection
+      sectionKey="environment"
+      title="环境信息"
+      trailing={
+        <button
+          type="button"
+          aria-label="刷新环境信息"
+          title="刷新环境信息"
+          onClick={() => {
+            void git.refetch();
+            void branches.refetch();
+          }}
+          className="ui-pressable flex h-6 w-6 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+        >
+          {git.isFetching ? (
+            <ArrowClockwise size={13} className="animate-spin" aria-hidden />
+          ) : (
+            <Plus size={14} aria-hidden />
+          )}
+        </button>
+      }
+    >
+      <div className="space-y-0.5">
+        <EnvironmentRow
+          icon={<GitDiff size={14} aria-hidden />}
+          label="变更"
+          onClick={onOpenChanges}
+          meta={
+            git.data === undefined ? null : (
+              <span className="inline-flex items-center gap-1 tabular-nums tracking-tight">
+                <span className="text-[var(--color-text-success)]">+{git.data.additions}</span>
+                <span className="text-[var(--color-text-danger)]">-{git.data.deletions}</span>
+              </span>
+            )
+          }
+        />
+        <EnvironmentRow
+          icon={<Laptop size={14} aria-hidden />}
+          label="本地"
+          title={cwd}
+          onClick={cwd === undefined ? undefined : () => open.mutate({ path: '.', reveal: true })}
+          meta={<CaretDown size={11} aria-hidden />}
+        />
+        <div className="relative rounded-[var(--radius-sm)] focus-within:ring-1 focus-within:ring-[var(--color-border-focus)]">
+          <EnvironmentRow
+            icon={<GitBranch size={14} aria-hidden />}
+            label={branch ?? (git.isError ? '无法读取分支' : '读取分支中…')}
+            meta={
+              checkout.isPending ? (
+                <CircleNotch size={12} className="animate-spin" aria-hidden />
+              ) : (
+                <CaretDown size={11} aria-hidden />
+              )
+            }
+          />
+          {branchNames.length > 0 ? (
+            <select
+              aria-label="切换 Git 分支"
+              value={branch}
+              disabled={checkout.isPending}
+              onChange={(event) => checkout.mutate(event.target.value)}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none disabled:cursor-wait"
+            >
+              {branchNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+        </div>
+        {git.data !== undefined && (git.data.ahead > 0 || git.data.behind > 0) ? (
+          <EnvironmentRow
+            icon={<GitCommit size={14} aria-hidden />}
+            label={
+              git.data.ahead > 0
+                ? `待推送 ${git.data.ahead} 个提交`
+                : `落后 ${git.data.behind} 个提交`
+            }
+          />
+        ) : null}
+        {pullRequest !== undefined && pullRequest !== null ? (
+          <EnvironmentRow
+            icon={<GitPullRequest size={14} aria-hidden />}
+            label={`拉取请求 #${pullRequest.number}`}
+            onClick={() => void window.kimiDesktop.openExternal(pullRequest.url)}
+            meta={<ArrowSquareOut size={12} aria-hidden />}
+          />
+        ) : (
+          <EnvironmentRow
+            icon={<GitPullRequest size={14} aria-hidden />}
+            label={git.isError ? '无法获取拉取请求状态' : '暂无拉取请求'}
+          />
+        )}
+      </div>
+    </PanelSection>
+  );
+}
+
+function EnvironmentRow({
+  icon,
+  label,
+  meta,
+  title,
+  onClick,
+}: {
+  readonly icon: ReactNode;
+  readonly label: string;
+  readonly meta?: ReactNode;
+  readonly title?: string;
+  readonly onClick?: () => void;
+}) {
+  const content = (
+    <>
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center text-[var(--color-text-secondary)]">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[length:var(--client-content-font-size)] text-[var(--color-text-foreground)]">
+        {label}
+      </span>
+      {meta !== undefined ? (
+        <span className="ml-auto flex shrink-0 items-center text-[length:var(--client-content-font-size)] text-[var(--color-text-tertiary)]">
+          {meta}
+        </span>
+      ) : null}
+    </>
+  );
+  const className =
+    'ui-pressable flex h-7 w-full items-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-left';
+  if (onClick === undefined) {
+    return (
+      <div className={className} title={title}>
+        {content}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className={`${className} cursor-pointer hover:bg-[var(--color-list-hover)]`}
+      title={title}
+      onClick={onClick}
+    >
+      {content}
+    </button>
   );
 }
 
@@ -277,7 +430,7 @@ function PlansSection({
           <button
             type="button"
             onClick={() => setShowHistory((value) => !value)}
-            className="ui-pressable flex h-7 w-full items-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-left text-[11px] text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+            className="ui-pressable flex h-7 w-full items-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-left text-[length:var(--client-content-font-size)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
           >
             <CaretRight
               size={10}
@@ -306,13 +459,18 @@ function PlanRow({ entry, onOpen }: { readonly entry: TranscriptPlanInfo; readon
         className="ui-pressable group flex min-h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1 text-left hover:bg-[var(--color-list-hover)]"
       >
         <FileText size={14} className={`shrink-0 ${tagIconClass('plan')}`} aria-hidden />
-        <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--color-text-foreground)]">
+        <span className="min-w-0 flex-1 truncate text-[length:var(--client-content-font-size)] text-[var(--color-text-foreground)]">
           {planTitle(entry.plan)}
         </span>
         {state === 'pending' ? (
-          <span className={`ui-tag-pill shrink-0 ${tagClasses('plan')}`}>{planStateLabel(state)}</span>
+          <span
+            className={`ui-tag-pill shrink-0 ${tagClasses('plan')}`}
+            style={{ fontSize: 'var(--client-content-font-size)' }}
+          >
+            {planStateLabel(state)}
+          </span>
         ) : (
-          <span className="shrink-0 text-[10.5px] text-[var(--color-text-tertiary)]">{planStateLabel(state)}</span>
+          <span className="shrink-0 text-[length:var(--client-content-font-size)] text-[var(--color-text-tertiary)]">{planStateLabel(state)}</span>
         )}
         <ArrowSquareOut
           size={12}
@@ -344,7 +502,7 @@ function ProgressSection({ items }: { readonly items: readonly TodoItem[] }) {
   return (
     <ul className="space-y-0.5">
       {visible.map((item, index) => (
-        <li key={index} className="flex min-h-7 items-start gap-2 rounded-[var(--radius-sm)] px-2 py-1 text-[12px]">
+        <li key={index} className="flex min-h-7 items-start gap-2 rounded-[var(--radius-sm)] px-2 py-1 text-[length:var(--client-content-font-size)]">
           <TodoStatusIcon status={item.status} />
           <span
             className={`min-w-0 flex-1 break-words leading-5 ${
@@ -362,7 +520,7 @@ function ProgressSection({ items }: { readonly items: readonly TodoItem[] }) {
           <button
             type="button"
             onClick={() => setExpanded((value) => !value)}
-            className="ui-pressable flex h-7 w-full items-center rounded-[var(--radius-sm)] px-2 text-left text-[11px] text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+            className="ui-pressable flex h-7 w-full items-center rounded-[var(--radius-sm)] px-2 text-left text-[length:var(--client-content-font-size)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
           >
             {expanded ? '收起' : `… +${hiddenCount} 条`}
           </button>
@@ -387,30 +545,78 @@ function TodoStatusIcon({ status }: { readonly status: TodoItem['status'] }) {
 /** zcode 子智能体目录: always-visible "正在运行 · N" / "已结束 · N" groups
  *  with rich rows (status icon, title, result snippet, relative time). */
 function AgentsSection({
-  agents,
+  summary,
   onOpenAgent,
 }: {
-  readonly agents: readonly AgentEntry[];
+  readonly summary: SubagentSummary;
   readonly onOpenAgent?: (agentId: string, prompt?: string) => void;
 }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const agents = summary.entries;
   const running = agents.filter((entry) => entry.state === 'running');
   const finished = agents.filter((entry) => entry.state !== 'running').toReversed();
   return (
     <div className="space-y-1">
-      {running.length > 0 ? (
-        <AgentGroup label={`正在运行 · ${running.length}`}>
-          {running.map((entry) => (
-            <AgentRow key={entry.key} entry={entry} onOpenAgent={onOpenAgent} />
+      <button
+        type="button"
+        onClick={() => setShowDetails((value) => !value)}
+        aria-expanded={showDetails}
+        aria-label={`${summary.ariaLabel}，${showDetails ? '收起详情' : '展开详情'}`}
+        className="ui-pressable group flex h-8 w-full cursor-pointer items-center rounded-[var(--radius-sm)] px-2 hover:bg-[var(--color-list-hover)]"
+      >
+        <span className="flex min-w-0 flex-1 items-center">
+          {summary.visibleEntries.map((entry, index) => (
+            <span
+              key={entry.key}
+              className={index === 0 ? '' : '-ml-1'}
+              title={entry.label}
+            >
+              <SubagentGlyph
+                seed={entry.agentId ?? entry.key}
+                tag={entry.tag}
+                size="md"
+              />
+            </span>
           ))}
-        </AgentGroup>
-      ) : null}
-      {finished.length > 0 ? (
-        <AgentGroup label={`已结束 · ${finished.length}`}>
-          {finished.map((entry) => (
-            <AgentRow key={entry.key} entry={entry} onOpenAgent={onOpenAgent} />
-          ))}
-        </AgentGroup>
-      ) : null}
+          {summary.overflowCount > 0 ? (
+            <span className="-ml-1 flex h-6 min-w-6 items-center justify-center rounded-full border border-[var(--color-background-panel)] bg-[var(--color-background-button-secondary)] px-1 text-[length:var(--client-content-font-size)] tabular-nums text-[var(--color-text-secondary)]">
+              +{summary.overflowCount}
+            </span>
+          ) : null}
+          <span
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className="ml-2 truncate text-[length:var(--client-content-font-size)] text-[var(--color-text-secondary)]"
+          >
+            {summary.panelLabel}
+          </span>
+        </span>
+        <CaretRight
+          size={10}
+          weight="bold"
+          className={`ml-2 shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[var(--duration-hover)] ${showDetails ? 'rotate-90' : ''}`}
+          aria-hidden
+        />
+      </button>
+      <CollapsibleBody open={showDetails}>
+        <div className="space-y-1">
+          {running.length > 0 ? (
+            <AgentGroup label={`正在运行 · ${running.length}`}>
+              {running.map((entry) => (
+                <AgentRow key={entry.key} entry={entry} onOpenAgent={onOpenAgent} />
+              ))}
+            </AgentGroup>
+          ) : null}
+          {finished.length > 0 ? (
+            <AgentGroup label={`已结束 · ${finished.length}`}>
+              {finished.map((entry) => (
+                <AgentRow key={entry.key} entry={entry} onOpenAgent={onOpenAgent} />
+              ))}
+            </AgentGroup>
+          ) : null}
+        </div>
+      </CollapsibleBody>
     </div>
   );
 }
@@ -418,7 +624,7 @@ function AgentsSection({
 function AgentGroup({ label, children }: { readonly label: string; readonly children: ReactNode }) {
   return (
     <div>
-      <div className="px-2 py-1 text-[10.5px] font-medium text-[var(--color-text-tertiary)]">
+      <div className="px-2 py-1 text-[length:var(--client-content-font-size)] font-medium text-[var(--color-text-tertiary)]">
         {label}
       </div>
       <ul className="space-y-0.5">{children}</ul>
@@ -430,7 +636,7 @@ function AgentRow({
   entry,
   onOpenAgent,
 }: {
-  readonly entry: AgentEntry;
+  readonly entry: SubagentEntry;
   readonly onOpenAgent?: (agentId: string, prompt?: string) => void;
 }) {
   const time = relativeTime(entry.timeIso);
@@ -439,27 +645,32 @@ function AgentRow({
       <button
         type="button"
         disabled={onOpenAgent === undefined || entry.agentId === undefined}
-        title={entry.agentId !== undefined ? `打开 ${entry.title} 的对话` : undefined}
-        onClick={() => entry.agentId !== undefined && onOpenAgent?.(entry.agentId, entry.title)}
+        title={entry.agentId !== undefined ? `打开 ${entry.label} 的对话` : undefined}
+        onClick={() => entry.agentId !== undefined && onOpenAgent?.(entry.agentId, entry.prompt)}
         className="ui-pressable group flex w-full items-start gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-left enabled:hover:bg-[var(--color-list-hover)] disabled:cursor-default"
       >
         <AgentStateIcon state={entry.state} />
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-baseline gap-2">
-            <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--color-text-foreground)]">
-              {entry.title}
+            <span className="min-w-0 flex-1 truncate text-[length:var(--client-content-font-size)] text-[var(--color-text-foreground)]">
+              {entry.label}
             </span>
-            <span className="shrink-0 text-[10px] tabular-nums text-[var(--color-text-tertiary)]">
+            <span className="shrink-0 text-[length:var(--client-content-font-size)] tabular-nums text-[var(--color-text-tertiary)]">
               {entry.state === 'running' ? AGENT_STATUS_LABEL[entry.state] : time ?? AGENT_STATUS_LABEL[entry.state]}
             </span>
           </span>
           {entry.typeLabel !== undefined || entry.snippet !== undefined ? (
             <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
               {entry.typeLabel !== undefined ? (
-                <span className={`ui-tag-pill shrink-0 ${tagClasses(entry.typeTag)}`}>{entry.typeLabel}</span>
+                <span
+                  className={`ui-tag-pill shrink-0 ${tagClasses(entry.tag)}`}
+                  style={{ fontSize: 'var(--client-content-font-size)' }}
+                >
+                  {entry.typeLabel}
+                </span>
               ) : null}
               {entry.snippet !== undefined ? (
-                <span className="min-w-0 flex-1 truncate text-[10.5px] text-[var(--color-text-tertiary)]">
+                <span className="min-w-0 flex-1 truncate text-[length:var(--client-content-font-size)] text-[var(--color-text-tertiary)]">
                   {entry.snippet}
                 </span>
               ) : null}

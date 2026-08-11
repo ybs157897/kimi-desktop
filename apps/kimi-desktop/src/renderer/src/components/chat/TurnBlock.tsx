@@ -8,7 +8,7 @@ import type {
 } from '@moonshot-ai/transcript';
 import type { QuestionResponse } from '@moonshot-ai/protocol';
 import { CaretRight } from '@phosphor-icons/react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 
 import type { TranscriptPlanInfo } from '#/lib/api';
 import type { SourcedPendingInteraction } from '#/lib/sessionInteractions';
@@ -18,7 +18,7 @@ import {
   resultTextFrameId,
   taskForToolFrame,
 } from '#/lib/timelinePresentation';
-import { toolRunsFromTurn, type TimelineEntry } from '#/lib/toolRunsFromTurn';
+import { toolRunsFromTurn } from '#/lib/toolRunsFromTurn';
 
 import { ApprovalCard, type ApprovalResolveHandler } from './interactions/ApprovalCard';
 import { QuestionCard } from './interactions/QuestionCard';
@@ -30,6 +30,7 @@ import { TextFrame } from './frames/TextFrame';
 import { ThinkingFrame } from './frames/ThinkingFrame';
 import { ToolFrame } from './frames/ToolFrame';
 import { ToolRunCard } from './frames/ToolRunCard';
+import { SubagentActivityRow } from './frames/SubagentActivityRow';
 import type { SourcedChildInteraction } from './frames/SwarmCard';
 import type { OpenPlanDoc } from './PlanDocViewer';
 
@@ -47,6 +48,8 @@ export interface TurnBlockProps {
   readonly onDismissQuestion?: (interaction: TranscriptInteraction) => void | Promise<void>;
   /** Open a child agent's transcript in the side panel (swarm / single Agent). */
   readonly onOpenAgent?: (agentId: string, prompt?: string) => void;
+  /** Open the session-level child-agent summary in the right panel. */
+  readonly onOpenSubagents?: () => void;
   /** Open a plan in the plan-document dock tab. */
   readonly onOpenPlanDoc?: OpenPlanDoc;
   readonly plans?: ReadonlyMap<string, TranscriptPlanInfo>;
@@ -67,13 +70,14 @@ export function TurnBlock({
   onAnswerQuestion,
   onDismissQuestion,
   onOpenAgent,
+  onOpenSubagents,
   onOpenPlanDoc,
   plans,
   hidePrompt = false,
 }: TurnBlockProps) {
-  // Live turns open the processing section by default so streaming tool calls
-  // / thinking stay visible while the agent works; settled turns default back
-  // to collapsed unless the user explicitly toggled (ThinkingFrame idiom).
+  // Live turns keep streaming tool calls / thinking visible without a second
+  // process header. Once settled, the disclosure appears collapsed unless the
+  // user explicitly toggles it (ThinkingFrame idiom).
   const [userExpanded, setUserExpanded] = useState<boolean | undefined>(undefined);
   const live = turn.state === 'queued' || turn.state === 'running';
   const processExpanded = userExpanded ?? live;
@@ -99,12 +103,11 @@ export function TurnBlock({
           liveTailFrameId: liveTailFrameId(turn),
         }}
       >
-        {processFrameCount > 0 || live ? (
+        {!live && processFrameCount > 0 ? (
           <ProcessDisclosure
             expanded={processExpanded}
-            state={turn.state}
             durationMs={turn.durationMs}
-            onToggle={() => setUserExpanded((value) => (value === undefined ? !live : !value))}
+            onToggle={() => setUserExpanded((value) => !(value ?? false))}
           />
         ) : null}
         {/* A live turn always mounts the timeline so streaming frames land
@@ -123,6 +126,7 @@ export function TurnBlock({
             onAnswerQuestion={onAnswerQuestion}
             onDismissQuestion={onDismissQuestion}
             onOpenAgent={onOpenAgent}
+            onOpenSubagents={onOpenSubagents}
             onOpenPlanDoc={onOpenPlanDoc}
             plans={plans}
             processExpanded={processExpanded}
@@ -146,34 +150,29 @@ export function TurnBlock({
 
 function ProcessDisclosure({
   expanded,
-  state,
   durationMs,
   onToggle,
 }: {
   readonly expanded: boolean;
-  readonly state: TranscriptTurn['state'];
   readonly durationMs?: number;
   readonly onToggle: () => void;
 }) {
-  const live = state === 'queued' || state === 'running';
-  const label = live
-    ? '处理中'
-    : `已处理${durationMs !== undefined ? ` ${formatDuration(durationMs)}` : ''}`;
+  const label = `已处理${durationMs !== undefined ? ` ${formatDuration(durationMs)}` : ''}`;
   return (
     <div className="mb-2 flex max-w-[46rem] items-center gap-2">
       <button
         type="button"
         aria-expanded={expanded}
         onClick={onToggle}
-        className="ui-pressable -ml-1 flex shrink-0 cursor-pointer select-none items-center gap-1 rounded-[var(--radius-xs)] px-1 py-1 text-[11.5px] text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-secondary)]"
+        className="ui-pressable -ml-1 flex shrink-0 cursor-pointer select-none items-center gap-1 rounded-[var(--radius-xs)] px-1 py-1 text-[length:var(--codex-chat-font-size)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-secondary)]"
       >
         <CaretRight
-          size={11}
+          size={12}
           weight="bold"
           className={`transition-transform duration-[var(--duration-hover)] ${expanded ? 'rotate-90' : ''}`}
           aria-hidden
         />
-        <span className={live ? 'ui-shimmer-text' : undefined}>{label}</span>
+        <span>{label}</span>
       </button>
       <div className="h-px min-w-0 flex-1 bg-[var(--color-border-light)]" aria-hidden />
     </div>
@@ -216,10 +215,10 @@ function LiveThinkingPlaceholder() {
 /**
  * FlattenedTimeline — renders a turn's frames as the Codex-style activity
  * projection: consecutive groupable tool calls collapse into a single
- * {@link ToolRunCard} summary row, while standalone frames (thinking, text,
- * notice, single-Agent, swarm, plan, search, todo) render on their own. The
- * step boundary is flattened (a run of commands split across two steps still
- * collapses as one) by walking {@link toolRunsFromTurn}'s projection. */
+ * {@link ToolRunCard} summary row, Agent calls become one compact chip row,
+ * and remaining standalone frames (thinking, text, notice, plan, search,
+ * todo) render on their own. Step boundaries are flattened by walking
+ * {@link toolRunsFromTurn}'s projection. */
 function FlattenedTimeline({
   turn,
   tasks,
@@ -230,6 +229,7 @@ function FlattenedTimeline({
   onAnswerQuestion,
   onDismissQuestion,
   onOpenAgent,
+  onOpenSubagents,
   onOpenPlanDoc,
   plans,
   processExpanded,
@@ -245,6 +245,7 @@ function FlattenedTimeline({
   onAnswerQuestion?: TurnBlockProps['onAnswerQuestion'];
   onDismissQuestion?: TurnBlockProps['onDismissQuestion'];
   onOpenAgent?: (agentId: string, prompt?: string) => void;
+  onOpenSubagents?: () => void;
   onOpenPlanDoc?: OpenPlanDoc;
   plans?: ReadonlyMap<string, TranscriptPlanInfo>;
   processExpanded: boolean;
@@ -270,35 +271,74 @@ function FlattenedTimeline({
     <div>
       {awaitingFirstFrame ? <LiveThinkingPlaceholder /> : null}
       {entries.map((entry, index) => {
+        if (entry.kind === 'subagents') {
+          const runKey = entry.frames[0]?.frameId ?? String(index);
+          return (
+            <Fragment key={`subagents-${runKey}`}>
+              {processExpanded ? (
+                <SubagentActivityRow
+                  frames={entry.frames}
+                  tasks={tasks}
+                  onOpenAgent={onOpenAgent}
+                  onOpenSubagents={onOpenSubagents}
+                />
+              ) : null}
+              {entry.frames.map((frame) => (
+                <ToolPendingInteractionNode
+                  key={`pending-${frame.frameId}`}
+                  frame={frame}
+                  interactions={interactions}
+                  pendingSessionInteractions={pendingSessionInteractions}
+                  onResolveApproval={onResolveApproval}
+                  onAnswerQuestion={onAnswerQuestion}
+                  onDismissQuestion={onDismissQuestion}
+                  onOpenPlanDoc={onOpenPlanDoc}
+                />
+              ))}
+            </Fragment>
+          );
+        }
         if (entry.kind === 'run') {
           // Frames inside a run are always built (visible=true): ToolRunCard's
           // own CollapsibleBody controls whether they are physically on screen
           // (run expanded) or hidden behind the summary (run collapsed). They
           // must not be gated by `processExpanded` too, or expanding a run
           // inside an already-expanded process section would still show nothing.
+          const runKey = entry.frames[0]?.frameId ?? String(index);
           return (
-            <ToolRunCard
-              key={`run-${index}`}
-              frames={entry.frames}
-              summaryParts={entry.summaryParts}
-            >
+            <Fragment key={`run-${runKey}`}>
+              <ToolRunCard run={entry}>
+                {entry.frames.map((frame) => (
+                  <ToolFrameNode
+                    key={frame.frameId}
+                    frame={frame}
+                    tasks={tasks}
+                    interactions={interactions}
+                    pendingSessionInteractions={pendingSessionInteractions}
+                    onResolveApproval={onResolveApproval}
+                    onAnswerQuestion={onAnswerQuestion}
+                    onDismissQuestion={onDismissQuestion}
+                    onOpenAgent={onOpenAgent}
+                    onOpenPlanDoc={onOpenPlanDoc}
+                    plans={plans}
+                    visible
+                    showPendingInteraction={false}
+                  />
+                ))}
+              </ToolRunCard>
               {entry.frames.map((frame) => (
-                <ToolFrameNode
-                  key={frame.frameId}
+                <ToolPendingInteractionNode
+                  key={`pending-${frame.frameId}`}
                   frame={frame}
-                  tasks={tasks}
                   interactions={interactions}
                   pendingSessionInteractions={pendingSessionInteractions}
                   onResolveApproval={onResolveApproval}
                   onAnswerQuestion={onAnswerQuestion}
                   onDismissQuestion={onDismissQuestion}
-                  onOpenAgent={onOpenAgent}
                   onOpenPlanDoc={onOpenPlanDoc}
-                  plans={plans}
-                  visible={processExpanded}
                 />
               ))}
-            </ToolRunCard>
+            </Fragment>
           );
         }
         const frame = entry.frame;
@@ -344,6 +384,7 @@ function ToolFrameNode({
   onOpenPlanDoc,
   plans,
   visible,
+  showPendingInteraction = true,
 }: {
   frame: ToolCallFrame;
   tasks?: ReadonlyMap<string, TranscriptTask>;
@@ -356,6 +397,7 @@ function ToolFrameNode({
   onOpenPlanDoc?: OpenPlanDoc;
   plans?: ReadonlyMap<string, TranscriptPlanInfo>;
   visible: boolean;
+  showPendingInteraction?: boolean;
 }) {
   const interaction =
     findInteraction(frame.toolCallId, frame.approvalId, interactions) ??
@@ -385,9 +427,40 @@ function ToolFrameNode({
           plan={plans?.get(frame.toolCallId)}
         />
       ) : null}
-      {pending}
+      {showPendingInteraction ? pending : null}
     </>
   );
+}
+
+/** Pending approval/question cards must remain actionable even while the
+ *  command rows themselves are folded into one live activity line. */
+function ToolPendingInteractionNode({
+  frame,
+  interactions,
+  pendingSessionInteractions,
+  onResolveApproval,
+  onAnswerQuestion,
+  onDismissQuestion,
+  onOpenPlanDoc,
+}: {
+  frame: ToolCallFrame;
+  interactions?: ReadonlyMap<string, TranscriptInteraction>;
+  pendingSessionInteractions: readonly SourcedPendingInteraction[];
+  onResolveApproval?: TurnBlockProps['onResolveApproval'];
+  onAnswerQuestion?: TurnBlockProps['onAnswerQuestion'];
+  onDismissQuestion?: TurnBlockProps['onDismissQuestion'];
+  onOpenPlanDoc?: OpenPlanDoc;
+}) {
+  const interaction =
+    findInteraction(frame.toolCallId, frame.approvalId, interactions) ??
+    pendingInteractionForToolFrame(frame, pendingSessionInteractions)?.interaction;
+  if (interaction?.state !== 'pending') return null;
+  return renderInteraction(interaction, {
+    onResolveApproval,
+    onAnswerQuestion,
+    onDismissQuestion,
+    onOpenPlanDoc,
+  });
 }
 
 function FrameView({
@@ -425,8 +498,8 @@ function FrameView({
     case 'thinking':
       return visible ? <ThinkingFrame frame={frame} durationMs={stepDurationMs} /> : null;
     case 'tool': {
-      // Standalone tool frames (single-Agent, swarm, plan, todo, search) keep
-      // their own card; groupable tools arrive via ToolFrameNode instead.
+      // Standalone tool frames (plan, todo, search) keep their own card;
+      // grouped commands and Agent activity arrive through the branches above.
       return (
         <ToolFrameNode
           frame={frame}

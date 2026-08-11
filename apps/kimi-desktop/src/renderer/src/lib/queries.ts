@@ -451,6 +451,7 @@ function useInvalidateSessionList(): () => void {
   return () => {
     void queryClient.invalidateQueries({ queryKey: ['v2-sessions'] });
     void queryClient.invalidateQueries({ queryKey: ['session'] });
+    void queryClient.invalidateQueries({ queryKey: ['fs-home'] });
   };
 }
 

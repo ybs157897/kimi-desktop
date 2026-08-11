@@ -20,7 +20,6 @@ import {
   ArrowUp,
   Paperclip,
   Plus,
-  PushPin,
   Stop,
   Strategy,
   Target,
@@ -36,6 +35,11 @@ import { useConnection } from '#/lib/connection';
 import { isImageMediaType } from '#/lib/attachmentImage';
 import { compressImageDataUrl } from '#/lib/clipboardImage';
 import {
+  configuredThinkingEffort,
+  resolveThinkingEffort,
+  thinkingConfigPatch,
+} from '#/lib/conversationDefaults';
+import {
   useAbortPrompt,
   useAbortSession,
   useActivateSkill,
@@ -43,6 +47,7 @@ import {
   useFsList,
   useGoal,
   useModels,
+  usePatchConfig,
   useSession,
   useSessionStatus,
   useSkills,
@@ -82,6 +87,11 @@ export interface ComposerProps {
    *  placeholder so the words match the moment. */
   readonly empty?: boolean;
   readonly onOpenModelSettings?: () => void;
+  /** Supplies the prompt identity and server clock once POST accepts it. */
+  readonly onSubmissionAccepted?: (promptId: string, createdAt: string) => void;
+  /** Reports the gap between a local submit and its transcript turn. Success
+   *  stays pending until the transcript acknowledges it. */
+  readonly onSubmissionPendingChange?: (pending: boolean) => void;
 }
 
 /** One staged attachment before it is folded into the prompt content. */
@@ -129,6 +139,8 @@ function TargetComposer({
   agentId,
   empty = false,
   onOpenModelSettings,
+  onSubmissionAccepted,
+  onSubmissionPendingChange,
 }: ComposerProps) {
   const { api, baseUrl, token } = useConnection();
   const [editor] = useState<Editor>(() => withReact(createEditor()));
@@ -159,6 +171,7 @@ function TargetComposer({
   const upload = useUploadFile();
   const models = useModels();
   const config = useConfig();
+  const patchConfig = usePatchConfig();
   const sessionQuery = useSession(sessionId);
   const goalQuery = useGoal(sessionId);
   const statusQuery = useSessionStatus(sessionId);
@@ -178,6 +191,10 @@ function TargetComposer({
   const effectiveModel = promptModel ?? '';
   const selectedModel = models.data?.items.find((entry) => entry.model === effectiveModel);
   const supportedEfforts = selectedModel?.support_efforts;
+  const effectiveEffort = resolveThinkingEffort(
+    effort ?? statusQuery.data?.thinking_level ?? configuredThinkingEffort(config.data?.thinking),
+    selectedModel,
+  );
   const goalActive = goalQuery.data !== null && goalQuery.data !== undefined;
   const goalOn = goalActive || goalModeArmed;
   const sessionPlanMode = session?.agent_config.plan_mode === true;
@@ -255,12 +272,6 @@ function TargetComposer({
   useEffect(() => {
     setBusy(session?.busy ?? false);
   }, [session?.busy]);
-
-  useEffect(() => {
-    if (effort !== undefined && supportedEfforts !== undefined && !supportedEfforts.includes(effort)) {
-      setEffort(undefined);
-    }
-  }, [effort, supportedEfforts]);
 
   useEffect(() => {
     if (planModeOverride === sessionPlanMode) setPlanModeOverride(undefined);
@@ -508,22 +519,31 @@ function TargetComposer({
     }
 
     const goalObjective = goalObjectiveForSubmission(goalModeArmed, goalActive, text);
+    onSubmissionPendingChange?.(true);
     void (async () => {
       if (goalObjective !== undefined) {
         await updateSessionProfile.mutateAsync(agentConfigPatch({ goal_objective: goalObjective }));
       }
-      return submit.mutateAsync(promptBody(content, permissionMode, promptModel, effort, agentId));
+      return submit.mutateAsync(
+        promptBody(content, permissionMode, promptModel, effectiveEffort, agentId),
+      );
     })()
       .then((result) => {
         resetInput();
         setAttachments([]);
-        setModel(undefined);
-        setEffort(undefined);
         setGoalModeArmed(false);
-        setActivePromptId(result.prompt_id);
-        setBusy(true);
+        if (result.status === 'blocked') {
+          onSubmissionPendingChange?.(false);
+        } else {
+          onSubmissionAccepted?.(result.prompt_id, result.created_at);
+          setActivePromptId(result.prompt_id);
+          setBusy(true);
+        }
       })
-      .catch(setError);
+      .catch((submissionError) => {
+        onSubmissionPendingChange?.(false);
+        setError(submissionError);
+      });
   }, [
     value,
     attachments,
@@ -531,13 +551,15 @@ function TargetComposer({
     submit,
     permissionMode,
     promptModel,
-    effort,
+    effectiveEffort,
     agentId,
     activate,
     resetInput,
     goalModeArmed,
     goalActive,
     updateSessionProfile,
+    onSubmissionAccepted,
+    onSubmissionPendingChange,
   ]);
 
   // While busy, Enter steers the active prompt instead of queuing a new one
@@ -566,12 +588,10 @@ function TargetComposer({
       });
     }
     void submit
-      .mutateAsync(promptBody(content, permissionMode, promptModel, effort, agentId))
+      .mutateAsync(promptBody(content, permissionMode, promptModel, effectiveEffort, agentId))
       .then(async (result) => {
         resetInput();
         setAttachments([]);
-        setModel(undefined);
-        setEffort(undefined);
         if (result.status === 'queued') await steer.mutateAsync([result.prompt_id]);
         else {
           setActivePromptId(result.prompt_id);
@@ -587,7 +607,7 @@ function TargetComposer({
     steer,
     permissionMode,
     promptModel,
-    effort,
+    effectiveEffort,
     agentId,
     resetInput,
   ]);
@@ -625,8 +645,17 @@ function TargetComposer({
       .catch(setError)
       .finally(() => {
         stopBusyRef.current = false;
+        onSubmissionPendingChange?.(false);
       });
-  }, [activePromptId, session?.current_prompt_id, abort, abortSession, api, sessionId]);
+  }, [
+    activePromptId,
+    session?.current_prompt_id,
+    abort,
+    abortSession,
+    api,
+    sessionId,
+    onSubmissionPendingChange,
+  ]);
 
   useEffect(() => {
     if (!busy) return;
@@ -654,7 +683,8 @@ function TargetComposer({
     uploadsPending ||
     submit.isPending ||
     activate.isPending ||
-    updateSessionProfile.isPending;
+    updateSessionProfile.isPending ||
+    patchConfig.isPending;
 
   return (
     <div className="px-6 pb-4 pt-0">
@@ -868,36 +898,92 @@ function TargetComposer({
                   models={models.data?.items}
                   onChange={(nextModel) => {
                     setError(null);
+                    if (nextModel === '') {
+                      setModel(undefined);
+                      return;
+                    }
+                    const previousModel = model;
+                    const previousEffort = effort;
+                    const nextEntry = models.data?.items.find((entry) => entry.model === nextModel);
+                    const nextEffort = resolveThinkingEffort(effectiveEffort, nextEntry);
                     setModel(nextModel);
+                    setEffort(nextEffort);
+                    void patchConfig
+                      .mutateAsync({
+                        default_model: nextModel,
+                        thinking: nextEffort === undefined ? undefined : thinkingConfigPatch(nextEffort),
+                      })
+                      .then(
+                        async () => {
+                          if (agentId !== undefined && agentId !== 'main') return;
+                          try {
+                            await updateSessionProfile.mutateAsync(
+                              agentConfigPatch({
+                                model: nextModel,
+                                thinking: nextEffort,
+                              }),
+                            );
+                          } catch {
+                            setError(
+                              new Error('偏好已保存，但当前会话应用失败；发送消息时仍会使用所选配置。'),
+                            );
+                          }
+                        },
+                        () => {
+                          setModel(previousModel);
+                          setEffort(previousEffort);
+                          setError(new Error('模型和思考等级保存失败，请重试。'));
+                        },
+                      );
                   }}
-                  disabled={submit.isPending}
+                  disabled={submit.isPending || patchConfig.isPending || updateSessionProfile.isPending}
                   onOpenModelSettings={onOpenModelSettings}
                 />
-                {model !== undefined && model !== '' ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setError(null);
-                      updateSessionProfile.mutate(agentConfigPatch({ model }));
-                    }}
-                    disabled={submit.isPending || updateSessionProfile.isPending}
-                    title="设为本会话默认模型"
-                    aria-label="设为本会话默认模型"
-                    className="ui-pressable flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-60"
-                  >
-                    <PushPin size={14} weight="regular" aria-hidden />
-                  </button>
-                ) : null}
                 {supportedEfforts?.length === 0 ? null : (
                   <ThinkingEffortSelect
-                    value={effort}
+                    value={effectiveEffort}
                     efforts={supportedEfforts}
                     defaultEffort={selectedModel?.default_effort}
                     onChange={(nextEffort) => {
                       setError(null);
-                      setEffort(nextEffort);
+                      const resolvedEffort = resolveThinkingEffort(
+                        nextEffort === '' ? undefined : nextEffort,
+                        selectedModel,
+                      );
+                      if (resolvedEffort === undefined) {
+                        setEffort(undefined);
+                        return;
+                      }
+                      const previousEffort = effort;
+                      setEffort(resolvedEffort);
+                      void patchConfig
+                        .mutateAsync({
+                          thinking: thinkingConfigPatch(resolvedEffort),
+                        })
+                        .then(
+                          async () => {
+                            if (agentId !== undefined && agentId !== 'main') return;
+                            try {
+                              await updateSessionProfile.mutateAsync(
+                                agentConfigPatch({ thinking: resolvedEffort }),
+                              );
+                            } catch {
+                              setError(
+                                new Error(
+                                  '偏好已保存，但当前会话应用失败；发送消息时仍会使用所选配置。',
+                                ),
+                              );
+                            }
+                          },
+                          () => {
+                            setEffort(previousEffort);
+                            setError(new Error('思考等级保存失败，请重试。'));
+                          },
+                        );
                     }}
-                    disabled={submit.isPending}
+                    disabled={
+                      submit.isPending || patchConfig.isPending || updateSessionProfile.isPending
+                    }
                   />
                 )}
               </div>
@@ -947,6 +1033,7 @@ function ModeChip({
 
 function friendlyComposerError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  if (message.includes('保存') || message.includes('当前会话应用失败')) return message;
   if (message.includes('is not configured') || message.includes('MODEL')) {
     return '当前模型不可用，请从下方模型菜单选择一个已配置的模型。';
   }

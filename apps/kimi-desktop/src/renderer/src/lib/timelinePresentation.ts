@@ -1,6 +1,5 @@
 import type {
   ToolCallFrame,
-  TranscriptFrame,
   TranscriptItem,
   TranscriptTask,
   TranscriptTurn,
@@ -15,6 +14,51 @@ export function visibleTimelineItems(items: readonly TranscriptItem[]): readonly
   return items.filter(
     (item) => item.kind !== 'marker' || item.marker === 'compact',
   );
+}
+
+/** Highest turn ordinal currently known to the transcript. This is a stable
+ *  submission watermark: paging older history cannot move it forward. */
+export function latestTurnOrdinal(items: readonly TranscriptItem[]): number | undefined {
+  let latest: number | undefined;
+  for (const item of items) {
+    if (item.kind === 'turn' && (latest === undefined || item.ordinal > latest)) {
+      latest = item.ordinal;
+    }
+  }
+  return latest;
+}
+
+/** Whether the transcript has acknowledged a prompt submitted after the
+ *  supplied watermark. Accept terminal turns too: a fast turn may start and
+ *  finish in one operation batch without ever rendering a live state. */
+export function hasUserTurnAfter(
+  items: readonly TranscriptItem[],
+  ordinal: number | undefined,
+): boolean {
+  return items.some(
+    (item) =>
+      item.kind === 'turn' &&
+      item.origin.kind === 'user' &&
+      (ordinal === undefined || item.ordinal > ordinal),
+  );
+}
+
+/** Acknowledgement fallback when submission began before the REST transcript
+ *  baseline loaded. Both timestamps come from the server, so historical turns
+ *  that arrive with that baseline cannot be mistaken for the new prompt. */
+export function hasUserTurnSince(
+  items: readonly TranscriptItem[],
+  createdAt: string,
+): boolean {
+  const threshold = Date.parse(createdAt);
+  if (Number.isNaN(threshold)) return false;
+  return items.some((item) => {
+    if (item.kind !== 'turn' || item.origin.kind !== 'user' || item.startedAt === undefined) {
+      return false;
+    }
+    const startedAt = Date.parse(item.startedAt);
+    return !Number.isNaN(startedAt) && startedAt >= threshold;
+  });
 }
 
 /**
