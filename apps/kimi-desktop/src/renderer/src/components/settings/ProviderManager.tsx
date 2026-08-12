@@ -95,7 +95,7 @@ export function ProviderManager({ onModalOpenChange }: ProviderManagerProps) {
             <button
               type="button"
               onClick={() => setView('add')}
-              className={`ui-pressable mt-1 flex h-9 w-full items-center gap-2 rounded-[var(--radius-sm)] border border-transparent px-3 text-left text-[14px] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] ${
+              className={`ui-pressable mt-1 flex h-9 w-full items-center gap-2 rounded-[var(--radius-sm)] border border-transparent px-3 text-left text-[length:var(--client-content-font-size)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] ${
                 view === 'add'
                   ? 'border-[var(--color-border)] bg-[var(--color-background-muted)] font-medium text-[var(--color-text-foreground)]'
                   : 'text-[var(--color-text-secondary)]'
@@ -157,7 +157,7 @@ function ProviderGroup({ label, providers, selectedId, onSelect }: ProviderGroup
                 type="button"
                 aria-current={active ? 'true' : undefined}
                 onClick={() => onSelect(provider.id)}
-                className={`ui-pressable flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] border px-3 text-left text-[14px] ${
+                className={`ui-pressable flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] border px-3 text-left text-[length:var(--client-content-font-size)] ${
                   active
                     ? 'border-[var(--color-border)] bg-[var(--color-background-muted)] font-medium text-[var(--color-text-foreground)]'
                     : 'border-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]'

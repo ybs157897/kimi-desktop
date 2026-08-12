@@ -772,6 +772,7 @@ export function App() {
             className="ui-popover absolute right-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] w-[300px] flex-col overflow-hidden rounded-[20px] border border-[var(--color-border)] bg-[var(--color-background-panel)] shadow-[var(--shadow-xl)]"
           >
             <PlanPanel
+              key={activeSessionId}
               sessionId={activeSessionId}
               cwd={activeSession?.workspace.cwd ?? undefined}
               plans={(transcriptSummary ?? EMPTY_SUMMARY).plans}

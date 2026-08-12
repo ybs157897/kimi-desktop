@@ -39,13 +39,23 @@
  *   POST /v1/sessions/{sid}/fs:git_status
  *     Body: FsGitStatusRequest  { paths? }
  *     Response data: FsGitStatusResponse  { branch, ahead, behind, entries,
+ *                                           stagedEntries, unstagedEntries,
  *                                           additions, deletions }
  *     Errors: 40401, 40908 (not a git repo), 41304
  *
  *   POST /v1/sessions/{sid}/fs:diff
- *     Body: FsDiffRequest  { path }
+ *     Body: FsDiffRequest  { path, mode? }
  *     Response data: FsDiffResponse  { path, diff, truncated }
  *     Errors: 40401, 40409, 40908 (not a git repo), 41304
+ *
+ *   POST /v1/sessions/{sid}/fs:git_stage       { paths? }
+ *   POST /v1/sessions/{sid}/fs:git_unstage     { paths? }
+ *   POST /v1/sessions/{sid}/fs:git_discard     { paths, include_untracked? }
+ *   POST /v1/sessions/{sid}/fs:git_commit      { message }
+ *   POST /v1/sessions/{sid}/fs:git_generate_commit_message { draft?, include_unstaged? }
+ *   POST /v1/sessions/{sid}/fs:git_pull        { rebase? }
+ *   POST /v1/sessions/{sid}/fs:git_push        { set_upstream? }
+ *   POST /v1/sessions/{sid}/fs:git_create_branch { branch, checkout? }
  *
  *   GET /v1/sessions/{sid}/fs/{path}:download
  *     Response: binary stream or envelope (40401 / 40409 / 41304)
@@ -279,6 +289,8 @@ export const fsGitStatusResponseSchema = z.object({
   ahead: z.number().int().nonnegative(),
   behind: z.number().int().nonnegative(),
   entries: z.record(z.string(), fsGitStatusSchema),
+  stagedEntries: z.record(z.string(), fsGitStatusSchema).default({}),
+  unstagedEntries: z.record(z.string(), fsGitStatusSchema).default({}),
   // Aggregate working-tree diff against HEAD (`git diff --numstat HEAD`):
   // summed added/deleted lines across all changed files. Binary files (numstat
   // `-`) contribute 0. Both 0 for a clean tree or a repo with no commits yet.
@@ -310,10 +322,76 @@ export const fsGitCheckoutResponseSchema = z.object({
 });
 export type FsGitCheckoutResponse = z.infer<typeof fsGitCheckoutResponseSchema>;
 
+export const fsGitPathsRequestSchema = z.object({
+  paths: z.array(z.string().min(1)).min(1).max(1000),
+});
+
+export const fsGitStageRequestSchema = z.object({
+  paths: z.array(z.string().min(1)).min(1).max(1000).optional(),
+});
+export type FsGitStageRequest = z.infer<typeof fsGitStageRequestSchema>;
+export const fsGitStageResponseSchema = fsGitPathsRequestSchema;
+export type FsGitStageResponse = z.infer<typeof fsGitStageResponseSchema>;
+
+export const fsGitUnstageRequestSchema = fsGitStageRequestSchema;
+export type FsGitUnstageRequest = z.infer<typeof fsGitUnstageRequestSchema>;
+export const fsGitUnstageResponseSchema = fsGitPathsRequestSchema;
+export type FsGitUnstageResponse = z.infer<typeof fsGitUnstageResponseSchema>;
+
+export const fsGitDiscardRequestSchema = fsGitPathsRequestSchema.extend({
+  include_untracked: z.boolean().default(false),
+});
+export type FsGitDiscardRequest = z.infer<typeof fsGitDiscardRequestSchema>;
+export const fsGitDiscardResponseSchema = fsGitPathsRequestSchema;
+export type FsGitDiscardResponse = z.infer<typeof fsGitDiscardResponseSchema>;
+
+export const fsGitCommitRequestSchema = z.object({
+  message: z.string().trim().min(1).max(10_000),
+});
+export type FsGitCommitRequest = z.infer<typeof fsGitCommitRequestSchema>;
+export const fsGitCommitResponseSchema = z.object({ commit: z.string().min(1) });
+export type FsGitCommitResponse = z.infer<typeof fsGitCommitResponseSchema>;
+
+export const fsGitGenerateCommitMessageRequestSchema = z.object({
+  draft: z.string().max(10_000).optional(),
+  include_unstaged: z.boolean().default(true),
+});
+export type FsGitGenerateCommitMessageRequest = z.infer<
+  typeof fsGitGenerateCommitMessageRequestSchema
+>;
+export const fsGitGenerateCommitMessageResponseSchema = z.object({
+  message: z.string().trim().min(1).max(10_000),
+});
+export type FsGitGenerateCommitMessageResponse = z.infer<
+  typeof fsGitGenerateCommitMessageResponseSchema
+>;
+
+export const fsGitPullRequestSchema = z.object({ rebase: z.boolean().default(false) });
+export type FsGitPullRequest = z.infer<typeof fsGitPullRequestSchema>;
+export const fsGitPullResponseSchema = z.object({ output: z.string() });
+export type FsGitPullResponse = z.infer<typeof fsGitPullResponseSchema>;
+
+export const fsGitPushRequestSchema = z.object({
+  set_upstream: z.boolean().default(true),
+});
+export type FsGitPushRequest = z.infer<typeof fsGitPushRequestSchema>;
+export const fsGitPushResponseSchema = z.object({ output: z.string() });
+export type FsGitPushResponse = z.infer<typeof fsGitPushResponseSchema>;
+
+export const fsGitCreateBranchRequestSchema = z.object({
+  branch: z.string().trim().min(1),
+  checkout: z.boolean().default(true),
+});
+export type FsGitCreateBranchRequest = z.infer<typeof fsGitCreateBranchRequestSchema>;
+export const fsGitCreateBranchResponseSchema = z.object({ branch: z.string() });
+export type FsGitCreateBranchResponse = z.infer<typeof fsGitCreateBranchResponseSchema>;
+
 export const fsDiffRequestSchema = z.object({
   path: z.string().min(1),
+  mode: z.enum(['all', 'staged', 'unstaged']).default('all'),
 });
 export type FsDiffRequest = z.infer<typeof fsDiffRequestSchema>;
+export type FsDiffMode = FsDiffRequest['mode'];
 
 export const fsDiffResponseSchema = z.object({
   path: z.string(),

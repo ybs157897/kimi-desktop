@@ -1,3 +1,11 @@
+/**
+ * Scenario: parse git and GitHub CLI output into the public git contract.
+ * Responsibilities: branch metadata, staged/unstaged paths, rename/conflict
+ * records, numstat totals, and pull-request validation. Wiring: pure parser
+ * functions only. Run: pnpm --filter @moonshot-ai/agent-core-v2 exec vitest
+ * run test/app/git/gitParsers.test.ts
+ */
+
 import { describe, expect, it } from 'vitest';
 
 import { parseNumstat, parsePorcelain, parsePullRequest } from '#/app/git/gitParsers';
@@ -35,6 +43,27 @@ describe('parsePorcelain', () => {
     const out = '## main\n M src/a.ts\n M src/b.ts\n';
     const result = parsePorcelain(out, new Set(['src/a.ts']));
     expect(result.entries).toEqual({ 'src/a.ts': 'modified' });
+  });
+
+  it('parses nul-delimited rename records and preserves the destination path', () => {
+    const result = parsePorcelain('## main\0R  new name.txt\0old name.txt\0', undefined);
+
+    expect(result.entries).toEqual({ 'new name.txt': 'renamed' });
+    expect(result.stagedEntries).toEqual({ 'new name.txt': 'renamed' });
+    expect(result.unstagedEntries).toEqual({});
+  });
+
+  it('preserves a literal backslash in a nul-delimited filename', () => {
+    const result = parsePorcelain('## main\0?? back\\slash.txt\0', undefined);
+
+    expect(result.unstagedEntries).toEqual({ 'back\\slash.txt': 'untracked' });
+  });
+
+  it('places a conflicted path in both index and working tree groups', () => {
+    const result = parsePorcelain('## main\0UU conflict.txt\0', undefined);
+
+    expect(result.stagedEntries).toEqual({ 'conflict.txt': 'conflicted' });
+    expect(result.unstagedEntries).toEqual({ 'conflict.txt': 'conflicted' });
   });
 });
 

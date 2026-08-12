@@ -81,9 +81,13 @@
   --code-line-height: 1.28;
   --tracking-display-tight: -0.03em;
 
-  /* Chat defaults follow the client content size; code matches cc-gui. */
+  /* Chat defaults follow the client content size. Markdown and fenced code
+     keep independent defaults so the General settings can tune each scale. */
   --codex-chat-font-size: var(--client-content-font-size);
   --codex-code-font-size: var(--code-font-size);
+  --markdown-font-size: 14px;
+  --markdown-code-block-font-size: 13px;
+  --color-user-text-foreground: var(--color-text-foreground);
 
   --font-size-xs: var(--client-caption-font-size);
   --font-size-sm: var(--client-meta-font-size);
@@ -169,7 +173,7 @@
   --markdown-list-padding-inline-start: 1.3125rem;
   --markdown-paragraph-spacing: 0.6875rem;
   /* line-height = font-size + 8px (the Codex markdown-content rhythm). */
-  --markdown-line-height: calc(var(--codex-chat-font-size, 14px) + 8px);
+  --markdown-line-height: calc(var(--markdown-font-size, 14px) + 8px);
   --markdown-heading-margin: 20px 0 10px;
   --markdown-hr-margin: 28px 0;
   --markdown-li-gap: 0.5rem;
@@ -193,6 +197,7 @@
   --color-background-editor-opaque: #2c2c2e;
   --color-background-panel: #2c2c2e;
   --color-background-muted: #3a3a3c;
+  --toggle-off: rgb(255 255 255 / 0.18);
   --color-terminal-shell: #151515;
   --color-background-accent: color-mix(in srgb, var(--primary) 22%, #2c2c2e);
   --color-user-bubble: rgb(255 255 255 / 0.08);
@@ -344,6 +349,7 @@
   --color-background-editor-opaque: #ffffff;
   --color-background-panel: #ffffff;
   --color-background-muted: #F7F8FA;
+  --toggle-off: rgb(20 22 26 / 0.12);
   --color-terminal-shell: #171717;
   --color-background-accent: color-mix(in srgb, var(--primary) 12%, white);
   --color-user-bubble: #ececea;

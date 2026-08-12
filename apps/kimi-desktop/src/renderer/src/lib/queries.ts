@@ -20,6 +20,7 @@ import type {
   CompactSessionRequest,
   CreateTerminalRequest,
   ForkSessionRequest,
+  FsGitGenerateCommitMessageRequest,
   FsListRequest,
   FsReadRequest,
   GetSessionGoalResponse,
@@ -207,8 +208,8 @@ export function usePatchConfig() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: PatchConfigRequest) => api.patchConfig(body),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['config'] });
+    onSuccess: (config) => {
+      queryClient.setQueryData(['config'], config);
     },
   });
 }
@@ -313,21 +314,110 @@ export function useFsGitCheckout(sessionId: string) {
   const { api } = useConnection();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ['git-mutation', sessionId],
     mutationFn: (branch: string) => api.fsGitCheckout(sessionId, branch),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['fs-git-status', sessionId] });
-      void queryClient.invalidateQueries({ queryKey: ['fs-git-branches', sessionId] });
-      void queryClient.invalidateQueries({ queryKey: ['v2-sessions'] });
-    },
+    onSettled: () => invalidateGitQueries(queryClient, sessionId),
   });
 }
 
+export function useFsGitCreateBranch(sessionId: string) {
+  const { api } = useConnection();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['git-mutation', sessionId],
+    mutationFn: (args: { branch: string; checkout?: boolean }) =>
+      api.fsGitCreateBranch(sessionId, args.branch, args.checkout),
+    onSettled: () => invalidateGitQueries(queryClient, sessionId),
+  });
+}
+
+export function useFsGitStage(sessionId: string) {
+  const { api } = useConnection();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['git-mutation', sessionId],
+    mutationFn: (paths?: readonly string[]) => api.fsGitStage(sessionId, paths),
+    onSettled: () => invalidateGitQueries(queryClient, sessionId),
+  });
+}
+
+export function useFsGitUnstage(sessionId: string) {
+  const { api } = useConnection();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['git-mutation', sessionId],
+    mutationFn: (paths?: readonly string[]) => api.fsGitUnstage(sessionId, paths),
+    onSettled: () => invalidateGitQueries(queryClient, sessionId),
+  });
+}
+
+export function useFsGitDiscard(sessionId: string) {
+  const { api } = useConnection();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['git-mutation', sessionId],
+    mutationFn: (args: { paths: readonly string[]; includeUntracked: boolean }) =>
+      api.fsGitDiscard(sessionId, args.paths, args.includeUntracked),
+    onSettled: () => invalidateGitQueries(queryClient, sessionId),
+  });
+}
+
+export function useFsGitCommit(sessionId: string) {
+  const { api } = useConnection();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['git-mutation', sessionId],
+    mutationFn: (message: string) => api.fsGitCommit(sessionId, message),
+    onSettled: () => invalidateGitQueries(queryClient, sessionId),
+  });
+}
+
+export function useFsGitGenerateCommitMessage(sessionId: string) {
+  const { api } = useConnection();
+  return useMutation({
+    mutationKey: ['git-commit-message', sessionId],
+    mutationFn: (request: FsGitGenerateCommitMessageRequest) =>
+      api.fsGitGenerateCommitMessage(sessionId, request),
+  });
+}
+
+export function useFsGitPull(sessionId: string) {
+  const { api } = useConnection();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['git-mutation', sessionId],
+    mutationFn: (rebase: boolean) => api.fsGitPull(sessionId, rebase),
+    onSettled: () => invalidateGitQueries(queryClient, sessionId),
+  });
+}
+
+export function useFsGitPush(sessionId: string) {
+  const { api } = useConnection();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['git-mutation', sessionId],
+    mutationFn: (setUpstream: boolean) => api.fsGitPush(sessionId, setUpstream),
+    onSettled: () => invalidateGitQueries(queryClient, sessionId),
+  });
+}
+
+function invalidateGitQueries(queryClient: ReturnType<typeof useQueryClient>, sessionId: string): void {
+  void queryClient.invalidateQueries({ queryKey: ['fs-git-status', sessionId] });
+  void queryClient.invalidateQueries({ queryKey: ['fs-git-branches', sessionId] });
+  void queryClient.invalidateQueries({ queryKey: ['fs-diff', sessionId] });
+  void queryClient.invalidateQueries({ queryKey: ['v2-sessions'] });
+}
+
 /** `POST /api/v1/sessions/{id}/fs:diff` — unified diff for one changed path. */
-export function useFsDiff(sessionId: string | null, path: string | null) {
+export function useFsDiff(
+  sessionId: string | null,
+  path: string | null,
+  mode: 'all' | 'staged' | 'unstaged' = 'all',
+) {
   const { api } = useConnection();
   return useQuery({
-    queryKey: ['fs-diff', sessionId, path],
-    queryFn: () => api.fsDiff(sessionId as string, path as string),
+    queryKey: ['fs-diff', sessionId, path, mode],
+    queryFn: () => api.fsDiff(sessionId as string, path as string, mode),
     enabled: sessionId !== null && path !== null,
     staleTime: 5_000,
   });

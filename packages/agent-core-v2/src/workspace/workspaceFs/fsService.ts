@@ -21,41 +21,6 @@
 
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import {
-  type FsDiffRequest,
-  type FsDiffResponse,
-  type FsEntry,
-  type FsGitStatusRequest,
-  type FsGitStatusResponse,
-  type FsGrepFileHit,
-  type FsGrepMatch,
-  type FsGrepRequest,
-  type FsGrepResponse,
-  type FsListManyRequest,
-  type FsListManyResponse,
-  type FsListRequest,
-  type FsListResponse,
-  type FsMkdirRequest,
-  type FsMkdirResponse,
-  type FsReadRequest,
-  type FsReadResponse,
-  type FsSearchHit,
-  type FsSearchRequest,
-  type FsSearchResponse,
-  type FsStatManyRequest,
-  type FsStatManyResponse,
-  type FsStatRequest,
-  type FsStatResponse,
-} from './fs';
-
-const FsWireErrorCode = {
-  FS_PATH_NOT_FOUND: 40409,
-  FS_IS_DIRECTORY: 40906,
-  FS_IS_BINARY: 40907,
-  FS_TOO_LARGE: 41302,
-  FS_TOO_MANY_RESULTS: 41303,
-  INTERNAL_ERROR: 50001,
-} as const;
 import ignore, { type Ignore } from 'ignore';
 
 import { LifecycleScope } from '#/app/scopes';
@@ -77,7 +42,41 @@ import { IWorkspaceContext } from '#/workspace/workspaceContext/workspaceContext
 import { IWorkspaceDirs } from '#/workspace/workspaceDirs/workspaceDirs';
 import { IWorkspaceGitService } from '#/workspace/workspaceGit/workspaceGit';
 
-import { type FsDownloadResolved, type FsPathResolved, IWorkspaceFsService } from './fs';
+import {
+  type FsDiffRequest,
+  type FsDiffResponse,
+  type FsEntry,
+  type FsGitDiscardRequest,
+  type FsGitDiscardResponse,
+  type FsGitStageRequest,
+  type FsGitStageResponse,
+  type FsGitStatusRequest,
+  type FsGitStatusResponse,
+  type FsGitUnstageRequest,
+  type FsGitUnstageResponse,
+  type FsGrepFileHit,
+  type FsGrepMatch,
+  type FsGrepRequest,
+  type FsGrepResponse,
+  type FsListManyRequest,
+  type FsListManyResponse,
+  type FsListRequest,
+  type FsListResponse,
+  type FsMkdirRequest,
+  type FsMkdirResponse,
+  type FsReadRequest,
+  type FsReadResponse,
+  type FsSearchHit,
+  type FsSearchRequest,
+  type FsSearchResponse,
+  type FsStatManyRequest,
+  type FsStatManyResponse,
+  type FsStatRequest,
+  type FsStatResponse,
+  type FsDownloadResolved,
+  type FsPathResolved,
+  IWorkspaceFsService,
+} from './fs';
 import { readStream, runCommand } from './internal/fsProcess';
 import { ensureRgPath, type RgProbe, type RgResolution } from './internal/rgLocator';
 import {
@@ -90,6 +89,15 @@ import {
   rgText,
   stripTrailingNewline,
 } from './internal/fsSearch';
+
+const FsWireErrorCode = {
+  FS_PATH_NOT_FOUND: 40409,
+  FS_IS_DIRECTORY: 40906,
+  FS_IS_BINARY: 40907,
+  FS_TOO_LARGE: 41302,
+  FS_TOO_MANY_RESULTS: 41303,
+  INTERNAL_ERROR: 50001,
+} as const;
 
 const SEARCH_HARD_CAP = 500;
 const GREP_TIMEOUT_MS = 30_000;
@@ -545,9 +553,43 @@ export class WorkspaceFsService implements IWorkspaceFsService {
     return this.git.status(filter);
   }
 
+  async gitStage(req: FsGitStageRequest): Promise<FsGitStageResponse> {
+    const paths = await this.confineGitPaths(req.paths);
+    return this.git.stage(paths);
+  }
+
+  async gitUnstage(req: FsGitUnstageRequest): Promise<FsGitUnstageResponse> {
+    const paths = await this.confineGitPaths(req.paths);
+    return this.git.unstage(paths);
+  }
+
+  async gitDiscard(req: FsGitDiscardRequest): Promise<FsGitDiscardResponse> {
+    const paths = await this.confineGitPaths(req.paths);
+    return this.git.discard(paths, req.include_untracked);
+  }
+
   async diff(req: FsDiffRequest): Promise<FsDiffResponse> {
     const abs = await this.resolveWithin(req.path);
-    return this.git.diff(this.toRel(abs), abs);
+    return this.git.diff(this.toRel(abs), abs, req.mode);
+  }
+
+  private async confineGitPaths(paths: readonly string[] | undefined): Promise<readonly string[]> {
+    if (paths === undefined) return ['.'];
+    return Promise.all(paths.map(async (path) => {
+      const parent = dirname(path);
+      if (parent === '.' || parent === '') {
+        await this.resolveWithin('.');
+      } else {
+        await this.resolveWithin(parent);
+      }
+      const abs = this.resolvePathInput(path);
+      if (!this.isWithinWorkspace(abs)) {
+        throw new Error2(ErrorCodes.FS_PATH_ESCAPES, `path "${path}" escapes workspace`, {
+          details: { path, reason: 'resolved_outside' },
+        });
+      }
+      return this.toRel(abs);
+    }));
   }
 
   private async grepWithRg(

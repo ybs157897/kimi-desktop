@@ -1,4 +1,5 @@
-import { chmod, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { chmod, mkdtemp, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -15,7 +16,7 @@ interface Envelope<T> {
   msg: string;
   data: T;
   request_id: string;
-  details?: { path: string; message: string }[];
+  details?: unknown;
 }
 
 interface FsEntryWire {
@@ -109,6 +110,21 @@ describe('server-v2 /api/v1 fs routes', () => {
       body: JSON.stringify(body),
     } as never);
     return (await res.json()) as Envelope<T>;
+  }
+
+  function git(...args: string[]): string {
+    return execFileSync('git', args, {
+      cwd: work,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  }
+
+  function initGit(): void {
+    git('init');
+    git('config', 'user.email', 'test@example.com');
+    git('config', 'user.name', 'Test');
+    git('config', 'commit.gpgsign', 'false');
   }
 
   it('fs:stat returns a file entry with the protocol shape', async () => {
@@ -263,6 +279,101 @@ describe('server-v2 /api/v1 fs routes', () => {
     const id = await createSession();
     const body = await postFs<null>(id, 'git_status', {});
     expect(body.code).toBe(ErrorCode.FS_GIT_UNAVAILABLE);
+  });
+
+  it('fs:git_stage confines and stages a workspace-relative path', async () => {
+    initGit();
+    await writeFile(join(work!, 'a.txt'), 'hello\n');
+    const id = await createSession();
+
+    const staged = await postFs<{ paths: string[] }>(id, 'git_stage', { paths: ['a.txt'] });
+    const status = await postFs<{ stagedEntries: Record<string, string> }>(id, 'git_status', {});
+
+    expect(staged.code).toBe(0);
+    expect(staged.data.paths).toEqual(['a.txt']);
+    expect(status.data.stagedEntries).toEqual({ 'a.txt': 'added' });
+  });
+
+  it('fs:git_stage accepts a deleted path after confinement', async () => {
+    initGit();
+    await writeFile(join(work!, 'deleted.txt'), 'hello\n');
+    git('add', 'deleted.txt');
+    git('commit', '-m', 'initial');
+    await unlink(join(work!, 'deleted.txt'));
+    const id = await createSession();
+
+    const staged = await postFs<{ paths: string[] }>(id, 'git_stage', {
+      paths: ['deleted.txt'],
+    });
+    const status = await postFs<{ stagedEntries: Record<string, string> }>(id, 'git_status', {});
+
+    expect(staged.code).toBe(0);
+    expect(status.data.stagedEntries).toEqual({ 'deleted.txt': 'deleted' });
+  });
+
+  it('fs:git_stage stages a symlink leaf without following its target', async () => {
+    initGit();
+    const outside = await mkdtemp(join(tmpdir(), 'kimi-server-v2-git-outside-'));
+    try {
+      await writeFile(join(outside, 'target.txt'), 'outside\n');
+      await symlink(join(outside, 'target.txt'), join(work!, 'link.txt'));
+      const id = await createSession();
+
+      const staged = await postFs<{ paths: string[] }>(id, 'git_stage', {
+        paths: ['link.txt'],
+      });
+      const status = await postFs<{ stagedEntries: Record<string, string> }>(id, 'git_status', {});
+
+      expect(staged.code).toBe(0);
+      expect(status.data.stagedEntries).toEqual({ 'link.txt': 'added' });
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('fs:git_stage rejects a path that escapes the workspace', async () => {
+    initGit();
+    const id = await createSession();
+
+    const body = await postFs<null>(id, 'git_stage', { paths: ['../outside.txt'] });
+
+    expect(body.code).toBe(ErrorCode.FS_PATH_ESCAPES_SESSION);
+  });
+
+  it('fs:git_commit returns the new commit id', async () => {
+    initGit();
+    await writeFile(join(work!, 'a.txt'), 'hello\n');
+    const id = await createSession();
+    await postFs(id, 'git_stage', { paths: ['a.txt'] });
+
+    const body = await postFs<{ commit: string }>(id, 'git_commit', {
+      message: 'initial commit',
+    });
+
+    expect(body.code).toBe(0);
+    expect(body.data.commit).toBe(git('rev-parse', 'HEAD'));
+  });
+
+  it('fs:git_generate_commit_message maps an unknown session to SESSION_NOT_FOUND', async () => {
+    const body = await postFs<null>('does-not-exist', 'git_generate_commit_message', {});
+
+    expect(body.code).toBe(ErrorCode.SESSION_NOT_FOUND);
+  });
+
+  it('fs:git_discard exposes the safe failure detail for an untracked path', async () => {
+    initGit();
+    await writeFile(join(work!, 'new.txt'), 'new\n');
+    const id = await createSession();
+
+    const body = await postFs<null>(id, 'git_discard', {
+      paths: ['new.txt'],
+      include_untracked: false,
+    });
+
+    expect(body.code).toBe(ErrorCode.FS_GIT_UNAVAILABLE);
+    expect(body.details).toMatchObject({
+      detail: 'untracked paths require include_untracked=true',
+    });
   });
 
   it('rejects an unknown action with VALIDATION_FAILED', async () => {

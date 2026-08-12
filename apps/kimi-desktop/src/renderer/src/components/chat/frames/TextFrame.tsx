@@ -30,7 +30,7 @@ export function TextFrame({ frame, attachments }: TextFrameProps) {
         <div className="max-w-[min(80%,36rem)]">
           {chips}
           <div className="rounded-2xl bg-[var(--color-user-bubble)] px-3.5 py-2.5 shadow-[var(--shadow-sm)]">
-            <div className="whitespace-pre-wrap text-[14px] leading-[var(--leading-chat)] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)]">
+            <div className="whitespace-pre-wrap text-[length:var(--client-content-font-size)] leading-[var(--leading-chat)] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)]">
               {frame.text}
             </div>
           </div>
@@ -41,7 +41,7 @@ export function TextFrame({ frame, attachments }: TextFrameProps) {
   // Turn stays `running` through tool calls; only the tip text frame streams.
   const streaming = turn?.liveTailFrameId === frame.frameId;
   return (
-    <div className="ui-card-enter mb-3 max-w-[46rem] text-[14px] leading-[var(--leading-chat)] tracking-[var(--tracking-tight)]">
+    <div className="ui-card-enter mb-3 max-w-[46rem] text-[length:var(--client-content-font-size)] leading-[var(--leading-chat)] tracking-[var(--tracking-tight)]">
       {chips}
       <Markdown source={frame.text} streaming={streaming} />
     </div>

@@ -128,7 +128,9 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       case 'connecting':
         return (
           <div className="flex h-screen items-center justify-center">
-            <div className="text-sm text-neutral-500">正在连接 kimi-code 服务器…</div>
+            <div className="text-[length:var(--client-content-font-size)] text-neutral-500">
+              正在连接 kimi-code 服务器…
+            </div>
           </div>
         );
       case 'error':
@@ -157,7 +159,7 @@ function ConnectionError({ message, onRetry }: { message: string; onRetry: () =>
         <h1 className="mb-1 text-lg font-semibold text-neutral-100">无法连接 kimi-code</h1>
         <p className="mb-4 whitespace-pre-wrap text-xs leading-relaxed text-neutral-400">{message}</p>
         <button
-          className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500"
+          className="rounded bg-sky-600 px-3 py-1.5 text-[length:var(--client-content-font-size)] font-medium text-white hover:bg-sky-500"
           onClick={onRetry}
         >
           重试

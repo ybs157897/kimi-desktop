@@ -57,7 +57,7 @@ export function PanelHost({ tabs, activeId, onSelect, onCloseTab, children, acti
                 }}
                 className={`ui-pressable flex h-7 min-w-0 max-w-[12rem] shrink-0 cursor-pointer select-none items-center gap-1 rounded-[var(--radius-sm)] border pl-2.5 ${
                   tab.closable === true && onCloseTab !== undefined ? 'pr-1' : 'pr-2.5'
-                } text-[11.5px] font-medium ${
+                } text-[14px] font-medium ${
                   active
                     ? 'border-[var(--color-border)] bg-[var(--color-background-surface)] text-[var(--color-text-foreground)] shadow-[var(--shadow-sm)]'
                     : 'border-transparent text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]'

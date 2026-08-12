@@ -55,7 +55,14 @@ function workspaceGitStub(git: IGitService): IWorkspaceGitService {
     status: (filter) => git.status(WORK_DIR, filter),
     branches: () => git.branches(WORK_DIR),
     checkout: (branch) => git.checkout(WORK_DIR, branch),
-    diff: (rel, abs) => git.diff(WORK_DIR, rel, abs),
+    stage: (paths) => git.stage(WORK_DIR, paths),
+    unstage: (paths) => git.unstage(WORK_DIR, paths),
+    discard: (paths, includeUntracked) => git.discard(WORK_DIR, paths, includeUntracked),
+    commit: (message) => git.commit(WORK_DIR, message),
+    pull: (rebase) => git.pull(WORK_DIR, rebase),
+    push: (setUpstream) => git.push(WORK_DIR, setUpstream),
+    createBranch: (branch, checkout) => git.createBranch(WORK_DIR, branch, checkout),
+    diff: (rel, abs, mode) => git.diff(WORK_DIR, rel, abs, mode),
   };
 }
 
@@ -340,12 +347,21 @@ function defaultGitStub(): IGitService {
       ahead: 0,
       behind: 0,
       entries: {},
+      stagedEntries: {},
+      unstagedEntries: {},
       additions: 0,
       deletions: 0,
       pullRequest: null,
     }),
     branches: async () => ({ current: '', branches: [] }),
     checkout: async (branch) => ({ branch }),
+    stage: async (_cwd, paths) => ({ paths: [...paths] }),
+    unstage: async (_cwd, paths) => ({ paths: [...paths] }),
+    discard: async (_cwd, paths) => ({ paths: [...paths] }),
+    commit: async () => ({ commit: 'abc123' }),
+    pull: async () => ({ output: '' }),
+    push: async () => ({ output: '' }),
+    createBranch: async (_cwd, branch) => ({ branch }),
     diff: async () => ({ path: '', diff: '', truncated: false }),
     findWorkTree: async () => null,
   };
@@ -386,6 +402,8 @@ describe('WorkspaceFsService.gitStatus', () => {
           ahead: 0,
           behind: 0,
           entries: { 'src/a.ts': 'modified' },
+          stagedEntries: {},
+          unstagedEntries: { 'src/a.ts': 'modified' },
           additions: 3,
           deletions: 1,
           pullRequest: null,
@@ -393,6 +411,13 @@ describe('WorkspaceFsService.gitStatus', () => {
       },
       branches: async () => ({ current: 'main', branches: ['main'] }),
       checkout: async (branch) => ({ branch }),
+      stage: async (_cwd, paths) => ({ paths: [...paths] }),
+      unstage: async (_cwd, paths) => ({ paths: [...paths] }),
+      discard: async (_cwd, paths) => ({ paths: [...paths] }),
+      commit: async () => ({ commit: 'abc123' }),
+      pull: async () => ({ output: '' }),
+      push: async () => ({ output: '' }),
+      createBranch: async (_cwd, branch) => ({ branch }),
       diff: async () => ({ path: '', diff: '', truncated: false }),
       findWorkTree: async () => null,
     };
@@ -414,6 +439,13 @@ describe('WorkspaceFsService.gitStatus', () => {
       },
       branches: async () => ({ current: '', branches: [] }),
       checkout: async (branch) => ({ branch }),
+      stage: async (_cwd, paths) => ({ paths: [...paths] }),
+      unstage: async (_cwd, paths) => ({ paths: [...paths] }),
+      discard: async (_cwd, paths) => ({ paths: [...paths] }),
+      commit: async () => ({ commit: 'abc123' }),
+      pull: async () => ({ output: '' }),
+      push: async () => ({ output: '' }),
+      createBranch: async (_cwd, branch) => ({ branch }),
       diff: async () => ({ path: '', diff: '', truncated: false }),
       findWorkTree: async () => null,
     };
@@ -432,12 +464,21 @@ describe('WorkspaceFsService.diff', () => {
         ahead: 0,
         behind: 0,
         entries: {},
+        stagedEntries: {},
+        unstagedEntries: {},
         additions: 0,
         deletions: 0,
         pullRequest: null,
       }),
       branches: async () => ({ current: 'main', branches: ['main'] }),
       checkout: async (branch) => ({ branch }),
+      stage: async (_cwd, paths) => ({ paths: [...paths] }),
+      unstage: async (_cwd, paths) => ({ paths: [...paths] }),
+      discard: async (_cwd, paths) => ({ paths: [...paths] }),
+      commit: async () => ({ commit: 'abc123' }),
+      pull: async () => ({ output: '' }),
+      push: async () => ({ output: '' }),
+      createBranch: async (_cwd, branch) => ({ branch }),
       diff: async (cwd, rel, abs) => {
         calls.push({ cwd, rel, abs });
         return { path: rel, diff: '-old\n+new\n', truncated: false };
@@ -445,7 +486,7 @@ describe('WorkspaceFsService.diff', () => {
       findWorkTree: async () => null,
     };
     const fs = makeSession({ 'src/a.ts': 'content' }, emptyHandler, [], git);
-    const result = await fs.diff({ path: 'src/a.ts' });
+    const result = await fs.diff({ path: 'src/a.ts', mode: 'all' });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.cwd).toBe(WORK_DIR);
     expect(calls[0]?.rel).toBe('src/a.ts');
@@ -456,7 +497,7 @@ describe('WorkspaceFsService.diff', () => {
 
   it('rejects paths that escape the workspace', async () => {
     const fs = makeSession({}, emptyHandler);
-    await expect(fs.diff({ path: '../etc/passwd' })).rejects.toMatchObject({
+    await expect(fs.diff({ path: '../etc/passwd', mode: 'all' })).rejects.toMatchObject({
       code: 'fs.path_escapes',
     });
   });

@@ -31,11 +31,13 @@ import { isAbsolute } from 'node:path';
 
 import {
   ErrorCodes,
+  IAgentGitCommitMessageService,
   IWorkspaceFsService,
   IWorkspaceGitService,
   IWorkspaceLifecycleService,
   IWorkspaceService,
   getLiveSessionById,
+  ensureMainAgent,
   resumeSessionById,
   isError2,
   Error2,
@@ -45,7 +47,15 @@ import {
   fsDiffRequestSchema,
   fsGitBranchesResponseSchema,
   fsGitCheckoutRequestSchema,
+  fsGitCommitRequestSchema,
+  fsGitGenerateCommitMessageRequestSchema,
+  fsGitCreateBranchRequestSchema,
+  fsGitDiscardRequestSchema,
+  fsGitPullRequestSchema,
+  fsGitPushRequestSchema,
+  fsGitStageRequestSchema,
   fsGitStatusRequestSchema,
+  fsGitUnstageRequestSchema,
   fsGrepRequestSchema,
   fsListManyRequestSchema,
   fsListRequestSchema,
@@ -129,6 +139,14 @@ const FS_ACTIONS = [
   'git_status',
   'git_branches',
   'git_checkout',
+  'git_stage',
+  'git_unstage',
+  'git_discard',
+  'git_commit',
+  'git_generate_commit_message',
+  'git_pull',
+  'git_push',
+  'git_create_branch',
   'diff',
   'open',
   'open-in',
@@ -145,6 +163,14 @@ function resolveFs(core: Scope, sessionId: string): IWorkspaceFsService {
   // The fs service lives on the session's parent Workspace scope (the
   // handler): one instance per workspace, pinned to the handler root.
   return session.accessor.get(IWorkspaceFsService);
+}
+
+function resolveGit(core: Scope, sessionId: string): IWorkspaceGitService {
+  const session = getLiveSessionById(core.accessor, sessionId);
+  if (session === undefined) {
+    throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${sessionId} does not exist`);
+  }
+  return session.accessor.get(IWorkspaceGitService);
 }
 
 /**
@@ -193,7 +219,7 @@ export function registerFsRoutes(app: FsRouteHost, core: Scope): void {
         [ErrorCode.FS_ALREADY_EXISTS]: {},
       },
       description:
-        'Filesystem action dispatcher. Supported actions: list, read, list_many, stat, stat_many, mkdir, search, grep, git_status, git_branches, git_checkout, diff, open, open-in, reveal.',
+        'Filesystem action dispatcher. Supported actions include file operations, git status/diff, staging, commit, branch, pull, and push.',
       tags: ['fs'],
       operationId: 'fsAction',
     },
@@ -268,6 +294,30 @@ export function registerFsRoutes(app: FsRouteHost, core: Scope): void {
             return;
           case 'git_checkout':
             await handleGitCheckout(core, session_id, req, reply);
+            return;
+          case 'git_stage':
+            await handleGitStage(core, session_id, req, reply);
+            return;
+          case 'git_unstage':
+            await handleGitUnstage(core, session_id, req, reply);
+            return;
+          case 'git_discard':
+            await handleGitDiscard(core, session_id, req, reply);
+            return;
+          case 'git_commit':
+            await handleGitCommit(core, session_id, req, reply);
+            return;
+          case 'git_generate_commit_message':
+            await handleGitGenerateCommitMessage(core, session_id, req, reply);
+            return;
+          case 'git_pull':
+            await handleGitPull(core, session_id, req, reply);
+            return;
+          case 'git_push':
+            await handleGitPush(core, session_id, req, reply);
+            return;
+          case 'git_create_branch':
+            await handleGitCreateBranch(core, session_id, req, reply);
             return;
           case 'diff':
             await handleDiff(core, session_id, req, reply);
@@ -567,9 +617,100 @@ async function handleGitCheckout(core: Scope, sessionId: string, req: Req, reply
     reply.send(buildValidationEnvelope(parsed.error.issues, req.id));
     return;
   }
+  const data = await resolveGit(core, sessionId).checkout(parsed.data.branch);
+  reply.send(okEnvelope(data, req.id));
+}
+
+async function handleGitStage(core: Scope, sessionId: string, req: Req, reply: Reply): Promise<void> {
+  const parsed = fsGitStageRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    reply.send(buildValidationEnvelope(parsed.error.issues, req.id));
+    return;
+  }
+  const data = await resolveFs(core, sessionId).gitStage(parsed.data);
+  reply.send(okEnvelope(data, req.id));
+}
+
+async function handleGitUnstage(core: Scope, sessionId: string, req: Req, reply: Reply): Promise<void> {
+  const parsed = fsGitUnstageRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    reply.send(buildValidationEnvelope(parsed.error.issues, req.id));
+    return;
+  }
+  const data = await resolveFs(core, sessionId).gitUnstage(parsed.data);
+  reply.send(okEnvelope(data, req.id));
+}
+
+async function handleGitDiscard(core: Scope, sessionId: string, req: Req, reply: Reply): Promise<void> {
+  const parsed = fsGitDiscardRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    reply.send(buildValidationEnvelope(parsed.error.issues, req.id));
+    return;
+  }
+  const data = await resolveFs(core, sessionId).gitDiscard(parsed.data);
+  reply.send(okEnvelope(data, req.id));
+}
+
+async function handleGitCommit(core: Scope, sessionId: string, req: Req, reply: Reply): Promise<void> {
+  const parsed = fsGitCommitRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    reply.send(buildValidationEnvelope(parsed.error.issues, req.id));
+    return;
+  }
+  const data = await resolveGit(core, sessionId).commit(parsed.data.message);
+  reply.send(okEnvelope(data, req.id));
+}
+
+async function handleGitGenerateCommitMessage(
+  core: Scope,
+  sessionId: string,
+  req: Req,
+  reply: Reply,
+): Promise<void> {
+  const parsed = fsGitGenerateCommitMessageRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    reply.send(buildValidationEnvelope(parsed.error.issues, req.id));
+    return;
+  }
   const session = getLiveSessionById(core.accessor, sessionId);
-  if (session === undefined) throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${sessionId} does not exist`);
-  const data = await session.accessor.get(IWorkspaceGitService).checkout(parsed.data.branch);
+  if (session === undefined) {
+    throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${sessionId} does not exist`);
+  }
+  const agent = await ensureMainAgent(session);
+  const data = await agent.accessor.get(IAgentGitCommitMessageService).generate(parsed.data);
+  reply.send(okEnvelope(data, req.id));
+}
+
+async function handleGitPull(core: Scope, sessionId: string, req: Req, reply: Reply): Promise<void> {
+  const parsed = fsGitPullRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    reply.send(buildValidationEnvelope(parsed.error.issues, req.id));
+    return;
+  }
+  const data = await resolveGit(core, sessionId).pull(parsed.data.rebase);
+  reply.send(okEnvelope(data, req.id));
+}
+
+async function handleGitPush(core: Scope, sessionId: string, req: Req, reply: Reply): Promise<void> {
+  const parsed = fsGitPushRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    reply.send(buildValidationEnvelope(parsed.error.issues, req.id));
+    return;
+  }
+  const data = await resolveGit(core, sessionId).push(parsed.data.set_upstream);
+  reply.send(okEnvelope(data, req.id));
+}
+
+async function handleGitCreateBranch(core: Scope, sessionId: string, req: Req, reply: Reply): Promise<void> {
+  const parsed = fsGitCreateBranchRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    reply.send(buildValidationEnvelope(parsed.error.issues, req.id));
+    return;
+  }
+  const data = await resolveGit(core, sessionId).createBranch(
+    parsed.data.branch,
+    parsed.data.checkout,
+  );
   reply.send(okEnvelope(data, req.id));
 }
 
@@ -671,7 +812,15 @@ function sendMappedError(reply: Reply, req: { id: string }, err: unknown): void 
         reply.send(errEnvelope(ErrorCode.FS_GREP_TIMEOUT, err.message, requestId, err.stack));
         return;
       case ErrorCodes.FS_GIT_UNAVAILABLE:
-        reply.send(errEnvelope(ErrorCode.FS_GIT_UNAVAILABLE, err.message, requestId, err.stack));
+        reply.send(
+          errEnvelope(
+            ErrorCode.FS_GIT_UNAVAILABLE,
+            err.message,
+            requestId,
+            err.stack,
+            err.details,
+          ),
+        );
         return;
       case ErrorCodes.SESSION_NOT_FOUND:
         reply.send(errEnvelope(ErrorCode.SESSION_NOT_FOUND, err.message, requestId, err.stack));

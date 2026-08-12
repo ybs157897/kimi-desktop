@@ -151,6 +151,8 @@ const gitStub: IGitService = {
       ahead: 0,
       behind: 0,
       entries: {},
+      stagedEntries: {},
+      unstagedEntries: {},
       additions: 0,
       deletions: 0,
       pullRequest: preset.pullRequest,
@@ -158,6 +160,13 @@ const gitStub: IGitService = {
   },
   branches: async () => ({ current: 'main', branches: ['main'] }),
   checkout: async (branch) => ({ branch }),
+  stage: async (_cwd, paths) => ({ paths: [...paths] }),
+  unstage: async (_cwd, paths) => ({ paths: [...paths] }),
+  discard: async (_cwd, paths) => ({ paths: [...paths] }),
+  commit: async () => ({ commit: 'abc123' }),
+  pull: async () => ({ output: '' }),
+  push: async () => ({ output: '' }),
+  createBranch: async (_cwd, branch) => ({ branch }),
   diff: async () => {
     throw new Error2(ErrorCodes.FS_GIT_UNAVAILABLE, 'not used in these tests');
   },

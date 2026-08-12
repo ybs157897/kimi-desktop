@@ -19,10 +19,42 @@ import {
   fsGitBranchesResponseSchema,
   fsGitCheckoutRequestSchema,
   fsGitCheckoutResponseSchema,
+  fsGitCommitRequestSchema,
+  fsGitCommitResponseSchema,
+  fsGitGenerateCommitMessageRequestSchema,
+  fsGitGenerateCommitMessageResponseSchema,
+  fsGitCreateBranchRequestSchema,
+  fsGitCreateBranchResponseSchema,
+  fsGitDiscardRequestSchema,
+  fsGitDiscardResponseSchema,
+  fsGitPullRequestSchema,
+  fsGitPullResponseSchema,
+  fsGitPushRequestSchema,
+  fsGitPushResponseSchema,
+  fsGitStageRequestSchema,
+  fsGitStageResponseSchema,
+  fsGitUnstageRequestSchema,
+  fsGitUnstageResponseSchema,
   type FsDiffRequest,
   type FsDiffResponse,
+  type FsGitCommitRequest,
+  type FsGitCommitResponse,
+  type FsGitGenerateCommitMessageRequest,
+  type FsGitGenerateCommitMessageResponse,
+  type FsGitCreateBranchRequest,
+  type FsGitCreateBranchResponse,
+  type FsGitDiscardRequest,
+  type FsGitDiscardResponse,
+  type FsGitPullRequest,
+  type FsGitPullResponse,
+  type FsGitPushRequest,
+  type FsGitPushResponse,
+  type FsGitStageRequest,
+  type FsGitStageResponse,
   type FsGitStatusRequest,
   type FsGitStatusResponse,
+  type FsGitUnstageRequest,
+  type FsGitUnstageResponse,
 } from '#/app/git/git';
 
 export {
@@ -33,8 +65,45 @@ export {
   fsGitBranchesResponseSchema,
   fsGitCheckoutRequestSchema,
   fsGitCheckoutResponseSchema,
+  fsGitCommitRequestSchema,
+  fsGitCommitResponseSchema,
+  fsGitGenerateCommitMessageRequestSchema,
+  fsGitGenerateCommitMessageResponseSchema,
+  fsGitCreateBranchRequestSchema,
+  fsGitCreateBranchResponseSchema,
+  fsGitDiscardRequestSchema,
+  fsGitDiscardResponseSchema,
+  fsGitPullRequestSchema,
+  fsGitPullResponseSchema,
+  fsGitPushRequestSchema,
+  fsGitPushResponseSchema,
+  fsGitStageRequestSchema,
+  fsGitStageResponseSchema,
+  fsGitUnstageRequestSchema,
+  fsGitUnstageResponseSchema,
 } from '#/app/git/git';
-export type { FsDiffRequest, FsDiffResponse, FsGitStatusRequest, FsGitStatusResponse };
+export type {
+  FsDiffRequest,
+  FsDiffResponse,
+  FsGitCommitRequest,
+  FsGitCommitResponse,
+  FsGitGenerateCommitMessageRequest,
+  FsGitGenerateCommitMessageResponse,
+  FsGitCreateBranchRequest,
+  FsGitCreateBranchResponse,
+  FsGitDiscardRequest,
+  FsGitDiscardResponse,
+  FsGitPullRequest,
+  FsGitPullResponse,
+  FsGitPushRequest,
+  FsGitPushResponse,
+  FsGitStageRequest,
+  FsGitStageResponse,
+  FsGitStatusRequest,
+  FsGitStatusResponse,
+  FsGitUnstageRequest,
+  FsGitUnstageResponse,
+};
 
 export const fsKindSchema = z.enum(['file', 'directory', 'symlink']);
 export type FsKind = z.infer<typeof fsKindSchema>;
@@ -249,6 +318,9 @@ export interface IWorkspaceFsService {
   search(req: FsSearchRequest): Promise<FsSearchResponse>;
   grep(req: FsGrepRequest): Promise<FsGrepResponse>;
   gitStatus(req: FsGitStatusRequest): Promise<FsGitStatusResponse>;
+  gitStage(req: FsGitStageRequest): Promise<FsGitStageResponse>;
+  gitUnstage(req: FsGitUnstageRequest): Promise<FsGitUnstageResponse>;
+  gitDiscard(req: FsGitDiscardRequest): Promise<FsGitDiscardResponse>;
   diff(req: FsDiffRequest): Promise<FsDiffResponse>;
   resolvePath(relPath: string): Promise<FsPathResolved>;
   resolveDownload(relPath: string): Promise<FsDownloadResolved>;

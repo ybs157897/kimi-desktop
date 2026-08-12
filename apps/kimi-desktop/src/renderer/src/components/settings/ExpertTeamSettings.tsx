@@ -23,6 +23,8 @@ import {
   type ReactNode,
 } from 'react';
 
+import { ToggleSwitch } from '../ToggleSwitch';
+
 interface ExpertTeamSettingsProps {
   readonly onStartConversation: () => void;
 }
@@ -165,7 +167,7 @@ export function ExpertTeamSettings({
     <section className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background-panel)] shadow-[var(--shadow-card)]">
       <div className="flex items-center justify-between gap-4 border-b border-[var(--color-border-light)] px-4 py-3">
         <div>
-          <h2 className="text-[14px] font-semibold text-[var(--color-text-foreground)]">
+          <h2 className="text-[length:var(--client-content-font-size)] font-semibold text-[var(--color-text-foreground)]">
             专家团列表
           </h2>
           <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">
@@ -227,7 +229,7 @@ export function ExpertTeamSettings({
               className="mx-auto text-[var(--color-text-tertiary)]"
               aria-hidden
             />
-            <p className="mt-3 text-[14px] font-medium text-[var(--color-text-foreground)]">
+            <p className="mt-3 text-[length:var(--client-content-font-size)] font-medium text-[var(--color-text-foreground)]">
               还没有专家团
             </p>
             <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">
@@ -247,7 +249,7 @@ export function ExpertTeamSettings({
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-[14px] font-medium text-[var(--color-text-foreground)]">
+                  <span className="truncate text-[length:var(--client-content-font-size)] font-medium text-[var(--color-text-foreground)]">
                     {team.displayName}
                   </span>
                   <span className="rounded-full bg-[var(--color-background-muted)] px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)]">
@@ -719,21 +721,13 @@ function TeamToggle({
   readonly onChange: (checked: boolean) => void;
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
+    <ToggleSwitch
+      checked={checked}
       disabled={disabled}
-      aria-label={label}
-      onClick={() => {
-        onChange(!checked);
-      }}
-      className={`relative h-5 w-9 rounded-full disabled:cursor-not-allowed disabled:opacity-45 ${checked ? 'bg-[var(--primary)]' : 'bg-[var(--color-background-muted)]'}`}
-    >
-      <span
-        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
-      />
-    </button>
+      label={label}
+      onChange={onChange}
+      size="compact"
+    />
   );
 }
 

@@ -1,7 +1,17 @@
+/**
+ * Scenario: exercise the public Git service against isolated temporary repos.
+ * Responsibilities: status/diff accuracy, safe local mutations, branch and
+ * local-bare-remote synchronization and repository-wide mutation ordering.
+ * Wiring: real HostProcess/HostFileSystem except one scripted queue boundary;
+ * no external network. Run: pnpm --filter @moonshot-ai/agent-core-v2 exec
+ * vitest run test/app/git/gitService.test.ts
+ */
+
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable, Writable } from 'node:stream';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -14,7 +24,7 @@ import { ErrorCodes } from '#/errors';
 import { HostFileSystem } from '#/os/backends/node-local/hostFsService';
 import { HostProcessService } from '#/os/backends/node-local/hostProcessService';
 import { IHostFileSystem } from '#/os/interface/hostFileSystem';
-import { IHostProcessService } from '#/os/interface/hostProcess';
+import { type IHostProcess, IHostProcessService } from '#/os/interface/hostProcess';
 import { normalize } from 'pathe';
 
 function git(cwd: string, ...args: string[]): string {
@@ -25,6 +35,20 @@ function git(cwd: string, ...args: string[]): string {
   })
     .toString()
     .trim();
+}
+
+function fakeProcess(stdout: string, wait: () => Promise<number>): IHostProcess {
+  return {
+    _serviceBrand: undefined,
+    pid: 1,
+    exitCode: null,
+    stdin: new Writable({ write: (_chunk, _encoding, done) => done() }),
+    stdout: Readable.from([stdout]),
+    stderr: Readable.from([]),
+    wait,
+    kill: async () => undefined,
+    dispose: () => undefined,
+  };
 }
 
 describe('GitService', () => {
@@ -68,6 +92,8 @@ describe('GitService', () => {
       const result = await service.status(repo);
       expect(typeof result.branch).toBe('string');
       expect(result.entries).toEqual({});
+      expect(result.stagedEntries).toEqual({});
+      expect(result.unstagedEntries).toEqual({});
       expect(result.additions).toBe(0);
       expect(result.deletions).toBe(0);
       expect(result.pullRequest).toBeNull();
@@ -82,6 +108,30 @@ describe('GitService', () => {
       expect(result.entries).toEqual({ 'a.txt': 'modified' });
       expect(result.additions).toBe(2);
       expect(result.deletions).toBe(0);
+    });
+
+    it('reports the index and working tree states when one path changes in both', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'base\n');
+      commitAll('init');
+      writeFileSync(join(repo, 'a.txt'), 'staged\n');
+      git(repo, 'add', 'a.txt');
+      writeFileSync(join(repo, 'a.txt'), 'unstaged\n');
+
+      const result = await service.status(repo);
+
+      expect(result.stagedEntries).toEqual({ 'a.txt': 'modified' });
+      expect(result.unstagedEntries).toEqual({ 'a.txt': 'modified' });
+    });
+
+    it('preserves whitespace, unicode, newline, and backslash in nul-delimited paths', async () => {
+      writeFileSync(join(repo, 'tracked.txt'), 'base\n');
+      commitAll('init');
+      const paths = ['space ü.txt', 'tab\tname.txt', 'line\nname.txt', 'back\\slash.txt'];
+      for (const path of paths) writeFileSync(join(repo, path), path);
+
+      const result = await service.status(repo);
+
+      expect(Object.keys(result.unstagedEntries).sort()).toEqual(paths.sort());
     });
 
     it('reports every untracked file inside nested directories', async () => {
@@ -166,6 +216,305 @@ describe('GitService', () => {
         service.diff(repo, 'missing.txt', join(repo, 'missing.txt')),
       ).rejects.toMatchObject({ code: ErrorCodes.FS_PATH_NOT_FOUND });
     });
+
+    it('separates staged and unstaged patches for a path changed in both', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'base\n');
+      commitAll('init');
+      writeFileSync(join(repo, 'a.txt'), 'staged\n');
+      git(repo, 'add', 'a.txt');
+      writeFileSync(join(repo, 'a.txt'), 'unstaged\n');
+
+      const staged = await service.diff(repo, 'a.txt', join(repo, 'a.txt'), 'staged');
+      const unstaged = await service.diff(repo, 'a.txt', join(repo, 'a.txt'), 'unstaged');
+
+      expect(staged.diff).toContain('+staged');
+      expect(staged.diff).not.toContain('+unstaged');
+      expect(unstaged.diff).toContain('-staged');
+      expect(unstaged.diff).toContain('+unstaged');
+    });
+
+    it('returns a staged patch before the first commit', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'new\n');
+      await service.stage(repo, ['a.txt']);
+
+      const result = await service.diff(repo, 'a.txt', join(repo, 'a.txt'), 'staged');
+
+      expect(result.diff).toContain('+new');
+    });
+
+    it('does not interpret pathspec magic when a diff path does not exist', async () => {
+      writeFileSync(join(repo, 'outside.txt'), 'base\n');
+      commitAll('init');
+      writeFileSync(join(repo, 'outside.txt'), 'changed\n');
+
+      await expect(
+        service.diff(repo, ':(top)**', join(repo, ':(top)**'), 'unstaged'),
+      ).rejects.toMatchObject({ code: ErrorCodes.FS_PATH_NOT_FOUND });
+    });
+  });
+
+  describe('working tree mutations', () => {
+    it('stages a file before the first commit', async () => {
+      writeFileSync(join(repo, 'new.txt'), 'new\n');
+
+      await service.stage(repo, ['new.txt']);
+
+      expect((await service.status(repo)).stagedEntries).toEqual({ 'new.txt': 'added' });
+    });
+
+    it('treats wildcard characters in a staged filename literally', async () => {
+      writeFileSync(join(repo, '[ab].txt'), 'literal\n');
+      writeFileSync(join(repo, 'a.txt'), 'other\n');
+
+      await service.stage(repo, ['[ab].txt']);
+
+      expect((await service.status(repo)).stagedEntries).toEqual({ '[ab].txt': 'added' });
+      expect((await service.status(repo)).unstagedEntries).toEqual({ 'a.txt': 'untracked' });
+    });
+
+    it('unstages a file before the first commit', async () => {
+      writeFileSync(join(repo, 'new.txt'), 'new\n');
+      await service.stage(repo, ['new.txt']);
+
+      await service.unstage(repo, ['new.txt']);
+
+      expect((await service.status(repo)).unstagedEntries).toEqual({ 'new.txt': 'untracked' });
+    });
+
+    it('unstages a modified index entry before the first commit without changing the working tree', async () => {
+      writeFileSync(join(repo, 'new.txt'), 'staged\n');
+      await service.stage(repo, ['new.txt']);
+      writeFileSync(join(repo, 'new.txt'), 'latest\n');
+
+      await service.unstage(repo, ['new.txt']);
+
+      expect(readFileSync(join(repo, 'new.txt'), 'utf8')).toBe('latest\n');
+      expect((await service.status(repo)).unstagedEntries).toEqual({ 'new.txt': 'untracked' });
+    });
+
+    it('unstages both sides of a staged rename', async () => {
+      writeFileSync(join(repo, 'old.txt'), 'content\n');
+      commitAll('init');
+      git(repo, 'mv', 'old.txt', 'new.txt');
+
+      await service.unstage(repo, ['new.txt']);
+
+      expect((await service.status(repo)).entries).toEqual({
+        'new.txt': 'untracked',
+        'old.txt': 'deleted',
+      });
+    });
+
+    it('discards only the unstaged layer of a path that is also staged', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'base\n');
+      commitAll('init');
+      writeFileSync(join(repo, 'a.txt'), 'staged\n');
+      git(repo, 'add', 'a.txt');
+      writeFileSync(join(repo, 'a.txt'), 'unstaged\n');
+
+      await service.discard(repo, ['a.txt'], false);
+
+      expect(readFileSync(join(repo, 'a.txt'), 'utf8')).toBe('staged\n');
+      expect((await service.status(repo)).stagedEntries).toEqual({ 'a.txt': 'modified' });
+      expect((await service.status(repo)).unstagedEntries).toEqual({});
+    });
+
+    it('keeps an untracked path when deletion is not explicitly allowed', async () => {
+      writeFileSync(join(repo, 'new.txt'), 'new\n');
+
+      await expect(service.discard(repo, ['new.txt'], false)).rejects.toMatchObject({
+        code: ErrorCodes.FS_GIT_UNAVAILABLE,
+      });
+
+      expect(existsSync(join(repo, 'new.txt'))).toBe(true);
+    });
+
+    it('deletes an untracked path when deletion is explicitly allowed', async () => {
+      writeFileSync(join(repo, 'new.txt'), 'new\n');
+
+      await service.discard(repo, ['new.txt'], true);
+
+      expect(existsSync(join(repo, 'new.txt'))).toBe(false);
+    });
+
+    it('treats wildcard characters in a discarded filename literally', async () => {
+      writeFileSync(join(repo, '[ab].txt'), 'base\n');
+      writeFileSync(join(repo, 'a.txt'), 'base\n');
+      commitAll('init');
+      writeFileSync(join(repo, '[ab].txt'), 'literal change\n');
+      writeFileSync(join(repo, 'a.txt'), 'other change\n');
+
+      await service.discard(repo, ['[ab].txt'], false);
+
+      expect(readFileSync(join(repo, '[ab].txt'), 'utf8')).toBe('base\n');
+      expect(readFileSync(join(repo, 'a.txt'), 'utf8')).toBe('other change\n');
+    });
+
+    it('creates a commit from the staged index', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'hello\n');
+      await service.stage(repo, ['a.txt']);
+
+      const result = await service.commit(repo, 'initial commit');
+
+      expect(result.commit).toBe(git(repo, 'rev-parse', 'HEAD'));
+      expect((await service.status(repo)).entries).toEqual({});
+    });
+
+    it('rejects discard for a conflicted path without changing conflict markers', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'base\n');
+      commitAll('init');
+      const initial = git(repo, 'branch', '--show-current');
+      git(repo, 'switch', '-c', 'side');
+      writeFileSync(join(repo, 'a.txt'), 'side\n');
+      commitAll('side');
+      git(repo, 'switch', initial);
+      writeFileSync(join(repo, 'a.txt'), 'main\n');
+      commitAll('main');
+      try {
+        git(repo, 'merge', 'side');
+      } catch {
+      }
+
+      await expect(service.discard(repo, ['a.txt'], false)).rejects.toMatchObject({
+        code: ErrorCodes.FS_GIT_UNAVAILABLE,
+      });
+
+      expect(readFileSync(join(repo, 'a.txt'), 'utf8')).toContain('<<<<<<<');
+    });
+
+    it('rejects a nested-workspace commit when the repository index contains an outside path', async () => {
+      const workspace = join(repo, 'packages', 'example');
+      mkdirSync(workspace, { recursive: true });
+      writeFileSync(join(repo, 'outside.txt'), 'outside\n');
+      writeFileSync(join(workspace, 'inside.txt'), 'inside\n');
+      git(repo, 'add', '-A');
+
+      await expect(service.commit(workspace, 'must not commit outside')).rejects.toMatchObject({
+        code: ErrorCodes.FS_GIT_UNAVAILABLE,
+        details: {
+          detail: 'commit must be run from the repository root workspace',
+        },
+      });
+
+      expect(git(repo, 'diff', '--cached', '--name-only').split('\n').sort()).toEqual([
+        'outside.txt',
+        'packages/example/inside.txt',
+      ]);
+      expect(() => git(repo, 'rev-parse', 'HEAD')).toThrow();
+    });
+
+    it('rejects a nested-workspace commit for a staged rename whose source is outside', async () => {
+      const workspace = join(repo, 'packages', 'example');
+      mkdirSync(workspace, { recursive: true });
+      writeFileSync(join(repo, 'outside.txt'), 'outside\n');
+      commitAll('initial');
+      git(repo, 'mv', 'outside.txt', 'packages/example/inside.txt');
+
+      await expect(service.commit(workspace, 'must not cross workspace')).rejects.toMatchObject({
+        code: ErrorCodes.FS_GIT_UNAVAILABLE,
+        details: {
+          detail: 'commit must be run from the repository root workspace',
+        },
+      });
+
+      expect(git(repo, 'status', '--porcelain')).toContain('outside.txt -> packages/example/inside.txt');
+    });
+
+    it('rejects a nested-workspace commit when its directory starts with a space', async () => {
+      const workspace = join(repo, ' workspace');
+      mkdirSync(workspace, { recursive: true });
+      writeFileSync(join(workspace, 'inside.txt'), 'inside\n');
+      writeFileSync(join(repo, 'outside.txt'), 'outside\n');
+      git(repo, 'add', '-A');
+
+      await expect(service.commit(workspace, 'nested')).rejects.toMatchObject({
+        code: ErrorCodes.FS_GIT_UNAVAILABLE,
+        details: { detail: 'commit must be run from the repository root workspace' },
+      });
+    });
+  });
+
+  describe('remote synchronization', () => {
+    it('pushes the current branch and establishes its upstream', async () => {
+      const remote = mkdtempSync(join(tmpdir(), 'git-service-remote-'));
+      try {
+        execFileSync('git', ['init', '--bare', remote]);
+        writeFileSync(join(repo, 'a.txt'), 'hello\n');
+        commitAll('init');
+        git(repo, 'remote', 'add', 'origin', remote);
+        const branch = git(repo, 'branch', '--show-current');
+
+        await service.push(repo, true);
+
+        const remoteHead = execFileSync(
+          'git',
+          ['--git-dir', remote, 'rev-parse', `refs/heads/${branch}`],
+          { encoding: 'utf8' },
+        ).trim();
+        expect(remoteHead).toBe(git(repo, 'rev-parse', 'HEAD'));
+        expect(git(repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}')).toBe(
+          `origin/${branch}`,
+        );
+      } finally {
+        rmSync(remote, { recursive: true, force: true });
+      }
+    });
+
+    it('fast-forwards from the configured upstream', async () => {
+      const remote = mkdtempSync(join(tmpdir(), 'git-service-remote-'));
+      const peer = mkdtempSync(join(tmpdir(), 'git-service-peer-'));
+      try {
+        execFileSync('git', ['init', '--bare', remote]);
+        writeFileSync(join(repo, 'a.txt'), 'base\n');
+        commitAll('init');
+        git(repo, 'remote', 'add', 'origin', remote);
+        await service.push(repo, true);
+        execFileSync('git', ['clone', remote, peer]);
+        git(peer, 'config', 'user.email', 'test@example.com');
+        git(peer, 'config', 'user.name', 'Test');
+        writeFileSync(join(peer, 'a.txt'), 'remote\n');
+        git(peer, 'add', 'a.txt');
+        git(peer, 'commit', '-m', 'remote');
+        git(peer, 'push');
+
+        await service.pull(repo, false);
+
+        expect(readFileSync(join(repo, 'a.txt'), 'utf8')).toBe('remote\n');
+      } finally {
+        rmSync(peer, { recursive: true, force: true });
+        rmSync(remote, { recursive: true, force: true });
+      }
+    });
+
+    it('pushes to an upstream whose branch name differs from the local branch', async () => {
+      const remote = mkdtempSync(join(tmpdir(), 'git-service-remote-'));
+      try {
+        execFileSync('git', ['init', '--bare', remote]);
+        writeFileSync(join(repo, 'a.txt'), 'base\n');
+        commitAll('init');
+        git(repo, 'remote', 'add', 'origin', remote);
+        git(repo, 'push', '--set-upstream', 'origin', 'HEAD:main');
+        git(repo, 'branch', '-m', 'release');
+        git(repo, 'config', 'branch.release.remote', 'origin');
+        git(repo, 'config', 'branch.release.merge', 'refs/heads/main');
+        writeFileSync(join(repo, 'a.txt'), 'release\n');
+        commitAll('release');
+
+        await service.push(repo, false);
+
+        const mainHead = execFileSync(
+          'git',
+          ['--git-dir', remote, 'rev-parse', 'refs/heads/main'],
+          { encoding: 'utf8' },
+        ).trim();
+        expect(mainHead).toBe(git(repo, 'rev-parse', 'HEAD'));
+        expect(() =>
+          execFileSync('git', ['--git-dir', remote, 'rev-parse', 'refs/heads/release']),
+        ).toThrow();
+      } finally {
+        rmSync(remote, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('branches', () => {
@@ -189,6 +538,50 @@ describe('GitService', () => {
       await expect(service.checkout(repo, '--bad')).rejects.toMatchObject({
         code: ErrorCodes.FS_GIT_UNAVAILABLE,
       });
+    });
+
+    it('creates and switches to a valid branch', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'hello\n');
+      commitAll('init');
+
+      await expect(service.createBranch(repo, 'feature/new', true)).resolves.toEqual({
+        branch: 'feature/new',
+      });
+      expect(git(repo, 'branch', '--show-current')).toBe('feature/new');
+    });
+
+    it('rejects checkout from a nested workspace before changing repository files', async () => {
+      const workspace = join(repo, 'packages', 'example');
+      mkdirSync(workspace, { recursive: true });
+      writeFileSync(join(repo, 'outside.txt'), 'main\n');
+      commitAll('main');
+      const initial = git(repo, 'branch', '--show-current');
+      git(repo, 'switch', '-c', 'other');
+      writeFileSync(join(repo, 'outside.txt'), 'other\n');
+      commitAll('other');
+      git(repo, 'switch', initial);
+
+      await expect(service.checkout(workspace, 'other')).rejects.toMatchObject({
+        code: ErrorCodes.FS_GIT_UNAVAILABLE,
+        details: { detail: 'branch checkout must be run from the repository root workspace' },
+      });
+
+      expect(git(repo, 'branch', '--show-current')).toBe(initial);
+      expect(readFileSync(join(repo, 'outside.txt'), 'utf8')).toBe('main\n');
+    });
+
+    it('rejects pull from a nested workspace before running network synchronization', async () => {
+      const workspace = join(repo, 'packages', 'example');
+      mkdirSync(workspace, { recursive: true });
+      writeFileSync(join(repo, 'outside.txt'), 'main\n');
+      commitAll('main');
+
+      await expect(service.pull(workspace, false)).rejects.toMatchObject({
+        code: ErrorCodes.FS_GIT_UNAVAILABLE,
+        details: { detail: 'pull must be run from the repository root workspace' },
+      });
+
+      expect(readFileSync(join(repo, 'outside.txt'), 'utf8')).toBe('main\n');
     });
   });
 
@@ -269,5 +662,61 @@ describe('GitService', () => {
     it('returns null for a relative cwd', async () => {
       await expect(findGitWorkTree(new HostFileSystem(), 'some/relative/path')).resolves.toBeNull();
     });
+  });
+});
+
+describe('GitService repository mutation queue', () => {
+  it('serializes mutations from sibling workspaces that share one repository root', async () => {
+    const disposables = new DisposableStore();
+    let releaseFirst: (() => void) | undefined;
+    let signalStarted: (() => void) | undefined;
+    const firstReleased = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstStarted = new Promise<void>((resolve) => {
+      signalStarted = resolve;
+    });
+    let addStarts = 0;
+    const hostProcess: IHostProcessService = {
+      _serviceBrand: undefined,
+      spawn: async (_command, args) => {
+        if (args?.[0] === 'rev-parse' && args[2] === '--git-common-dir') {
+          return fakeProcess('/repo/.git\n', async () => 0);
+        }
+        if (args?.[0] === 'add') {
+          addStarts += 1;
+          if (addStarts === 1) {
+            signalStarted?.();
+            return fakeProcess('', async () => {
+              await firstReleased;
+              return 0;
+            });
+          }
+          return fakeProcess('', async () => 0);
+        }
+        throw new Error(`unexpected git command: ${args?.join(' ')}`);
+      },
+    };
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.defineInstance(IHostProcessService, hostProcess);
+        reg.definePartialInstance(IHostFileSystem, {});
+        reg.define(IGitService, GitService);
+      },
+    });
+
+    try {
+      const service = ix.get(IGitService);
+      const first = service.stage('/repo/packages/one', ['a.txt']);
+      const second = service.stage('/repo/packages/two', ['b.txt']);
+
+      await firstStarted;
+      expect(addStarts).toBe(1);
+      releaseFirst?.();
+      await Promise.all([first, second]);
+      expect(addStarts).toBe(2);
+    } finally {
+      disposables.dispose();
+    }
   });
 });

@@ -12,13 +12,17 @@ export function parsePorcelain(
   stdout: string,
   filter: ReadonlySet<string> | undefined,
 ): FsGitStatusResponse {
-  const lines = stdout.split('\n');
   let branch = '';
   let ahead = 0;
   let behind = 0;
   const entries: Record<string, FsGitStatus> = {};
+  const stagedEntries: Record<string, FsGitStatus> = {};
+  const unstagedEntries: Record<string, FsGitStatus> = {};
+  const nulDelimited = stdout.includes('\0');
+  const lines = stdout.split(nulDelimited ? '\0' : '\n');
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
     if (line.length === 0) continue;
     if (line.startsWith('## ')) {
       const parsed = parseBranchHeader(line.slice(3));
@@ -32,19 +36,44 @@ export function parsePorcelain(
     const xy = line.slice(0, 2);
     let rest = line.slice(3);
 
-    if (xy.startsWith('R') || xy.startsWith('C')) {
+    if (nulDelimited && (xy.startsWith('R') || xy.startsWith('C'))) {
+      index += 1;
+    } else if (xy.startsWith('R') || xy.startsWith('C')) {
       const arrow = rest.indexOf(' -> ');
       if (arrow >= 0) {
         rest = rest.slice(arrow + 4);
       }
     }
-    const wirePath = posix(rest.trim());
+    const wirePath = nulDelimited ? rest : posix(rest.trim());
     if (filter !== undefined && !filter.has(wirePath)) continue;
     const status = collapseXY(xy);
     entries[wirePath] = status;
+    if (isConflict(xy)) {
+      stagedEntries[wirePath] = 'conflicted';
+      unstagedEntries[wirePath] = 'conflicted';
+      continue;
+    }
+    const stagedStatus = classifyCode(xy.charAt(0), false);
+    if (stagedStatus !== undefined) stagedEntries[wirePath] = stagedStatus;
+    const unstagedStatus = xy === '??'
+      ? 'untracked'
+      : xy === '!!'
+        ? 'ignored'
+        : classifyCode(xy.charAt(1), false);
+    if (unstagedStatus !== undefined) unstagedEntries[wirePath] = unstagedStatus;
   }
 
-  return { branch, ahead, behind, entries, additions: 0, deletions: 0, pullRequest: null };
+  return {
+    branch,
+    ahead,
+    behind,
+    entries,
+    stagedEntries,
+    unstagedEntries,
+    additions: 0,
+    deletions: 0,
+    pullRequest: null,
+  };
 }
 
 export function parseNumstat(stdout: string): {
@@ -105,23 +134,27 @@ function collapseXY(xy: string): FsGitStatus {
   const y = xy.charAt(1);
   const set = new Set([x, y]);
 
-  if (
-    xy === 'DD' ||
-    xy === 'AU' ||
-    xy === 'UD' ||
-    xy === 'UA' ||
-    xy === 'DU' ||
-    xy === 'AA' ||
-    xy === 'UU'
-  ) {
-    return 'conflicted';
-  }
+  if (isConflict(xy)) return 'conflicted';
   if (set.has('D')) return 'deleted';
   if (set.has('M') || set.has('T')) return 'modified';
   if (set.has('R')) return 'renamed';
   if (set.has('C')) return 'renamed';
   if (set.has('A')) return 'added';
   return 'clean';
+}
+
+function isConflict(xy: string): boolean {
+  return xy === 'DD' || xy === 'AU' || xy === 'UD' || xy === 'UA' ||
+    xy === 'DU' || xy === 'AA' || xy === 'UU';
+}
+
+function classifyCode(code: string, clean: boolean): FsGitStatus | undefined {
+  if (code === 'M' || code === 'T') return 'modified';
+  if (code === 'A') return 'added';
+  if (code === 'D') return 'deleted';
+  if (code === 'R' || code === 'C') return 'renamed';
+  if (code === 'U') return 'conflicted';
+  return clean ? 'clean' : undefined;
 }
 
 function posix(p: string): string {

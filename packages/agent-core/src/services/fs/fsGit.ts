@@ -72,7 +72,17 @@ export function parsePorcelain(
     entries[wirePath] = status;
   }
 
-  return { branch, ahead, behind, entries, additions: 0, deletions: 0, pullRequest: null };
+  return {
+    branch,
+    ahead,
+    behind,
+    entries,
+    stagedEntries: {},
+    unstagedEntries: {},
+    additions: 0,
+    deletions: 0,
+    pullRequest: null,
+  };
 }
 
 /**

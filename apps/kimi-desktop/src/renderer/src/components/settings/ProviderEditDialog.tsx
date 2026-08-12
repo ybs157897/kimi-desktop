@@ -78,7 +78,7 @@ interface ModelDraft {
 }
 
 const inputClass =
-  'h-9 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] px-3 text-[14px] text-[var(--color-text-foreground)] outline-none transition-colors placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-focus)] disabled:cursor-not-allowed disabled:opacity-55';
+  'h-9 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] px-3 text-[length:var(--client-content-font-size)] text-[var(--color-text-foreground)] outline-none transition-colors placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-focus)] disabled:cursor-not-allowed disabled:opacity-55';
 
 function rowsFromModels(models: readonly CreateProviderModel[]): ModelRow[] {
   return models.map(({ model, max_context_size, ...metadata }, index) => ({
@@ -447,7 +447,7 @@ export function ProviderEditDialog({
 
         <section className="mt-5">
           <div className="mb-2.5 flex items-center justify-between gap-4">
-            <h3 className="text-[14px] font-medium text-[var(--color-text-secondary)]">模型列表</h3>
+            <h3 className="text-[length:var(--client-content-font-size)] font-medium text-[var(--color-text-secondary)]">模型列表</h3>
             <label className="flex items-center gap-2 text-[13px] text-[var(--color-text-tertiary)]">
               默认模型
               <select
@@ -519,7 +519,7 @@ export function ProviderEditDialog({
           type="button"
           onClick={reset}
           disabled={pending}
-          className="ui-pressable rounded-[var(--radius-sm)] px-3 py-1.5 text-[14px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-50"
+          className="ui-pressable rounded-[var(--radius-sm)] px-3 py-1.5 text-[length:var(--client-content-font-size)] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:opacity-50"
         >
           {isEdit ? '撤销修改' : '取消'}
         </button>
@@ -527,7 +527,7 @@ export function ProviderEditDialog({
           type="button"
           onClick={submit}
           disabled={!canSubmit}
-          className="ui-pressable rounded-[var(--radius-sm)] bg-[var(--color-button-primary-background)] px-3.5 py-1.5 text-[14px] font-medium text-[var(--color-button-primary-foreground)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          className="ui-pressable rounded-[var(--radius-sm)] bg-[var(--color-button-primary-background)] px-3.5 py-1.5 text-[length:var(--client-content-font-size)] font-medium text-[var(--color-button-primary-foreground)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {createProvider.isPending || replaceProvider.isPending
             ? '保存中…'
@@ -600,7 +600,7 @@ function ModelListRow({ row, last, pending, isDefault, onEdit, onRemove }: Model
         last ? '' : 'border-b border-[var(--color-border-light)]'
       }`}
     >
-      <span className="min-w-0 flex-1 truncate text-[14px] text-[var(--color-text-foreground)]">
+      <span className="min-w-0 flex-1 truncate text-[length:var(--client-content-font-size)] text-[var(--color-text-foreground)]">
         {row.model}
       </span>
       {isDefault ? (
@@ -760,7 +760,7 @@ function ModelEditDialog({ draft, duplicate, onChange, onClose, onSave }: ModelE
           <button
             type="button"
             onClick={onClose}
-            className="ui-pressable rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-1 text-[14px] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)]"
+            className="ui-pressable rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-1 text-[length:var(--client-content-font-size)] text-[var(--color-text-foreground)] hover:bg-[var(--color-list-hover)]"
           >
             取消
           </button>
@@ -768,7 +768,7 @@ function ModelEditDialog({ draft, duplicate, onChange, onClose, onSave }: ModelE
             type="button"
             onClick={() => onSave(draft)}
             disabled={!valid}
-            className="ui-pressable rounded-[var(--radius-sm)] bg-[var(--color-text-foreground)] px-3.5 py-1 text-[14px] font-medium text-[var(--color-background-panel)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
+            className="ui-pressable rounded-[var(--radius-sm)] bg-[var(--color-text-foreground)] px-3.5 py-1 text-[length:var(--client-content-font-size)] font-medium text-[var(--color-background-panel)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
           >
             保存
           </button>

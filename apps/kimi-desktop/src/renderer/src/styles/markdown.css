@@ -11,10 +11,10 @@
  */
 
 .markdown {
-  color: var(--color-token-text-primary, var(--color-text-foreground));
-  font-size: var(--codex-chat-font-size, 14px);
+  color: var(--color-user-text-foreground, var(--color-token-text-primary, var(--color-text-foreground)));
+  font-size: var(--markdown-font-size, var(--codex-chat-font-size, 14px));
   letter-spacing: var(--tracking-tight, 0);
-  line-height: var(--markdown-line-height, calc(var(--codex-chat-font-size, 14px) + 8px));
+  line-height: var(--markdown-line-height, calc(var(--markdown-font-size, 14px) + 8px));
   overflow-wrap: anywhere;
 }
 
@@ -83,7 +83,7 @@
 }
 .markdown ul > li::marker,
 .markdown ol > li::marker {
-  color: var(--color-token-text-primary);
+  color: var(--color-user-text-foreground, var(--color-token-text-primary));
 }
 .markdown input[type='checkbox'] {
   margin-right: 0.25rem;
@@ -91,8 +91,8 @@
 }
 
 /* ---------------------------------------------------------------- headings
-   Absolute px ladder (24/20/17/17/15/15), weight 600, line-height 1.25,
-   uniform 20px/10px margins — matches Codex `_heading*`. */
+   Keep the current 24/20/17/17/15/15 ladder at the 14px default, then
+   preserve that hierarchy when the reader changes the Markdown size. */
 .markdown h1,
 .markdown h2,
 .markdown h3,
@@ -102,27 +102,26 @@
   font-weight: 600;
   line-height: 1.25;
   margin: var(--markdown-heading-margin, 20px 0 10px);
-  color: var(--color-token-text-primary);
+  color: var(--color-user-text-foreground, var(--color-token-text-primary));
 }
 .markdown > :is(h1, h2, h3, h4, h5, h6):first-child {
   margin-top: 0;
 }
 .markdown h1 {
-  font-size: 24px;
+  font-size: calc(var(--markdown-font-size, 14px) + 10px);
 }
 .markdown h2 {
-  font-size: 20px;
+  font-size: calc(var(--markdown-font-size, 14px) + 6px);
 }
 .markdown h3,
 .markdown h4 {
-  font-size: 17px;
-  line-height: 22px;
+  font-size: calc(var(--markdown-font-size, 14px) + 3px);
+  line-height: calc(var(--markdown-font-size, 14px) + 8px);
 }
 .markdown h5,
 .markdown h6 {
-  font-size: 15px;
-  line-height: 20px;
-  color: var(--color-token-text-secondary);
+  font-size: calc(var(--markdown-font-size, 14px) + 1px);
+  line-height: calc(var(--markdown-font-size, 14px) + 6px);
 }
 
 /* ------------------------------------------------------------------ inline
@@ -252,7 +251,7 @@
   padding: var(--markdown-code-block-padding, 8px);
   line-height: var(--markdown-code-block-line-height, 1.5);
   overflow-x: auto;
-  font-size: var(--client-control-font-size, 13px);
+  font-size: var(--markdown-code-block-font-size, var(--client-control-font-size, 13px));
   letter-spacing: 0;
 }
 /* Bare pre (no shell) still gets the code-block fill. */
@@ -304,7 +303,7 @@
   padding-inline-start: 24px;
   border: none;
   background: transparent;
-  color: var(--color-token-text-primary);
+  color: var(--color-user-text-foreground, var(--color-token-text-primary));
   font-style: normal;
   line-height: 24px;
 }
@@ -336,7 +335,7 @@
   cursor: pointer;
   font-weight: 500;
   letter-spacing: var(--tracking-tight, 0);
-  color: var(--color-token-text-primary);
+  color: var(--color-user-text-foreground, var(--color-token-text-primary));
 }
 .markdown details[open] > summary {
   margin-bottom: 0.5rem;
@@ -436,7 +435,7 @@
   table-layout: auto;
   text-align: start;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--markdown-font-size, 14px);
 }
 .markdown th,
 .markdown td {
@@ -450,7 +449,7 @@
   padding-bottom: 8px;
   border-bottom: 1px solid var(--color-token-border-heavy);
   text-align: start;
-  color: var(--color-token-text-primary);
+  color: var(--color-user-text-foreground, var(--color-token-text-primary));
   font-weight: 600;
   line-height: 16px;
   background: transparent;

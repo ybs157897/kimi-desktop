@@ -7,7 +7,9 @@
 import { useRef, useState, type ReactNode } from 'react';
 
 import {
+  ArrowCounterClockwise,
   ArrowLeft,
+  CaretDown,
   Cube,
   Database,
   GearSix,
@@ -17,6 +19,16 @@ import {
   UsersThree,
 } from '@phosphor-icons/react';
 
+import {
+  DEFAULT_TEXT_COLOR_BY_THEME,
+  isDefaultAppearancePreferences,
+  type AppearancePreferences,
+} from '#/lib/appearancePreferences';
+import {
+  persistAppearancePreferences,
+  resetAppearancePreferences,
+  resolveAppearancePreferences,
+} from '#/lib/appearancePreferencesBrowser';
 import { useConnection } from '#/lib/connection';
 import { normalizePermissionMode } from '#/lib/permissionMode';
 import {
@@ -27,6 +39,7 @@ import {
   usePatchConfig,
 } from '#/lib/queries';
 import {
+  effectiveTheme,
   resolveThemeChoice,
   setThemeChoice,
   type ThemeChoice,
@@ -34,6 +47,7 @@ import {
 import { useModalDialog } from '#/lib/useModalDialog';
 import { PermissionModeSelect } from './composer/PermissionModeSelect';
 import { ModelSelect } from './composer/ModelSelect';
+import { ToggleSwitch } from './ToggleSwitch';
 import { ProviderManager } from './settings/ProviderManager';
 import { SubagentSettings } from './settings/SubagentSettings';
 import { ExpertTeamSettings } from './settings/ExpertTeamSettings';
@@ -60,6 +74,10 @@ const THEME_LABELS: Record<ThemeChoice, string> = {
   system: '跟随系统',
 };
 
+const INTERFACE_FONT_SIZES = [12, 13, 14, 15, 16, 17, 18] as const;
+const MARKDOWN_FONT_SIZES = [12, 13, 14, 15, 16, 17, 18, 19, 20] as const;
+const CODE_FONT_SIZES = [10, 11, 12, 13, 14, 15, 16, 17, 18] as const;
+
 interface SettingsNavItemProps {
   readonly active: boolean;
   readonly icon: ReactNode;
@@ -78,7 +96,7 @@ function SettingsNavItem({
       type="button"
       aria-current={active ? 'page' : undefined}
       onClick={onClick}
-      className={`ui-pressable flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 text-left text-[14px] ${
+      className={`ui-pressable flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 text-left text-[length:var(--client-content-font-size)] ${
         active
           ? 'bg-[var(--color-list-hover)] font-medium text-[var(--color-text-foreground)]'
           : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]'
@@ -114,7 +132,7 @@ function SettingsPageHeader({
         </h1>
         {action}
       </div>
-      <p className="mt-7 text-[14px] leading-5 text-[var(--color-text-secondary)]">
+      <p className="mt-7 text-[length:var(--client-content-font-size)] leading-5 text-[var(--color-text-secondary)]">
         {description}
       </p>
     </header>
@@ -149,7 +167,7 @@ function SettingsRow({
       }`}
     >
       <div className="min-w-0 flex-1">
-        <h2 className="text-[14px] font-medium leading-5 text-[var(--color-text-foreground)]">
+        <h2 className="text-[length:var(--client-content-font-size)] font-medium leading-5 text-[var(--color-text-foreground)]">
           {title}
         </h2>
         <p className="mt-1 text-[12px] leading-5 text-[var(--color-text-tertiary)]">
@@ -161,33 +179,176 @@ function SettingsRow({
   );
 }
 
-interface ToggleProps {
-  readonly checked: boolean;
-  readonly disabled?: boolean;
+interface FontSizeSelectProps {
   readonly label: string;
-  readonly onChange: (checked: boolean) => void;
+  readonly options: readonly number[];
+  readonly value: number;
+  readonly onChange: (value: number) => void;
 }
 
-function Toggle({ checked, disabled = false, label, onChange }: ToggleProps) {
+function FontSizeSelect({
+  label,
+  options,
+  value,
+  onChange,
+}: FontSizeSelectProps) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative h-6 w-11 rounded-full transition-colors duration-[var(--duration-hover)] disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? 'bg-[var(--primary)]' : 'bg-[var(--color-background-muted)]'
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-[var(--duration-hover)] ${
-          checked ? 'translate-x-[22px]' : 'translate-x-0.5'
-        }`}
+    <div className="relative">
+      <select
+        value={value}
+        aria-label={label}
+        onChange={(event) => {
+          onChange(Number(event.currentTarget.value));
+        }}
+        className="h-8 w-[92px] appearance-none rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] pl-3 pr-8 text-[13px] text-[var(--color-text-foreground)] outline-none transition-colors hover:border-[var(--color-border-heavy)] focus:border-[var(--color-border-focus)] focus:ring-2 focus:ring-[var(--color-border-focus)]"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option} px
+          </option>
+        ))}
+      </select>
+      <CaretDown
+        size={13}
+        weight="regular"
         aria-hidden
+        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]"
       />
-    </button>
+    </div>
+  );
+}
+
+interface TextColorControlProps {
+  readonly defaultColor: string;
+  readonly value: string | null;
+  readonly onChange: (value: string | null) => void;
+}
+
+function TextColorControl({
+  defaultColor,
+  value,
+  onChange,
+}: TextColorControlProps) {
+  const resolvedColor = value ?? defaultColor;
+  return (
+    <div className="flex items-center gap-2">
+      <label className="relative flex h-8 min-w-[132px] cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] px-2.5 text-[12px] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-heavy)] focus-within:border-[var(--color-border-focus)] focus-within:ring-2 focus-within:ring-[var(--color-border-focus)]">
+        <span
+          className="h-4 w-4 shrink-0 rounded-full border border-[var(--color-border-heavy)] shadow-sm"
+          style={{ backgroundColor: resolvedColor }}
+          aria-hidden
+        />
+        <span>{value === null ? '跟随主题' : value.toUpperCase()}</span>
+        <input
+          type="color"
+          aria-label="Markdown 文字颜色"
+          value={resolvedColor}
+          onChange={(event) => {
+            onChange(event.currentTarget.value);
+          }}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        />
+      </label>
+      {value !== null ? (
+        <button
+          type="button"
+          onClick={() => {
+            onChange(null);
+          }}
+          className="ui-pressable h-8 rounded-[var(--radius-sm)] px-2 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+        >
+          跟随主题
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function GeneralAppearanceSettings({
+  preferences,
+  defaultTextColor,
+  onChange,
+  onReset,
+}: {
+  readonly preferences: AppearancePreferences;
+  readonly defaultTextColor: string;
+  readonly onChange: <K extends keyof AppearancePreferences>(
+    key: K,
+    value: AppearancePreferences[K],
+  ) => void;
+  readonly onReset: () => void;
+}) {
+  return (
+    <>
+      <div className="mb-2 mt-7 flex min-h-7 items-center justify-between gap-4">
+        <p className="text-[12px] font-medium text-[var(--color-text-secondary)]">
+          字体与阅读
+        </p>
+        <button
+          type="button"
+          disabled={isDefaultAppearancePreferences(preferences)}
+          onClick={onReset}
+          className="ui-pressable inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)] disabled:cursor-default disabled:opacity-35"
+        >
+          <ArrowCounterClockwise size={13} weight="regular" aria-hidden />
+          恢复默认样式
+        </button>
+      </div>
+      <SettingsPanel>
+        <SettingsRow
+          title="界面字号"
+          description="调整导航、会话列表和主要界面文字。"
+        >
+          <FontSizeSelect
+            label="界面字号"
+            options={INTERFACE_FONT_SIZES}
+            value={preferences.interfaceFontSize}
+            onChange={(value) => {
+              onChange('interfaceFontSize', value);
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="Markdown 字号"
+          description="调整对话回复中 Markdown 正文的字号。"
+        >
+          <FontSizeSelect
+            label="Markdown 字号"
+            options={MARKDOWN_FONT_SIZES}
+            value={preferences.markdownFontSize}
+            onChange={(value) => {
+              onChange('markdownFontSize', value);
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="代码块字号"
+          description="调整 Markdown 代码块的等宽字体字号。"
+        >
+          <FontSizeSelect
+            label="代码块字号"
+            options={CODE_FONT_SIZES}
+            value={preferences.codeFontSize}
+            onChange={(value) => {
+              onChange('codeFontSize', value);
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="Markdown 文字颜色"
+          description="调整对话回复中 Markdown 正文的文字颜色；默认跟随主题。"
+          last
+        >
+          <TextColorControl
+            defaultColor={defaultTextColor}
+            value={preferences.textColor}
+            onChange={(value) => {
+              onChange('textColor', value);
+            }}
+          />
+        </SettingsRow>
+      </SettingsPanel>
+    </>
   );
 }
 
@@ -199,6 +360,8 @@ export function Settings({
   const { serverVersion, mode, serverId } = useConnection();
   const [activeSection, setActiveSection] = useState<SettingsSection>('models');
   const [theme, setTheme] = useState<ThemeChoice>(resolveThemeChoice);
+  const [appearancePreferences, setAppearancePreferences] =
+    useState<AppearancePreferences>(resolveAppearancePreferences);
   const [childModalOpen, setChildModalOpen] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const backButtonRef = useRef<HTMLButtonElement>(null);
@@ -224,6 +387,17 @@ export function Settings({
   const patch = (body: Parameters<typeof patchConfig.mutate>[0]): void => {
     if (patchPending) return;
     patchConfig.mutate(body);
+  };
+
+  const changeAppearance = <K extends keyof AppearancePreferences>(
+    key: K,
+    value: AppearancePreferences[K],
+  ): void => {
+    const next = persistAppearancePreferences({
+      ...appearancePreferences,
+      [key]: value,
+    });
+    setAppearancePreferences(next);
   };
 
   const download = (desktop: boolean): void => {
@@ -304,7 +478,7 @@ export function Settings({
                 description="创建新会话时自动进入计划模式。"
                 last
               >
-                <Toggle
+                <ToggleSwitch
                   checked={defaultPlan}
                   disabled={patchPending}
                   label="默认计划模式"
@@ -313,6 +487,16 @@ export function Settings({
               </SettingsRow>
             </SettingsPanel>
             {saveStatus}
+            <GeneralAppearanceSettings
+              preferences={appearancePreferences}
+              defaultTextColor={
+                DEFAULT_TEXT_COLOR_BY_THEME[effectiveTheme(theme)]
+              }
+              onChange={changeAppearance}
+              onReset={() =>
+                setAppearancePreferences(resetAppearancePreferences())
+              }
+            />
           </>
         );
 
@@ -557,7 +741,7 @@ export function Settings({
             ref={backButtonRef}
             type="button"
             onClick={onClose}
-            className="ui-pressable mb-5 flex h-9 items-center gap-2 rounded-[var(--radius-sm)] px-2.5 text-[14px] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
+            className="ui-pressable mb-5 flex h-9 items-center gap-2 rounded-[var(--radius-sm)] px-2.5 text-[length:var(--client-content-font-size)] text-[var(--color-text-secondary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
           >
             <ArrowLeft size={16} weight="regular" aria-hidden />
             返回工作区

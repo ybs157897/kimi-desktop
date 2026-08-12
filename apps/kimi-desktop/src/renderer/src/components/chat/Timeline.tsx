@@ -303,7 +303,7 @@ function AwaitingTurnPlaceholder() {
 function AgentPrompt({ prompt }: { readonly prompt: string }) {
   return (
     <div className="ui-card-enter mb-6 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-user-bubble)] px-4 py-3.5 shadow-[var(--shadow-sm)]">
-      <div className="whitespace-pre-wrap text-[14px] leading-[var(--leading-chat)] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)]">
+      <div className="whitespace-pre-wrap text-[length:var(--client-content-font-size)] leading-[var(--leading-chat)] tracking-[var(--tracking-tight)] text-[var(--color-text-foreground)]">
         {prompt}
       </div>
     </div>

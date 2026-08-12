@@ -23,6 +23,7 @@ import {
   useSetAgentProfileEnabled,
   useUpdateAgentProfile,
 } from '#/lib/queries';
+import { ToggleSwitch } from '../ToggleSwitch';
 import { ModelSelect } from '../composer/ModelSelect';
 
 type BindingFilter = 'all' | 'custom' | 'automatic';
@@ -427,7 +428,7 @@ function Field({
 }
 
 const inputClassName =
-  'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] px-3 py-2 text-[14px] text-[var(--color-text-foreground)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-focus)] disabled:bg-[var(--color-background-muted)] disabled:text-[var(--color-text-tertiary)]';
+  'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] px-3 py-2 text-[length:var(--client-content-font-size)] text-[var(--color-text-foreground)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-focus)] disabled:bg-[var(--color-background-muted)] disabled:text-[var(--color-text-tertiary)]';
 
 function normalizeProfileColor(color: string | undefined): AgentProfileColor {
   return PROFILE_COLORS.some((item) => item.id === color)
@@ -474,24 +475,13 @@ function AgentToggle({
   readonly onChange: (checked: boolean) => void;
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={`${checked ? '停用' : '启用'} ${name}`}
+    <ToggleSwitch
+      checked={checked}
       disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-        checked ? 'bg-[var(--primary)]' : 'bg-[var(--color-background-muted)]'
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
-          checked ? 'translate-x-[18px]' : 'translate-x-0.5'
-        }`}
-        aria-hidden
-      />
-    </button>
+      label={`${checked ? '停用' : '启用'} ${name}`}
+      onChange={onChange}
+      size="compact"
+    />
   );
 }
 
@@ -567,7 +557,7 @@ export function SubagentSettings({
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-[14px] font-semibold text-[var(--color-text-foreground)]">
+              <h3 className="text-[length:var(--client-content-font-size)] font-semibold text-[var(--color-text-foreground)]">
                 {profile.name}
               </h3>
               <span className="rounded-[var(--radius-sm)] bg-[var(--color-background-muted)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-secondary)]">
@@ -657,7 +647,7 @@ export function SubagentSettings({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索子智能体…"
-            className="h-9 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] pl-9 pr-3 text-[14px] text-[var(--color-text-foreground)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-focus)]"
+            className="h-9 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] pl-9 pr-3 text-[length:var(--client-content-font-size)] text-[var(--color-text-foreground)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-focus)]"
           />
         </label>
         <label className="relative w-36 shrink-0">
@@ -665,7 +655,7 @@ export function SubagentSettings({
             value={filter}
             onChange={(event) => setFilter(event.target.value as BindingFilter)}
             aria-label="筛选子智能体"
-            className="h-9 w-full appearance-none rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] px-3 pr-8 text-[14px] text-[var(--color-text-foreground)] outline-none focus:border-[var(--color-border-focus)]"
+            className="h-9 w-full appearance-none rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background-panel)] px-3 pr-8 text-[length:var(--client-content-font-size)] text-[var(--color-text-foreground)] outline-none focus:border-[var(--color-border-focus)]"
           >
             <option value="all">全部</option>
             <option value="custom">已指定模型</option>
@@ -757,7 +747,7 @@ function AgentGroup({
   return (
     <section>
       <div className="mb-2 flex items-center justify-between gap-6 px-0.5">
-        <h2 className="text-[14px] font-semibold text-[var(--color-text-foreground)]">
+        <h2 className="text-[length:var(--client-content-font-size)] font-semibold text-[var(--color-text-foreground)]">
           {title}
           <span className="ml-2 font-normal text-[var(--color-text-tertiary)]">{count} 项</span>
         </h2>

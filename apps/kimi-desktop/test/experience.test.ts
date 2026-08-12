@@ -1,3 +1,9 @@
+/**
+ * Scenarios: Desktop presentation, rendering, and local preference contracts.
+ * Wiring: pure renderer modules and React SSR; no external boundary is stubbed.
+ * Run: pnpm --filter @moonshot-ai/kimi-desktop exec vitest run test/experience.test.ts
+ */
+
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
@@ -25,6 +31,7 @@ import {
 import { pairStreamHtml } from '../src/renderer/src/components/markdown/streamHtml';
 import { codeBlockLanguage } from '../src/renderer/src/components/markdown/codeBlockLanguage';
 import { MarkdownMath } from '../src/renderer/src/components/markdown/MarkdownMath';
+import { ToggleSwitch } from '../src/renderer/src/components/ToggleSwitch';
 import {
   createMarkdownExtensions,
   type MathToken,
@@ -34,6 +41,17 @@ import {
   resolveThinkingEffort,
   thinkingConfigPatch,
 } from '../src/renderer/src/lib/conversationDefaults';
+import {
+  DEFAULT_APPEARANCE_PREFERENCES,
+  appearanceStyleProperties,
+  parseAppearancePreferences,
+} from '../src/renderer/src/lib/appearancePreferences';
+import {
+  APPEARANCE_STORAGE_KEY,
+  clearAppearancePreferences,
+  loadAppearancePreferences,
+  saveAppearancePreferences,
+} from '../src/renderer/src/lib/appearancePreferenceStore';
 import { computeScaledSize } from '../src/renderer/src/lib/imageScale';
 import {
   newSessionErrorMessage,
@@ -47,6 +65,15 @@ import {
 } from '../src/renderer/src/lib/modelCatalog';
 import { webAppUrl } from '../src/renderer/src/lib/webUrl';
 import { buildChangeTree } from '../src/renderer/src/lib/changeTree';
+import {
+  canDiscardGitChange,
+  friendlyGitOperationError,
+  gitBranchCreationName,
+  gitBranchPickerItems,
+  gitChangeGroups,
+  gitChangeKey,
+  gitDiscardCopy,
+} from '../src/renderer/src/lib/gitPresentation';
 import { approvalInteractionPresentation } from '../src/renderer/src/lib/approvalInteraction';
 import { goalObjectiveForSubmission } from '../src/renderer/src/lib/sessionModes';
 import { isLiveAgentPhase } from '../src/renderer/src/office/phaseMap';
@@ -86,7 +113,7 @@ import type {
   TranscriptTask,
   TranscriptTurn,
 } from '@moonshot-ai/transcript';
-import { ErrorCode } from '@moonshot-ai/protocol';
+import { ErrorCode, fsGitStatusResponseSchema } from '@moonshot-ai/protocol';
 import type { SessionSubagentSnapshot } from '../src/renderer/src/lib/api';
 import {
   DESKTOP_TITLEBAR_HEIGHT,
@@ -107,6 +134,338 @@ describe('desktop design tokens', () => {
     );
 
     expect([...references].filter((reference) => !definitions.has(reference))).toEqual([]);
+  });
+});
+
+describe('desktop Git change presentation', () => {
+  it('puts the current branch first without reordering the remaining service results', () => {
+    expect(
+      gitBranchPickerItems(['feature/newest', 'main', 'feature/older'], 'main', ''),
+    ).toEqual([
+      { name: 'main', current: true },
+      { name: 'feature/newest', current: false },
+      { name: 'feature/older', current: false },
+    ]);
+  });
+
+  it('filters local branches case-insensitively', () => {
+    expect(
+      gitBranchPickerItems(['main', 'Feature/Desktop', 'release'], 'main', 'desktop'),
+    ).toEqual([{ name: 'Feature/Desktop', current: false }]);
+  });
+
+  it('returns no branch rows when the search has no match', () => {
+    expect(gitBranchPickerItems(['main', 'release'], 'main', 'missing')).toEqual([]);
+  });
+
+  it('normalizes a non-empty new branch name before creation', () => {
+    expect(gitBranchCreationName('  feature/picker  ', ['main'])).toBe('feature/picker');
+  });
+
+  it('does not offer branch creation when that exact branch exists', () => {
+    expect(gitBranchCreationName('main', ['main', 'release'])).toBeNull();
+  });
+
+  it('does not offer branch creation for a blank name', () => {
+    expect(gitBranchCreationName('   ', ['main'])).toBeNull();
+  });
+
+  it('keeps the staged and unstaged versions of one path as separate selectable changes', () => {
+    const groups = gitChangeGroups({
+      entries: { 'src/app.ts': 'modified' },
+      stagedEntries: { 'src/app.ts': 'modified' },
+      unstagedEntries: { 'src/app.ts': 'modified' },
+    } as never);
+
+    expect(groups.staged).toEqual([
+      { cohort: 'staged', path: 'src/app.ts', status: 'modified' },
+    ]);
+    expect(groups.unstaged).toEqual([
+      { cohort: 'unstaged', path: 'src/app.ts', status: 'modified' },
+    ]);
+    expect(gitChangeKey(groups.staged[0]!)).toBe('staged:src/app.ts');
+    expect(gitChangeKey(groups.unstaged[0]!)).toBe('unstaged:src/app.ts');
+  });
+
+  it('projects legacy combined status into the unstaged group when cohort fields are absent', () => {
+    const groups = gitChangeGroups({
+      entries: { 'README.md': 'modified' },
+    } as never);
+
+    expect(groups).toEqual({
+      staged: [],
+      unstaged: [{ cohort: 'unstaged', path: 'README.md', status: 'modified' }],
+    });
+  });
+
+  it('projects legacy combined status after protocol defaults add empty cohort maps', () => {
+    const legacyResponse = fsGitStatusResponseSchema.parse({
+      branch: 'main',
+      ahead: 0,
+      behind: 0,
+      entries: { 'README.md': 'modified' },
+      additions: 1,
+      deletions: 0,
+      pullRequest: null,
+    });
+    const groups = gitChangeGroups(legacyResponse);
+
+    expect(groups).toEqual({
+      staged: [],
+      unstaged: [{ cohort: 'unstaged', path: 'README.md', status: 'modified' }],
+    });
+  });
+
+  it('marks discarding an untracked file as irreversible', () => {
+    const untracked = { cohort: 'unstaged', path: 'scratch.txt', status: 'untracked' } as const;
+
+    expect(gitDiscardCopy([untracked])).toEqual({
+      title: '删除未跟踪文件？',
+      description: '未跟踪文件会被永久删除，其余文件会恢复到暂存区中的内容。此操作无法撤销。',
+      irreversible: true,
+    });
+  });
+
+  it('leaves a conflicted file without the ordinary discard action', () => {
+    const conflicted = { cohort: 'unstaged', path: 'src/app.ts', status: 'conflicted' } as const;
+
+    expect(canDiscardGitChange(conflicted)).toBe(false);
+  });
+
+  it('surfaces the server Git diagnostic when a mutation fails', () => {
+    const error = new ApiError(40908, 'git operation failed', 200, {
+      cwd: '/private/example',
+      detail: 'remote rejected: protected branch',
+    });
+
+    expect(friendlyGitOperationError(error, '推送')).toBe(
+      '推送失败。remote rejected: protected branch',
+    );
+  });
+
+  it('redacts credentials from a remote Git diagnostic', () => {
+    const error = new ApiError(40908, 'git operation failed', 200, {
+      detail: 'fatal: unable to access https://user:secret@example.test/repo.git?token=secret-token',
+    });
+
+    expect(friendlyGitOperationError(error, '拉取')).toBe(
+      '拉取失败。fatal: unable to access https://example.test/repo.git?token=[REDACTED]',
+    );
+  });
+
+  it('explains why repository-wide operations are blocked from a nested project', () => {
+    const error = new ApiError(40908, 'git operation failed', 200, {
+      detail: 'pull must be run from the repository root workspace',
+    });
+
+    expect(friendlyGitOperationError(error, '拉取')).toBe(
+      '拉取失败：请将 Git 仓库根目录作为项目打开后重试。',
+    );
+  });
+
+  it('asks the user to wait before generating a commit message during active work', () => {
+    const error = new ApiError(40901, 'Session is busy', 200, {
+      detail: '当前任务仍在运行，请等待任务结束后再生成提交信息。',
+    });
+
+    expect(friendlyGitOperationError(error, '生成提交消息')).toBe(
+      '当前任务仍在运行，请等待任务结束后再生成提交信息。',
+    );
+  });
+});
+
+describe('desktop appearance preferences', () => {
+  it('uses the current Desktop typography when no preference has been saved', () => {
+    const css = readFileSync(
+      new URL('../src/renderer/src/styles/tokens.css', import.meta.url),
+      'utf8',
+    );
+    expect(css).toContain('--client-content-font-size: 14px;');
+    expect(css).toContain('--markdown-font-size: 14px;');
+    expect(css).toContain('--markdown-code-block-font-size: 13px;');
+    expect(parseAppearancePreferences(null)).toEqual({
+      interfaceFontSize: 14,
+      markdownFontSize: 14,
+      codeFontSize: 13,
+      textColor: null,
+    });
+  });
+
+  it('restores valid saved typography and normalizes the color value', () => {
+    expect(
+      parseAppearancePreferences(
+        JSON.stringify({
+          interfaceFontSize: 16,
+          markdownFontSize: 18,
+          codeFontSize: 15,
+          textColor: '#A1B2C3',
+        }),
+      ),
+    ).toEqual({
+      interfaceFontSize: 16,
+      markdownFontSize: 18,
+      codeFontSize: 15,
+      textColor: '#a1b2c3',
+    });
+  });
+
+  it('keeps valid partial settings and fills missing fields from the defaults', () => {
+    expect(
+      parseAppearancePreferences(JSON.stringify({ markdownFontSize: 17 })),
+    ).toEqual({
+      interfaceFontSize: 14,
+      markdownFontSize: 17,
+      codeFontSize: 13,
+      textColor: null,
+    });
+  });
+
+  it('falls back to the current defaults when saved fields are out of range', () => {
+    expect(
+      parseAppearancePreferences(
+        JSON.stringify({
+          interfaceFontSize: 30,
+          markdownFontSize: 11,
+          codeFontSize: '15',
+          textColor: 'red',
+        }),
+      ),
+    ).toEqual({
+      interfaceFontSize: 14,
+      markdownFontSize: 14,
+      codeFontSize: 13,
+      textColor: null,
+    });
+  });
+
+  it('falls back to the current defaults when saved JSON is malformed', () => {
+    expect(parseAppearancePreferences('{not-json')).toEqual({
+      interfaceFontSize: 14,
+      markdownFontSize: 14,
+      codeFontSize: 13,
+      textColor: null,
+    });
+  });
+
+  it('projects custom typography into the renderer CSS variables', () => {
+    expect(
+      appearanceStyleProperties({
+        interfaceFontSize: 16,
+        markdownFontSize: 18,
+        codeFontSize: 15,
+        textColor: '#345678',
+      }),
+    ).toEqual({
+      '--client-content-font-size': '16px',
+      '--client-title-font-size': '16px',
+      '--client-sidebar-primary-font-size': '16px',
+      '--markdown-font-size': '18px',
+      '--markdown-code-block-font-size': '15px',
+      '--color-user-text-foreground': '#345678',
+    });
+  });
+
+  it('leaves no inline overrides after restoring the default appearance', () => {
+    expect(
+      appearanceStyleProperties(DEFAULT_APPEARANCE_PREFERENCES),
+    ).toEqual({});
+  });
+
+  it('persists a custom appearance through the local preference boundary', () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+      removeItem: (key: string) => {
+        values.delete(key);
+      },
+    };
+
+    saveAppearancePreferences(storage, {
+      interfaceFontSize: 16,
+      markdownFontSize: 18,
+      codeFontSize: 15,
+      textColor: '#345678',
+    });
+
+    expect(loadAppearancePreferences(storage)).toEqual({
+      interfaceFontSize: 16,
+      markdownFontSize: 18,
+      codeFontSize: 15,
+      textColor: '#345678',
+    });
+  });
+
+  it('removes the saved override when restoring the current defaults', () => {
+    const values = new Map<string, string>([
+      [
+        APPEARANCE_STORAGE_KEY,
+        JSON.stringify({
+          interfaceFontSize: 16,
+          markdownFontSize: 18,
+          codeFontSize: 15,
+          textColor: '#345678',
+        }),
+      ],
+    ]);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+      removeItem: (key: string) => {
+        values.delete(key);
+      },
+    };
+
+    const restored = clearAppearancePreferences(storage);
+
+    expect(restored).toEqual({
+      interfaceFontSize: 14,
+      markdownFontSize: 14,
+      codeFontSize: 13,
+      textColor: null,
+    });
+    expect(values.has(APPEARANCE_STORAGE_KEY)).toBe(false);
+  });
+});
+
+describe('desktop toggle switch', () => {
+  it('keeps the regular checked thumb inside the 42px track', () => {
+    const markup = renderToStaticMarkup(
+      createElement(ToggleSwitch, {
+        checked: true,
+        label: '默认计划模式',
+        onChange: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain('role="switch"');
+    expect(markup).toContain('aria-checked="true"');
+    expect(markup).toContain('h-6 w-[42px]');
+    expect(markup).toContain('left-0.5 top-0.5');
+    expect(markup).toContain('h-5 w-5');
+    expect(markup).toContain('translate-x-[18px]');
+  });
+
+  it('anchors the compact unchecked thumb on the left and exposes disabled state', () => {
+    const markup = renderToStaticMarkup(
+      createElement(ToggleSwitch, {
+        checked: false,
+        disabled: true,
+        label: '启用专家团',
+        onChange: () => undefined,
+        size: 'compact',
+      }),
+    );
+
+    expect(markup).toContain('aria-checked="false"');
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain('h-5 w-9');
+    expect(markup).toContain('h-4 w-4');
+    expect(markup).toContain('translate-x-0');
   });
 });
 

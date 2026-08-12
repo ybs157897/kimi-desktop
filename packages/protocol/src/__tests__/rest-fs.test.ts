@@ -5,8 +5,17 @@ import {
   fsGitBranchesResponseSchema,
   fsGitCheckoutRequestSchema,
   fsGitCheckoutResponseSchema,
+  fsGitCommitRequestSchema,
+  fsGitGenerateCommitMessageRequestSchema,
+  fsGitGenerateCommitMessageResponseSchema,
+  fsGitCreateBranchRequestSchema,
+  fsGitDiscardRequestSchema,
+  fsGitPullRequestSchema,
+  fsGitPushRequestSchema,
+  fsGitStageRequestSchema,
   fsGitStatusRequestSchema,
   fsGitStatusResponseSchema,
+  fsGitUnstageRequestSchema,
   fsGrepRequestSchema,
   fsGrepResponseSchema,
   fsListManyRequestSchema,
@@ -23,6 +32,61 @@ import {
   fsStatManyResponseSchema,
   fsStatRequestSchema,
 } from '../rest/fs';
+
+describe('git mutation schemas', () => {
+  it('allows an omitted path list for stage-all', () => {
+    expect(fsGitStageRequestSchema.parse({})).toEqual({});
+  });
+
+  it('allows an omitted path list for unstage-all', () => {
+    expect(fsGitUnstageRequestSchema.parse({})).toEqual({});
+  });
+
+  it('requires explicit opt-in before an untracked discard request', () => {
+    expect(fsGitDiscardRequestSchema.parse({ paths: ['new.txt'] })).toEqual({
+      paths: ['new.txt'],
+      include_untracked: false,
+    });
+  });
+
+  it('defaults pull to fast-forward only', () => {
+    expect(fsGitPullRequestSchema.parse({})).toEqual({ rebase: false });
+  });
+
+  it('defaults push to setting an upstream when missing', () => {
+    expect(fsGitPushRequestSchema.parse({})).toEqual({ set_upstream: true });
+  });
+
+  it('defaults branch creation to switching to the new branch', () => {
+    expect(fsGitCreateBranchRequestSchema.parse({ branch: 'feature/example' })).toEqual({
+      branch: 'feature/example',
+      checkout: true,
+    });
+  });
+
+  it('rejects a blank commit message', () => {
+    expect(fsGitCommitRequestSchema.safeParse({ message: '   ' }).success).toBe(false);
+  });
+
+  it('defaults AI commit-message generation to include unstaged changes', () => {
+    expect(fsGitGenerateCommitMessageRequestSchema.parse({})).toEqual({
+      include_unstaged: true,
+    });
+  });
+
+  it('preserves a draft for AI commit-message polishing', () => {
+    expect(fsGitGenerateCommitMessageRequestSchema.parse({ draft: 'fix tests' })).toEqual({
+      draft: 'fix tests',
+      include_unstaged: true,
+    });
+  });
+
+  it('rejects an empty generated commit message', () => {
+    expect(fsGitGenerateCommitMessageResponseSchema.safeParse({ message: '   ' }).success).toBe(
+      false,
+    );
+  });
+});
 
 describe('fsListRequestSchema', () => {
   it('applies all defaults on empty body', () => {
@@ -383,6 +447,8 @@ describe('fsGitStatusResponseSchema (W11.2)', () => {
       ahead: 0,
       behind: 0,
       entries: {},
+      stagedEntries: {},
+      unstagedEntries: {},
       additions: 0,
       deletions: 0,
       pullRequest: null,
@@ -399,6 +465,13 @@ describe('fsGitStatusResponseSchema (W11.2)', () => {
         'src/index.ts': 'modified' as const,
         'src/new.ts': 'untracked' as const,
         'src/old.ts': 'deleted' as const,
+      },
+      stagedEntries: {
+        'src/old.ts': 'deleted' as const,
+      },
+      unstagedEntries: {
+        'src/index.ts': 'modified' as const,
+        'src/new.ts': 'untracked' as const,
       },
       additions: 42,
       deletions: 7,

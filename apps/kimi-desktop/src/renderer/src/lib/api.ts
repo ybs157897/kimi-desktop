@@ -81,7 +81,15 @@ import {
   fsDiffResponseSchema,
   fsGitBranchesResponseSchema,
   fsGitCheckoutResponseSchema,
+  fsGitCommitResponseSchema,
+  fsGitCreateBranchResponseSchema,
+  fsGitDiscardResponseSchema,
+  fsGitGenerateCommitMessageResponseSchema,
+  fsGitPullResponseSchema,
+  fsGitPushResponseSchema,
+  fsGitStageResponseSchema,
   fsGitStatusResponseSchema,
+  fsGitUnstageResponseSchema,
   fsHomeResponseSchema,
   fsListResponseSchema,
   fsReadResponseSchema,
@@ -103,7 +111,16 @@ import {
   type FsDiffResponse,
   type FsGitBranchesResponse,
   type FsGitCheckoutResponse,
+  type FsGitCommitResponse,
+  type FsGitCreateBranchResponse,
+  type FsGitDiscardResponse,
+  type FsGitGenerateCommitMessageRequest,
+  type FsGitGenerateCommitMessageResponse,
+  type FsGitPullResponse,
+  type FsGitPushResponse,
+  type FsGitStageResponse,
   type FsGitStatusResponse,
+  type FsGitUnstageResponse,
   type FsHomeResponse,
   type FsListResponse,
   type FsListRequest,
@@ -1242,10 +1259,10 @@ export class ApiClient {
   }
 
   /** `POST /api/v1/sessions/{id}/fs:diff` — unified diff of one path's changes. */
-  fsDiff(sessionId: string, path: string): Promise<FsDiffResponse> {
+  fsDiff(sessionId: string, path: string, mode: 'all' | 'staged' | 'unstaged' = 'all'): Promise<FsDiffResponse> {
     return this.request<FsDiffResponse>(
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:diff`,
-      { method: 'POST', body: { path }, schema: fsDiffResponseSchema },
+      { method: 'POST', body: { path, mode }, schema: fsDiffResponseSchema },
     );
   }
 
@@ -1253,7 +1270,7 @@ export class ApiClient {
   fsGitStatus(sessionId: string, paths?: readonly string[]): Promise<FsGitStatusResponse> {
     return this.request<FsGitStatusResponse>(
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_status`,
-      { method: 'POST', body: paths === undefined ? {} : { paths } },
+      { method: 'POST', body: paths === undefined ? {} : { paths }, schema: fsGitStatusResponseSchema },
     );
   }
 
@@ -1268,6 +1285,77 @@ export class ApiClient {
     return this.request<FsGitCheckoutResponse>(
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_checkout`,
       { method: 'POST', body: { branch }, schema: fsGitCheckoutResponseSchema },
+    );
+  }
+
+  fsGitCreateBranch(sessionId: string, branch: string, checkout = true): Promise<FsGitCreateBranchResponse> {
+    return this.request<FsGitCreateBranchResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_create_branch`,
+      { method: 'POST', body: { branch, checkout }, schema: fsGitCreateBranchResponseSchema },
+    );
+  }
+
+  fsGitStage(sessionId: string, paths?: readonly string[]): Promise<FsGitStageResponse> {
+    return this.request<FsGitStageResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_stage`,
+      { method: 'POST', body: paths === undefined ? {} : { paths }, schema: fsGitStageResponseSchema },
+    );
+  }
+
+  fsGitUnstage(sessionId: string, paths?: readonly string[]): Promise<FsGitUnstageResponse> {
+    return this.request<FsGitUnstageResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_unstage`,
+      { method: 'POST', body: paths === undefined ? {} : { paths }, schema: fsGitUnstageResponseSchema },
+    );
+  }
+
+  fsGitDiscard(
+    sessionId: string,
+    paths: readonly string[],
+    includeUntracked: boolean,
+  ): Promise<FsGitDiscardResponse> {
+    return this.request<FsGitDiscardResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_discard`,
+      {
+        method: 'POST',
+        body: { paths, include_untracked: includeUntracked },
+        schema: fsGitDiscardResponseSchema,
+      },
+    );
+  }
+
+  fsGitCommit(sessionId: string, message: string): Promise<FsGitCommitResponse> {
+    return this.request<FsGitCommitResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_commit`,
+      { method: 'POST', body: { message }, schema: fsGitCommitResponseSchema },
+    );
+  }
+
+  fsGitGenerateCommitMessage(
+    sessionId: string,
+    body: FsGitGenerateCommitMessageRequest,
+  ): Promise<FsGitGenerateCommitMessageResponse> {
+    return this.request<FsGitGenerateCommitMessageResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_generate_commit_message`,
+      { method: 'POST', body, schema: fsGitGenerateCommitMessageResponseSchema },
+    );
+  }
+
+  fsGitPull(sessionId: string, rebase = false): Promise<FsGitPullResponse> {
+    return this.request<FsGitPullResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_pull`,
+      { method: 'POST', body: { rebase }, schema: fsGitPullResponseSchema },
+    );
+  }
+
+  fsGitPush(sessionId: string, setUpstream = true): Promise<FsGitPushResponse> {
+    return this.request<FsGitPushResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/fs:git_push`,
+      {
+        method: 'POST',
+        body: { set_upstream: setUpstream },
+        schema: fsGitPushResponseSchema,
+      },
     );
   }
 

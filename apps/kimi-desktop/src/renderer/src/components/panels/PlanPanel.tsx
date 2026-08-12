@@ -18,8 +18,6 @@ import {
   Circle,
   CircleNotch,
   FileText,
-  GitBranch,
-  GitCommit,
   GitDiff,
   GitPullRequest,
   Laptop,
@@ -31,10 +29,9 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 
 import type { TranscriptPlanInfo } from '#/lib/api';
 import { tagClasses, tagIconClass } from '#/lib/agentColors';
+import { gitChangeGroups } from '#/lib/gitPresentation';
 import {
   useChildAgentPlans,
-  useFsGitBranches,
-  useFsGitCheckout,
   useFsGitStatus,
   useFsOpen,
   useSessionSubagents,
@@ -47,6 +44,8 @@ import {
   type SubagentSummary,
 } from '#/lib/subagentSummary';
 import { CollapsibleBody } from '../chat/CollapsibleBody';
+import { GitBranchPicker } from '../git/GitBranchPicker';
+import { GitCommitPushPopover } from '../git/GitCommitPushPopover';
 import type { OpenPlanDoc } from '../chat/PlanDocViewer';
 import { planDocFromInfo } from '../chat/PlanDocViewer';
 import { COLLAPSE_AFTER, selectVisibleTodos } from '../chat/TodoPanel';
@@ -244,11 +243,15 @@ function EnvironmentSection({
   readonly onOpenChanges?: () => void;
 }) {
   const git = useFsGitStatus(sessionId);
-  const branches = useFsGitBranches(sessionId);
-  const checkout = useFsGitCheckout(sessionId);
   const open = useFsOpen(sessionId);
-  const branch = git.data?.branch ?? branches.data?.current;
-  const branchNames = branches.data?.branches ?? (branch === undefined ? [] : [branch]);
+  const branch = git.data?.branch;
+  const changeGroups = gitChangeGroups(git.data);
+  const changedFileCount = new Set(
+    [...changeGroups.staged, ...changeGroups.unstaged].map((change) => change.path),
+  ).size;
+  const stagedFileCount = new Set(changeGroups.staged.map((change) => change.path)).size;
+  const unstagedFileCount = new Set(changeGroups.unstaged.map((change) => change.path)).size;
+  const repositoryName = cwd?.split(/[\\/]/).filter((part) => part !== '').at(-1);
   const pullRequest = git.data?.pullRequest;
 
   return (
@@ -262,7 +265,6 @@ function EnvironmentSection({
           title="刷新环境信息"
           onClick={() => {
             void git.refetch();
-            void branches.refetch();
           }}
           className="ui-pressable flex h-6 w-6 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-list-hover)] hover:text-[var(--color-text-foreground)]"
         >
@@ -295,44 +297,25 @@ function EnvironmentSection({
           onClick={cwd === undefined ? undefined : () => open.mutate({ path: '.', reveal: true })}
           meta={<CaretDown size={11} aria-hidden />}
         />
-        <div className="relative rounded-[var(--radius-sm)] focus-within:ring-1 focus-within:ring-[var(--color-border-focus)]">
-          <EnvironmentRow
-            icon={<GitBranch size={14} aria-hidden />}
-            label={branch ?? (git.isError ? '无法读取分支' : '读取分支中…')}
-            meta={
-              checkout.isPending ? (
-                <CircleNotch size={12} className="animate-spin" aria-hidden />
-              ) : (
-                <CaretDown size={11} aria-hidden />
-              )
-            }
-          />
-          {branchNames.length > 0 ? (
-            <select
-              aria-label="切换 Git 分支"
-              value={branch}
-              disabled={checkout.isPending}
-              onChange={(event) => checkout.mutate(event.target.value)}
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none disabled:cursor-wait"
-            >
-              {branchNames.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          ) : null}
-        </div>
-        {git.data !== undefined && (git.data.ahead > 0 || git.data.behind > 0) ? (
-          <EnvironmentRow
-            icon={<GitCommit size={14} aria-hidden />}
-            label={
-              git.data.ahead > 0
-                ? `待推送 ${git.data.ahead} 个提交`
-                : `落后 ${git.data.behind} 个提交`
-            }
-          />
-        ) : null}
+        <GitBranchPicker
+          sessionId={sessionId}
+          currentBranch={branch}
+          changedFileCount={changedFileCount}
+          stagedFileCount={stagedFileCount}
+          repositoryName={repositoryName}
+          appearance="environment"
+        />
+        <GitCommitPushPopover
+          sessionId={sessionId}
+          branch={branch}
+          additions={git.data?.additions ?? 0}
+          deletions={git.data?.deletions ?? 0}
+          ahead={git.data?.ahead ?? 0}
+          stagedFileCount={stagedFileCount}
+          unstagedFileCount={unstagedFileCount}
+          changedFileCount={changedFileCount}
+          disabled={git.isError}
+        />
         {pullRequest !== undefined && pullRequest !== null ? (
           <EnvironmentRow
             icon={<GitPullRequest size={14} aria-hidden />}
