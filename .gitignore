@@ -11,6 +11,7 @@ coverage/
 .vite/
 .DS_Store
 .playwright-mcp/
+.lh-harness/
 .claude
 .conductor
 .kimi-stash-dir

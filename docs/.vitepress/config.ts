@@ -33,7 +33,7 @@ const config = withMermaid(
       ['meta', { name: 'theme-color', content: '#0a7aff' }],
     ],
 
-    srcExclude: ['AGENTS.md', 'superpowers/**'],
+    srcExclude: ['AGENTS.md', 'superpowers/**', 'agent-profile-memory/**'],
 
     locales: {
       zh: {
